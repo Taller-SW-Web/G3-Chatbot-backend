@@ -10,10 +10,10 @@ except ImportError:
     # H2-01: base sin modelos aún; H2-03..H2-07 agregarán aquí sus imports.
     __all__ = ["Base"]
 
-from src.adapters.outbound.persistence.models.evidencia import Evidencia
-from src.adapters.outbound.persistence.models.mensaje import Mensaje
+from src.adapters.outbound.persistence.models.evidence import Evidence
+from src.adapters.outbound.persistence.models.message import Message
 
-__all__ += ["Mensaje", "Evidencia"]
+__all__ += ["Message", "Evidence"]
 
 # H2-03/H2-04 agregarán aquí: cart, cart_item, checkout, payment_attempt,
 # order_ref, notification, claim_ref, return_ref y outbox.

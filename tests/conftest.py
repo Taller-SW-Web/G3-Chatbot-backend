@@ -1,4 +1,4 @@
-"""Fixtures H2-06. Las tablas relacionadas mínimas existen solo en tests."""
+"""Fixtures H2-06: modelos reales; return_ref mínimo existe solo en tests."""
 
 import os
 import uuid
@@ -6,20 +6,20 @@ import uuid
 import pytest
 import pytest_asyncio
 from sqlalchemy import Column, MetaData, Table, Text, text
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from src.adapters.outbound.persistence.models import Evidencia, Mensaje
+from src.adapters.outbound.persistence.models import Attachment, Conversation, Evidence, Message
 
 
 @pytest.fixture
 def persistence_metadata():
     """Metadata aislada: no altera Base ni registra modelos de otros autores."""
     metadata = MetaData()
-    Table("conversacion", metadata, Column("id", UUID(as_uuid=True), primary_key=True))
-    Table("devolucion_ref", metadata, Column("devolucion_id", Text, primary_key=True))
-    Mensaje.__table__.to_metadata(metadata)
-    Evidencia.__table__.to_metadata(metadata)
+    Conversation.__table__.to_metadata(metadata)
+    Table("return_ref", metadata, Column("return_id", Text, primary_key=True))
+    Message.__table__.to_metadata(metadata)
+    Evidence.__table__.to_metadata(metadata)
+    Attachment.__table__.to_metadata(metadata)
     return metadata
 
 
@@ -27,7 +27,7 @@ def persistence_metadata():
 async def postgres_session(persistence_metadata):
     """PostgreSQL 18 de pruebas explícito; DDL y datos se revierten al terminar.
 
-    Nunca usa DATABASE_URL ni carga .env. Los padres mínimos y el trigger
+    Nunca usa DATABASE_URL ni carga .env. return_ref mínimo y el trigger
     aquí permiten verificar H2-06; no sustituyen la migración compartida.
     """
     url = os.getenv("TEST_DATABASE_URL")
@@ -46,18 +46,18 @@ async def postgres_session(persistence_metadata):
                 await connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
                 await connection.run_sync(persistence_metadata.create_all)
                 await connection.execute(text("""
-                    CREATE FUNCTION set_actualizado_en() RETURNS trigger
+                    CREATE FUNCTION set_updated_at() RETURNS trigger
                     LANGUAGE plpgsql AS $$
                     BEGIN
-                        NEW.actualizado_en = now();
+                        NEW.updated_at = now();
                         RETURN NEW;
                     END;
                     $$
                 """))
                 await connection.execute(text("""
-                    CREATE TRIGGER evidencia_actualizado_en
-                    BEFORE UPDATE ON evidencia FOR EACH ROW
-                    EXECUTE FUNCTION set_actualizado_en()
+                    CREATE TRIGGER evidence_updated_at
+                    BEFORE UPDATE ON evidence FOR EACH ROW
+                    EXECUTE FUNCTION set_updated_at()
                 """))
                 async with AsyncSession(
                     bind=connection, expire_on_commit=False,

@@ -1,7 +1,7 @@
-﻿# H2-06 — Persistencia de mensajes y evidencias
+# H2-06 — Persistencia de mensajes y evidencias
 
 Asignación: `../G3-Chatbot-specs/odd/tasks/hito-2.md`, H2-06 (Alonso).
-Esquema: `../G3-Chatbot-specs/docs/modelo-datos.md`, tablas `mensaje` y `evidencia`.
+Esquema: `../G3-Chatbot-specs/docs/modelo-datos.md`, tablas `message` y `evidence`.
 
 ## Contratos
 
@@ -11,25 +11,33 @@ commit y rollback y valida la pertenencia de conversación y devolución.
 
 | Adapter | Operación | Resultado |
 |---|---|---|
-| `MensajePostgresAdapter` | `guardar(mensaje)` | Fila persistida; texto previamente redactado y argumentos validados. |
-| `MensajePostgresAdapter` | `listar_recientes(conversacion_id, limite=50)` | Últimos 1–50 mensajes en orden cronológico. Usar 12 para contexto LLM. |
-| `EvidenciaPostgresAdapter` | `guardar(evidencia)` | Referencia al archivo alojado por Ventas. |
-| `EvidenciaPostgresAdapter` | `listar_borrador(conversacion_id)` | Evidencias de esa conversación aún sin devolución. |
-| `EvidenciaPostgresAdapter` | `asociar_devolucion(evidencia_id, conversacion_id, devolucion_id)` | Fila asociada o `None` si no corresponde; admite reintento a la misma devolución e impide reasignación. |
+| `MessagePostgresAdapter` | `guardar(message)` | Fila persistida; texto previamente redactado y argumentos validados. |
+| `MessagePostgresAdapter` | `listar_recientes(conversation_id, limite=50)` | Últimos 1–50 mensajes en orden cronológico. Usar 12 para contexto LLM. |
+| `EvidencePostgresAdapter` | `guardar(evidence)` | Referencia al archivo alojado por Ventas; normaliza `IMAGEN` a `IMAGE`. |
+| `EvidencePostgresAdapter` | `listar_borrador(conversation_id)` | Evidencias de esa conversación aún sin devolución. |
+| `EvidencePostgresAdapter` | `asociar_devolucion(evidence_id, conversation_id, return_id)` | Fila asociada o `None` si no corresponde; admite reintento a la misma devolución e impide reasignación. |
 
-`bloques` y `argumentos` son objetos JSONB, no arrays; `None` se guarda como SQL
+`blocks` y `arguments` son objetos JSONB, no arrays; `None` se guarda como SQL
 NULL. El ensamblador del turno convierte los bloques al formato de la API.
-La asociación de evidencia comparte transacción con el INSERT de `devolucion_ref`.
+La asociación de evidencia comparte transacción con el INSERT de `return_ref`.
 La URL de evidencia no se envía al LLM.
+
+Los identificadores de BD y los roles (`CUSTOMER`, `ASSISTANT`, `TOOL`) siguen
+el renombre de specs `e095041`. Se conserva `'spanish'` para búsqueda full-text,
+los métodos del adapter en español y las claves JSON de la API y snapshots.
+Al construir `evidencias[]` para Ventas, el caso de uso aplica
+`EvidencePostgresAdapter.tipo_hacia_ventas(type)` (`IMAGE` → `IMAGEN`).
+Los tipos aún no confirmados no reciben traducciones inventadas ni CHECK local.
 
 ## Dependencias para integrar
 
-- **Mathias / H2-07:** publicar `conversacion`; integrar el adapter de mensajes
-  con el de conversaciones. La redacción previa corresponde al filtro de Hito 3.
-- **David / H2-04:** publicar `devolucion_ref`; el flujo de upload y limpieza de
+- **Mathias / H2-07:** `conversation` y `attachment` ya están incorporados desde
+  `development`; sus FK a `message` se resuelven con los modelos reales. La
+  redacción previa corresponde al filtro de Hito 3.
+- **David / H2-04:** publicar `return_ref`; el flujo de upload y limpieza de
   borradores a 24 h pertenece a SPEC-21 completo.
 - **Sebastian / H2-10:** generar la migración con todos los modelos e instalar
-  `set_actualizado_en()` y su trigger en `evidencia`. `server_onupdate` no crea
+  `set_updated_at()` y su trigger en `evidence`. `server_onupdate` no crea
   el trigger. Autogenerate necesita los modelos relacionados para resolver las FK.
 
 ## Pruebas
@@ -51,5 +59,6 @@ esquemas. Sin esa variable se omite; no lee `.env` ni usa `DATABASE_URL`.
 .venv/Scripts/python.exe -m pytest -m integration -q
 ```
 
-Cada prueba revierte su esquema exclusivo, datos y trigger. Sus padres mínimos
-no sustituyen la prueba conjunta con los modelos reales ni la migración H2-10.
+Cada prueba revierte su esquema exclusivo, datos y trigger. Usa `conversation`
+y `attachment` reales; el padre mínimo `return_ref` no sustituye el modelo de
+David ni la migración H2-10.

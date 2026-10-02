@@ -1,6 +1,6 @@
 """Verificación real H2-06, solo con TEST_DATABASE_URL PostgreSQL 18+.
 
-Padres mínimos y trigger en esquema exclusivo de test; no prueba H2-10.
+Conversation/Attachment reales y return_ref mínimo en esquema exclusivo; no prueba H2-10.
 """
 
 import uuid
@@ -10,82 +10,84 @@ import pytest
 from sqlalchemy import insert, select, text
 from sqlalchemy.exc import IntegrityError
 
-from src.adapters.outbound.persistence.evidencia_postgres_adapter import EvidenciaPostgresAdapter
-from src.adapters.outbound.persistence.mensaje_postgres_adapter import MensajePostgresAdapter
-from src.adapters.outbound.persistence.models import Evidencia, Mensaje
+from src.adapters.outbound.persistence.evidence_postgres_adapter import EvidencePostgresAdapter
+from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.adapters.outbound.persistence.models import Evidence, Message
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 async def crear_conversacion(session, metadata):
-    conversacion_id = uuid.uuid4()
-    await session.execute(insert(metadata.tables["conversacion"]).values(id=conversacion_id))
-    return conversacion_id
+    conversation_id = uuid.uuid4()
+    await session.execute(insert(metadata.tables["conversation"]).values(
+        id=conversation_id, anonymous_sid=f"test_{conversation_id.hex}",
+    ))
+    return conversation_id
 
 
-def nueva_evidencia(conversacion_id, **cambios):
+def nueva_evidencia(conversation_id, **cambios):
     datos = dict(
-        conversacion_id=conversacion_id, tipo="IMAGEN",
-        url="https://ventas.example/evidencia.jpg", nombre_archivo_original="foto.jpg",
-        tamanio_bytes=1024,
+        conversation_id=conversation_id, type="IMAGE",
+        url="https://ventas.example/evidence.jpg", original_file_name="foto.jpg",
+        size_bytes=1024,
     )
     datos.update(cambios)
-    return Evidencia(**datos)
+    return Evidence(**datos)
 
 
 async def test_mensajes_historial_busqueda_defaults_y_aislamiento(postgres_session, persistence_metadata):
-    """SPEC-05 Req. 1: persistencia al retomar; Req. 9: texto ya filtrado."""
+    """SPEC-05 Req. 1: persistencia al retomar; Req. 9: content ya filtrado."""
     session = postgres_session
     a = await crear_conversacion(session, persistence_metadata)
     b = await crear_conversacion(session, persistence_metadata)
-    adapter = MensajePostgresAdapter(session)
+    adapter = MessagePostgresAdapter(session)
     inicio = datetime(2026, 1, 1, tzinfo=timezone.utc)
     for minuto in range(4):
-        await adapter.guardar(Mensaje(
-            conversacion_id=a, rol="CLIENTE", texto="zapatillas [tarjeta oculta]",
-            creado_en=inicio + timedelta(minutes=minuto), bloques=None, argumentos=None,
+        await adapter.guardar(Message(
+            conversation_id=a, role="CUSTOMER", content="zapatillas [tarjeta oculta]",
+            created_at=inicio + timedelta(minutes=minuto), blocks=None, arguments=None,
         ))
-    await adapter.guardar(Mensaje(conversacion_id=b, rol="CLIENTE", texto="otra conversación"))
+    await adapter.guardar(Message(conversation_id=b, role="CUSTOMER", content="otra conversación"))
     mensajes = await adapter.listar_recientes(a, limite=2)
-    assert [m.creado_en for m in mensajes] == [inicio + timedelta(minutes=i) for i in (2, 3)]
-    assert all(m.conversacion_id == a and m.id.version == 7 for m in mensajes)
-    assert all(m.bloques is None and m.argumentos is None for m in mensajes)
+    assert [m.created_at for m in mensajes] == [inicio + timedelta(minutes=i) for i in (2, 3)]
+    assert all(m.conversation_id == a and m.id.version == 7 for m in mensajes)
+    assert all(m.blocks is None and m.arguments is None for m in mensajes)
     encontrados = (await session.execute(
-        select(Mensaje).where(
-            Mensaje.conversacion_id == a,
-            Mensaje.busqueda.op("@@")(text("plainto_tsquery('spanish', 'zapatilla')")),
+        select(Message).where(
+            Message.conversation_id == a,
+            Message.search_vector.op("@@")(text("plainto_tsquery('spanish', 'zapatilla')")),
         )
     )).scalars().all()
     assert len(encontrados) == 4
     # Verifica SQL NULL, no JSON null, en los valores opcionales.
-    assert await session.scalar(text("SELECT count(*) FROM mensaje WHERE bloques IS NULL")) == 5
+    assert await session.scalar(text("SELECT count(*) FROM message WHERE blocks IS NULL")) == 5
 
 
 @pytest.mark.parametrize("cambios", [
-    {"rol": "DESCONOCIDO"},
-    {"rol": "HERRAMIENTA", "herramienta": None},
-    {"tokens_entrada": -1}, {"tokens_salida": -1}, {"latencia_ms": -1},
-    {"bloques": []}, {"argumentos": []},
+    {"role": "DESCONOCIDO"},
+    {"role": "TOOL", "tool_name": None},
+    {"input_tokens": -1}, {"output_tokens": -1}, {"latency_ms": -1},
+    {"blocks": []}, {"arguments": []},
 ])
 async def test_mensaje_rechaza_datos_fuera_del_contrato(postgres_session, persistence_metadata, cambios):
     session = postgres_session
-    conversacion_id = await crear_conversacion(session, persistence_metadata)
-    datos = dict(conversacion_id=conversacion_id, rol="CLIENTE")
+    conversation_id = await crear_conversacion(session, persistence_metadata)
+    datos = dict(conversation_id=conversation_id, role="CUSTOMER")
     datos.update(cambios)
     with pytest.raises(IntegrityError):
         async with session.begin_nested():
-            await MensajePostgresAdapter(session).guardar(Mensaje(**datos))
+            await MessagePostgresAdapter(session).guardar(Message(**datos))
 
 
 @pytest.mark.parametrize("tamanio", [0, 5242881])
 async def test_evidencia_rechaza_tamanio_invalido(postgres_session, persistence_metadata, tamanio):
     """SPEC-21 · Req. 3 · límite de 5 MB (constraint de persistencia)."""
     session = postgres_session
-    conversacion_id = await crear_conversacion(session, persistence_metadata)
+    conversation_id = await crear_conversacion(session, persistence_metadata)
     with pytest.raises(IntegrityError):
         async with session.begin_nested():
-            await EvidenciaPostgresAdapter(session).guardar(
-                nueva_evidencia(conversacion_id, tamanio_bytes=tamanio)
+            await EvidencePostgresAdapter(session).guardar(
+                nueva_evidencia(conversation_id, size_bytes=tamanio)
             )
 
 
@@ -94,23 +96,23 @@ async def test_asociacion_evidencia_idempotencia_aislamiento_y_trigger(postgres_
     session = postgres_session
     a = await crear_conversacion(session, persistence_metadata)
     b = await crear_conversacion(session, persistence_metadata)
-    await session.execute(insert(persistence_metadata.tables["devolucion_ref"]), [
-        {"devolucion_id": "DEV-1"}, {"devolucion_id": "DEV-2"},
+    await session.execute(insert(persistence_metadata.tables["return_ref"]), [
+        {"return_id": "DEV-1"}, {"return_id": "DEV-2"},
     ])
-    adapter = EvidenciaPostgresAdapter(session)
-    evidencia = await adapter.guardar(nueva_evidencia(
-        a, actualizado_en=datetime(2000, 1, 1, tzinfo=timezone.utc), tamanio_bytes=5242880,
+    adapter = EvidencePostgresAdapter(session)
+    evidence = await adapter.guardar(nueva_evidencia(
+        a, updated_at=datetime(2000, 1, 1, tzinfo=timezone.utc), size_bytes=5242880,
     ))
-    assert evidencia.id.version == 7
-    assert await adapter.asociar_devolucion(evidencia.id, b, "DEV-1") is None
+    assert evidence.id.version == 7
+    assert await adapter.asociar_devolucion(evidence.id, b, "DEV-1") is None
     assert len(await adapter.listar_borrador(a)) == 1
-    asociada = await adapter.asociar_devolucion(evidencia.id, a, "DEV-1")
-    assert asociada.devolucion_id == "DEV-1"
-    assert asociada.actualizado_en.year > 2000
-    assert asociada.tamanio_bytes == 5242880
+    asociada = await adapter.asociar_devolucion(evidence.id, a, "DEV-1")
+    assert asociada.return_id == "DEV-1"
+    assert asociada.updated_at.year > 2000
+    assert asociada.size_bytes == 5242880
     assert await adapter.listar_borrador(a) == []
-    assert (await adapter.asociar_devolucion(evidencia.id, a, "DEV-1")).devolucion_id == "DEV-1"
-    assert await adapter.asociar_devolucion(evidencia.id, a, "DEV-2") is None
+    assert (await adapter.asociar_devolucion(evidence.id, a, "DEV-1")).return_id == "DEV-1"
+    assert await adapter.asociar_devolucion(evidence.id, a, "DEV-2") is None
     assert await adapter.asociar_devolucion(uuid.uuid4(), a, "DEV-1") is None
 
 
@@ -118,32 +120,32 @@ async def test_fk_mensaje_evidencia_y_restrict_devolucion(postgres_session, pers
     session = postgres_session
     with pytest.raises(IntegrityError):
         async with session.begin_nested():
-            await MensajePostgresAdapter(session).guardar(
-                Mensaje(conversacion_id=uuid.uuid4(), rol="CLIENTE")
+            await MessagePostgresAdapter(session).guardar(
+                Message(conversation_id=uuid.uuid4(), role="CUSTOMER")
             )
     with pytest.raises(IntegrityError):
         async with session.begin_nested():
-            await EvidenciaPostgresAdapter(session).guardar(nueva_evidencia(uuid.uuid4()))
-    conversacion_id = await crear_conversacion(session, persistence_metadata)
-    adapter = EvidenciaPostgresAdapter(session)
-    evidencia = await adapter.guardar(nueva_evidencia(conversacion_id, tamanio_bytes=1))
+            await EvidencePostgresAdapter(session).guardar(nueva_evidencia(uuid.uuid4()))
+    conversation_id = await crear_conversacion(session, persistence_metadata)
+    adapter = EvidencePostgresAdapter(session)
+    evidence = await adapter.guardar(nueva_evidencia(conversation_id, size_bytes=1))
     with pytest.raises(IntegrityError):
         async with session.begin_nested():
-            await adapter.asociar_devolucion(evidencia.id, conversacion_id, "INEXISTENTE")
-    await session.execute(insert(persistence_metadata.tables["devolucion_ref"]).values(devolucion_id="DEV-1"))
-    await adapter.asociar_devolucion(evidencia.id, conversacion_id, "DEV-1")
+            await adapter.asociar_devolucion(evidence.id, conversation_id, "INEXISTENTE")
+    await session.execute(insert(persistence_metadata.tables["return_ref"]).values(return_id="DEV-1"))
+    await adapter.asociar_devolucion(evidence.id, conversation_id, "DEV-1")
     with pytest.raises(IntegrityError):
         async with session.begin_nested():
-            await session.execute(text("DELETE FROM devolucion_ref WHERE devolucion_id = 'DEV-1'"))
+            await session.execute(text("DELETE FROM return_ref WHERE return_id = 'DEV-1'"))
 
 
 async def test_borrado_conversacion_cascada(postgres_session, persistence_metadata):
     session = postgres_session
-    conversacion_id = await crear_conversacion(session, persistence_metadata)
-    await MensajePostgresAdapter(session).guardar(Mensaje(conversacion_id=conversacion_id, rol="CLIENTE"))
-    await EvidenciaPostgresAdapter(session).guardar(nueva_evidencia(conversacion_id))
-    await session.execute(persistence_metadata.tables["conversacion"].delete().where(
-        persistence_metadata.tables["conversacion"].c.id == conversacion_id
+    conversation_id = await crear_conversacion(session, persistence_metadata)
+    await MessagePostgresAdapter(session).guardar(Message(conversation_id=conversation_id, role="CUSTOMER"))
+    await EvidencePostgresAdapter(session).guardar(nueva_evidencia(conversation_id))
+    await session.execute(persistence_metadata.tables["conversation"].delete().where(
+        persistence_metadata.tables["conversation"].c.id == conversation_id
     ))
-    assert await session.scalar(text("SELECT count(*) FROM mensaje")) == 0
-    assert await session.scalar(text("SELECT count(*) FROM evidencia")) == 0
+    assert await session.scalar(text("SELECT count(*) FROM message")) == 0
+    assert await session.scalar(text("SELECT count(*) FROM evidence")) == 0
