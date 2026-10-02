@@ -8,6 +8,11 @@ except ImportError:
     # H2-01: base sin modelos aún; H2-03..H2-07 agregarán aquí sus imports.
     __all__ = ["Base"]
 
-# H2-03..H2-07 agregarán aquí: conversacion, mensaje, carrito, item_carrito,
+from src.adapters.outbound.persistence.models.evidencia import Evidencia
+from src.adapters.outbound.persistence.models.mensaje import Mensaje
+
+__all__ += ["Mensaje", "Evidencia"]
+
+# H2-03..H2-07 agregarán aquí: conversacion, carrito, item_carrito,
 # checkout, intento_pago, pedido_ref, notificacion, reclamo_ref, devolucion_ref,
-# evidencia, outbox, adjunto (SPEC-23). Hoy esos ficheros existen pero están vacíos.
+# outbox, adjunto (SPEC-23). Hoy esos ficheros existen pero están vacíos.
