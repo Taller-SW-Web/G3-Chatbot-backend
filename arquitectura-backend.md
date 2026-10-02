@@ -197,19 +197,19 @@ BFF: el frontend solo habla con este backend; los tokens de servicio nunca van a
 
 ## 13. Trazabilidad y gaps
 
-SPEC-01..04 → `sesion/contacto routers, gestionar_sesion, jwt/rate/guard, seguridad/introspeccion clients, sms simulado, local_phone_verification model`. 
+SPEC-01..04 → `sesion/contacto routers, gestionar_sesion, jwt/rate/guard, seguridad/introspeccion clients, sms simulado, local_phone_verification model`.
 
-SPEC-05 → motor completo. 
+SPEC-05 → motor completo.
 
-SPEC-06..09 → `catalogo router, gestionar_catalogo, productos/inventario/evaluacion clients`. 
+SPEC-06..09 → `catalogo router, gestionar_catalogo, productos/inventario/evaluacion clients`.
 
-SPEC-10,11,13 → `carrito router, gestionar_carrito, inventario/cupones clients, carrito/item models`. 
+SPEC-10,11,13 → `carrito router, gestionar_carrito, inventario/cupones clients, carrito/item models`.
 
-SPEC-12,14 → `envio/checkout routers, gestionar_checkout, despacho client, checkout/intento models, payment simulator`. 
+SPEC-12,14 → `envio/checkout routers, gestionar_checkout, despacho client, checkout/intento models, payment simulator`.
 
-SPEC-15,16 → `pedidos router, gestionar_pedido, ventas client, pedido/notificacion/outbox models, worker+smtp`. 
+SPEC-15,16 → `pedidos router, gestionar_pedido, ventas client, pedido/notificacion/outbox models, worker+smtp`.
 
-SPEC-17,18 → `pedidos router, gestionar_pedido/seguimiento, ventas/despacho clients, service token`. 
+SPEC-17,18 → `pedidos router, gestionar_pedido/seguimiento, ventas/despacho clients, service token`.
 
 SPEC-19..22 → `reclamos/evidencias/devoluciones routers, gestionar_postventa/evidencias, ventas client, reclamo/devolucion/evidencia models`.
 
