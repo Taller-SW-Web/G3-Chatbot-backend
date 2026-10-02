@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from src.infrastructure.db.connection import Base  # noqa: E402
 
 # Importa modelos para que autogenerate los detecte (convención models/__init__.py).
-# Hoy los 13 están vacíos salvo celular_verificacion (H2-02); H2-10 generará 0001 cuando estén todos.
+# Hoy las 14 tablas (nombres en inglés) tienen modelo vacío salvo 3 pobladas: local_phone_verification (H2-02), conversation y attachment (H2-07); H2-10 generará 0001 cuando estén todos.
 try:
     import src.adapters.outbound.persistence.models  # noqa: F401,E402
 except Exception:

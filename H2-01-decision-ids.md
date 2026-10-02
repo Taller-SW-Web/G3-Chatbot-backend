@@ -14,10 +14,10 @@
 
 ## Regla snapshot jsonb
 - Snapshots de módulos externos en `jsonb` con nombres reales del contrato (`product_id`, `precio_regular`, `channel_id`, etc.).
-- Aplica a `item_carrito`, `pedido_ref`, `reclamo_ref`, `devolucion_ref` (ver `docs/modelo-datos.md`).
-- Enums como `text + CHECK`, nunca `ENUM` Postgres. `timestamptz` UTC con `creado_en DEFAULT now()`.
+- Aplica a `cart_item`, `order_ref`, `claim_ref`, `return_ref` (ver `docs/modelo-datos.md`).
+- Enums como `text + CHECK`, nunca `ENUM` Postgres. `timestamptz` UTC con `created_at DEFAULT now()`.
 
 ## Versionado migraciones
 - `alembic.ini`: `script_location = src/infrastructure/db/migrations`, `file_template = %%(rev)s_%%(slug)s`.
 - Primera migración `0001`, luego `0002`, ... con `--rev-id` explícito. Nunca editar/renumerar mergeadas.
-- Solo Sebastian ejecuta `alembic revision --autogenerate --rev-id 0001` en H2-10 cuando los 13 modelos estén en `development`.
+- Solo Sebastian ejecuta `alembic revision --autogenerate --rev-id 0001` en H2-10 cuando los 14 modelos estén en `development`.
