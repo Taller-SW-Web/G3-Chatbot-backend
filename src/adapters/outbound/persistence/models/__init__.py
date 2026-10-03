@@ -23,5 +23,12 @@ from src.adapters.outbound.persistence.models.outbox import Outbox
 
 __all__ += ["Cart", "CartItem", "OrderRef", "Outbox"]
 
-# H2-04 agregara aqui: checkout, payment_attempt,
-# notification, claim_ref y return_ref.
+# H2-04 (David): checkout, payment_attempt, notification, claim_ref y
+# return_ref (SPEC-12, 14, 16, 19 a 22).
+from src.adapters.outbound.persistence.models.checkout import Checkout
+from src.adapters.outbound.persistence.models.payment_attempt import PaymentAttempt
+from src.adapters.outbound.persistence.models.notification import Notification
+from src.adapters.outbound.persistence.models.claim_ref import ClaimRef
+from src.adapters.outbound.persistence.models.return_ref import ReturnRef
+
+__all__ += ["Checkout", "PaymentAttempt", "Notification", "ClaimRef", "ReturnRef"]
