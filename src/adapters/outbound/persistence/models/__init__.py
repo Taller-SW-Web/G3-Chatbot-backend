@@ -15,5 +15,13 @@ from src.adapters.outbound.persistence.models.message import Message
 
 __all__ += ["Message", "Evidence"]
 
-# H2-03/H2-04 agregarán aquí: cart, cart_item, checkout, payment_attempt,
-# order_ref, notification, claim_ref, return_ref y outbox.
+# H2-03 (Sonny): cart, cart_item, order_ref y outbox (SPEC-10, 11, 15).
+from src.adapters.outbound.persistence.models.cart import Cart
+from src.adapters.outbound.persistence.models.cart_item import CartItem
+from src.adapters.outbound.persistence.models.order_ref import OrderRef
+from src.adapters.outbound.persistence.models.outbox import Outbox
+
+__all__ += ["Cart", "CartItem", "OrderRef", "Outbox"]
+
+# H2-04 agregara aqui: checkout, payment_attempt,
+# notification, claim_ref y return_ref.
