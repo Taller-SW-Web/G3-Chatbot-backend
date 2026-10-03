@@ -31,7 +31,7 @@ G3-Chatbot-backend/
 │   │   ├── __init__.py
 │   │   ├── inbound/http/ (12 routers + dependencies/3)
 │   │   ├── inbound/websocket/ (1)
-│   │   └── outbound/ (auth/1, http_clients/8, nlp/3, notificaciones/2, pagos/1, persistence/7+models/13)
+│   │   └── outbound/ (auth/1, http_clients/8, nlp/3, notificaciones/2, pagos/1, persistence/9+models/14)
 │   ├── application/ (use_cases/10, tools/2, dto/2)
 │   ├── domain/ (entities/8, services/9, value_objects/2)
 │   ├── infrastructure/ (config/3, db/connection+migrations, worker/3, prompts/1, evals, main.py)
@@ -43,14 +43,14 @@ G3-Chatbot-backend/
 
 | Fichero | Propósito | Origen | Estado |
 |---|---|---|---|
-| `alembic.ini` | Config migraciones: `sqlalchemy.url`, `script_location=src/infrastructure/db/migrations` | `README §1.5` SQLAlchemy+Alembic, `modelo-datos.md` 13 tablas | Vacío, rellenar con env en fase 1 |
+| `alembic.ini` | Config migraciones: `sqlalchemy.url`, `script_location=src/infrastructure/db/migrations` | `README §1.5` SQLAlchemy+Alembic, `modelo-datos.md` 14 tablas | Vacío, rellenar con env en fase 1 |
 | `requirements.txt` | Deps `fastapi, pydantic v2, sqlalchemy, alembic, httpx, pyjwt, apscheduler, pytest, respx` | `README §1.5` | Vacío |
 | `src/infrastructure/main.py` | App FastAPI + lifespan (routers + worker) | `c4.md L2` BFF | Vacío |
 | `src/infrastructure/config/settings.py` | URLs base `SEG/PRO/VEN/DES`, LLM, SMTP, JWKS, timeouts | `ADR-0017`, `contratos §3` | Vacío |
 | `src/infrastructure/config/container.py` | DI: cablea casos, clientes, repos, providers | `ADR-0002` | Vacío |
 | `src/infrastructure/config/pesos_por_categoria.yaml` | Parche peso carrito hasta cerrar A6 | SPEC-12 Req.4, A6 | Vacío |
 | `src/infrastructure/db/connection.py` | Engine/sesión SQLAlchemy async | `modelo-datos.md` | Vacío |
-| `src/infrastructure/db/migrations/` + `versions/` | Migraciones 13 tablas | `modelo-datos.md` | Solo `.gitkeep` |
+| `src/infrastructure/db/migrations/` + `versions/` | Migraciones 14 tablas | `modelo-datos.md` | Solo `.gitkeep` |
 | `src/infrastructure/worker/outbox_worker.py, jobs.py, scheduler.py` | `OutboxWorker NOTIFICAR_PAGO/SOLICITAR_ANULACION/ENVIAR_CORREO` + `ExpirarCheckouts 1min, limpieza carritos 7d, evidencias 24h` | SPEC-14,15,16,11,21, `ADR-0011` | Vacíos |
 | `src/infrastructure/prompts/sistema.md` | Prompt sistema versionado | SPEC-05 RNF | Vacío |
 | `src/infrastructure/evals/` | `pytest -m evals >=90%` 120 frases | SPEC-05 RNF | Solo `.gitkeep` |
@@ -84,7 +84,7 @@ Qué NO hacen los routers: sin reglas de negocio, sin httpx, sin SQL. Solo valid
 
 | Fichero | Propósito | Origen | Estado |
 |---|---|---|---|
-| `application/use_cases/gestionar_conversacion_use_case.py` | Crear/listar/buscar/historial `cliente_id/chat_sid` | SPEC-05, `ADR-0018` | Vacío (creado fase 0) |
+| `application/use_cases/gestionar_conversacion_use_case.py` | Crear/listar/buscar/historial `customer_id/chat_sid` | SPEC-05, `ADR-0018` | Vacío (creado fase 0) |
 | `application/use_cases/interpretar_responder_use_case.py` | Ciclo LLM-tool-LLM max 5 it, prompt+resumen+12 msgs, publica WS | SPEC-05 Req.3,4,7 | Vacío (renombrado) |
 | `application/use_cases/gestionar_sesion_use_case.py` | SPEC-01..04: `SesionService.post_login`, fusiona carrito, `accionPendiente` | SPEC-01..04, hueco `ADR-0018` | Vacío (renombrado) |
 | `application/use_cases/gestionar_catalogo_use_case.py` | SPEC-06..09: `CatalogoService, Normalizador, Recomendacion, CrossSell, Promociones, PricingAdapter, VarianteResolver, StockValidator, Similares` | SPEC-06..09 | Vacío (renombrado) |
@@ -113,8 +113,8 @@ Los casos orquestan: piden datos a puertos, aplican reglas de `domain/services`,
 | `adapters/outbound/pagos/payment_simulator_adapter.py` + `ports/outbound/payment_gateway_port.py` | Simulador determinista `SIM-...`, nunca persiste PAN/CVV | SPEC-14, `ADR-0014` | Vacíos |
 | `adapters/outbound/notificaciones/smtp_email_adapter.py` + `ports/outbound/email_sender_port.py` | Jinja2 `CONFIRMACION+REENVIO max2`, reintentos SMTP max3 | SPEC-16 | Vacíos |
 | `adapters/outbound/notificaciones/simulated_sms_adapter.py` + `ports/outbound/sms_sender_port.py` | OTP 6 díg 5 min 3 int | SPEC-04, `ADR-0015` | Vacíos |
-| `adapters/outbound/persistence/conversacion_postgres_adapter.py, carrito_postgres_adapter.py, checkout_postgres_adapter.py, outbox_postgres_adapter.py, pedido/producto/cliente_postgres_adapter.py` + `ports/outbound/cliente_repository_port.py, conversacion_state_port.py` | Persistencia 13 tablas; `checkout+intento+outbox` misma transacción | `modelo-datos.md`, SPEC-15 Req.3 | Vacíos |
-| `adapters/outbound/persistence/models/` 13: `conversacion, mensaje, celular_verificacion, carrito, item_carrito, checkout, intento_pago, pedido_ref, notificacion, reclamo_ref, devolucion_ref, evidencia, outbox` | Tablas propias, solo refs externas | `modelo-datos.md` | Vacíos |
+| `adapters/outbound/persistence/conversation_postgres_adapter.py, attachment_postgres_adapter.py, local_phone_verification_postgres_adapter.py, carrito_postgres_adapter.py, checkout_postgres_adapter.py, outbox_postgres_adapter.py, pedido/producto/cliente_postgres_adapter.py` + `ports/outbound/cliente_repository_port.py, conversacion_state_port.py` | Persistencia 14 tablas (nombres de tabla y columna en inglés); `checkout+intento+outbox` misma transacción | `modelo-datos.md`, SPEC-15 Req.3 | Vacíos |
+| `adapters/outbound/persistence/models/` 14 (tablas `conversation, message, local_phone_verification, cart, cart_item, checkout, payment_attempt, order_ref, notification, claim_ref, return_ref, evidence, attachment, outbox`; archivos pobladas con nombre en inglés: `conversation.py, attachment.py, local_phone_verification.py`; los vacíos conservan por ahora el nombre en español: `mensaje, carrito, item_carrito, checkout, intento_pago, pedido_ref, notificacion, reclamo_ref, devolucion_ref, evidencia, outbox`) | Tablas propias, solo refs externas | `modelo-datos.md` | Vacíos |
 | `ports/inbound/chatbot_service_port.py` | Contrato único REST+WS → casos | `motor-conversacion/design.md` | Vacío |
 
 Eliminados fase 0 por duplicados: `pasarela_pago_port, nlp_engine_port, notificador_port, pasarela_pago_adapter, email_sms_adapter`.
@@ -128,7 +128,7 @@ Eliminados fase 0 por duplicados: `pasarela_pago_port, nlp_engine_port, notifica
 | `domain/services/output_validator.py` | Compara montos texto vs tools, corrige en `fin` | SPEC-05 Req.7 | Vacío |
 | `domain/services/degraded_mode.py` | Keywords+menú si LLM >15 s/falla | SPEC-05 Req.10 | Vacío |
 | `domain/services/totales_calculator.py, snapshot_builder.py, estado_mapper.py, seguimiento_mapper.py, politica_descuento.py, regla_validacion_carrito.py` | Reglas comercio | SPEC-11,15,17,18 | Vacías |
-| `domain/value_objects/estado_conversacion.py, intencion.py` | `ACTIVA/ARCHIVADA/CERRADA`, intenciones | SPEC-05, `flujos (a)` | Vacías |
+| `domain/value_objects/estado_conversacion.py, intencion.py` | `ACTIVE/ARCHIVED/CLOSED`, intenciones | SPEC-05, `flujos (a)` | Vacías |
 
 `domain/` no importa FastAPI, httpx, SQLAlchemy ni variables de entorno. Si un fichero necesita la hora, recibe el reloj por parámetro; si necesita un dato externo, lo recibe ya cargado desde el caso.
 
@@ -138,7 +138,7 @@ Caso: visitante escribe "busco zapatillas running talla 42" en `ChatPage`.
 
 1. `POST /chat/conversaciones/{id}/mensajes` → `adapters/inbound/http/chatbot_router.py`. Aplica `dependencies/rate_limiter.py` (20/min) y `jwt_validator.py` (opcional sin token). Responde `202 {mensajeId}` sin esperar al LLM.
 2. El router invoca `ports/inbound/chatbot_service_port.py` → `application/use_cases/interpretar_responder_use_case.py`.
-3. El caso carga historial vía `adapters/outbound/persistence/conversacion_postgres_adapter.py` (últimos 12 + `resumen`) y pasa el texto por `domain/services/sensitive_data_filter.py` antes de persistirlo en `mensaje.py`.
+3. El caso carga historial vía `adapters/outbound/persistence/conversation_postgres_adapter.py` (últimos 12 + `summary`) y pasa el texto por `domain/services/sensitive_data_filter.py` antes de persistirlo en `mensaje.py`.
 4. Llama a `ports/outbound/llm_provider_port.py` (impl. `adapters/outbound/nlp/openai_nlp_adapter.py` o `claude_nlp_adapter.py`, timeout 15 s). El LLM devuelve tool call `buscar_productos`.
 5. `application/tools/tool_registry.py` valida args Pydantic + sesión (`requiere_sesion`) y ejecuta el handler = `gestionar_catalogo_use_case.py`, que usa `http_clients/productos_api_adapter.py` (4 s) e `inventario_api_adapter.py` (3 s).
 6. Con el resultado, el caso re-llama al LLM para redactar, publica `token*` y `bloque CARRUSEL_PRODUCTOS` por `adapters/inbound/websocket/chatbot_ws_adapter.py`, y `domain/services/output_validator.py` corrige montos en `fin`.
@@ -149,8 +149,8 @@ Caso: visitante escribe "busco zapatillas running talla 42" en `ChatPage`.
 Caso: cliente verificado pulsa "Confirmar y pagar S/ 299.90".
 
 1. `POST /checkout` → `adapters/inbound/http/checkout_router.py` con `Idempotency-Key`. `dependencies/checkout_guard.py` exige celular verificado (403 si no).
-2. `application/use_cases/gestionar_checkout_use_case.py` verifica en orden SPEC-14: sesión → celular (`models/celular_verificacion.py`) → carrito revalidado (`gestionar_carrito_use_case.py` + `inventario_api_adapter.py`) → dirección/cotización (`adapters/outbound/http_clients/despacho_api_adapter.py`) → cupón (`cupones_api_adapter.py`).
-3. Crea `checkout` PENDIENTE 15 min + `pedido CREADO` en Ventas (`ventas_api_adapter.py`) + tarea outbox en **la misma transacción** (`checkout_postgres_adapter.py` + `outbox_postgres_adapter.py` + `models/checkout|intento_pago|outbox`).
+2. `application/use_cases/gestionar_checkout_use_case.py` verifica en orden SPEC-14: sesión → celular (`models/local_phone_verification.py`) → carrito revalidado (`gestionar_carrito_use_case.py` + `inventario_api_adapter.py`) → dirección/cotización (`adapters/outbound/http_clients/despacho_api_adapter.py`) → cupón (`cupones_api_adapter.py`).
+3. Crea `checkout` `PENDING_PAYMENT` 15 min + `pedido CREADO` en Ventas (`ventas_api_adapter.py`) + tarea outbox en **la misma transacción** (`checkout_postgres_adapter.py` + `outbox_postgres_adapter.py` + `models/checkout|intento_pago|outbox`).
 4. `POST /checkout/{id}/pago` → introspección (`introspeccion_api_adapter.py` 3 s) → `payment_simulator_adapter.py` (`SIM-...`, guarda solo marca+ult4 en `models/intento_pago.py`).
 5. APROBADO → `infrastructure/worker/outbox_worker.py` notifica a Ventas y encola correo (`smtp_email_adapter.py`, plantilla confirmación, `models/notificacion.py`). RECHAZADO x3 → FALLIDO + anulación `PAGO_NO_COMPLETADO`. `jobs.py/scheduler.py` expiran checkouts cada minuto.
 
@@ -187,7 +187,7 @@ Checklist: ¿el caso importa algo de `adapters` o `infrastructure`? Debe respond
 | L2 App `Backend API` | `adapters/inbound/, application/, domain/, ports/, infrastructure/config, infrastructure/main.py` |
 | L2 App `Worker` | `infrastructure/worker/` |
 | L2 Store `DB` | `adapters/outbound/persistence/, infrastructure/db/` |
-| L3a Motor | `chatbot_router, chatbot_ws_adapter, ChatbotServicePort, gestionar_conversacion, interpretar_responder, tools/, sensitive/output/degraded, llm_provider, conversacion_postgres, prompts/evals` |
+| L3a Motor | `chatbot_router, chatbot_ws_adapter, ChatbotServicePort, gestionar_conversacion, interpretar_responder, tools/, sensitive/output/degraded, llm_provider, conversation_postgres, prompts/evals` |
 | L3b Comercio | 11 routers recurso + `gestionar_sesion/catalogo/carrito/checkout/pedido/seguimiento/postventa/evidencias`, simuladores, 8 clientes + service token, repos+outbox |
 | L4 | Link a cada ruta `src/...` de este archivo |
 
@@ -197,20 +197,20 @@ BFF: el frontend solo habla con este backend; los tokens de servicio nunca van a
 
 ## 13. Trazabilidad y gaps
 
-SPEC-01..04 → `sesion/contacto routers, gestionar_sesion, jwt/rate/guard, seguridad/introspeccion clients, sms simulado, celular_verificacion model`. 
+SPEC-01..04 → `sesion/contacto routers, gestionar_sesion, jwt/rate/guard, seguridad/introspeccion clients, sms simulado, local_phone_verification model`.
 
-SPEC-05 → motor completo. 
+SPEC-05 → motor completo.
 
-SPEC-06..09 → `catalogo router, gestionar_catalogo, productos/inventario/evaluacion clients`. 
+SPEC-06..09 → `catalogo router, gestionar_catalogo, productos/inventario/evaluacion clients`.
 
-SPEC-10,11,13 → `carrito router, gestionar_carrito, inventario/cupones clients, carrito/item models`. 
+SPEC-10,11,13 → `carrito router, gestionar_carrito, inventario/cupones clients, carrito/item models`.
 
-SPEC-12,14 → `envio/checkout routers, gestionar_checkout, despacho client, checkout/intento models, payment simulator`. 
+SPEC-12,14 → `envio/checkout routers, gestionar_checkout, despacho client, checkout/intento models, payment simulator`.
 
-SPEC-15,16 → `pedidos router, gestionar_pedido, ventas client, pedido/notificacion/outbox models, worker+smtp`. 
+SPEC-15,16 → `pedidos router, gestionar_pedido, ventas client, pedido/notificacion/outbox models, worker+smtp`.
 
-SPEC-17,18 → `pedidos router, gestionar_pedido/seguimiento, ventas/despacho clients, service token`. 
+SPEC-17,18 → `pedidos router, gestionar_pedido/seguimiento, ventas/despacho clients, service token`.
 
 SPEC-19..22 → `reclamos/evidencias/devoluciones routers, gestionar_postventa/evidencias, ventas client, reclamo/devolucion/evidencia models`.
 
-Gaps fase 1: rellenar `settings/container/connection/main`, `alembic` inicial 13 tablas, 1 test por escenario (`unit/integration/evals`), cerrar A4,A5,A6,A7,A11,A12. Deuda: `conversacion_state_port` renombrar a `*_repository_port`.
+Gaps fase 1: rellenar `settings/container/connection/main`, `alembic` inicial 14 tablas, 1 test por escenario (`unit/integration/evals`), cerrar A4,A5,A6,A7,A11,A12. Deuda: `conversacion_state_port` renombrar a `*_repository_port`.
