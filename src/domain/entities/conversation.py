@@ -9,6 +9,7 @@ class Conversation:
     id: uuid.UUID
     title: str | None
     last_message_at: datetime
+    summary: str | None = None  # rolling summary of older messages, fed to the LLM (ADR-0005)
 
 
 @dataclass(frozen=True)

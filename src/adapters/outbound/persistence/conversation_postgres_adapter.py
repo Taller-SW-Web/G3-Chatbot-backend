@@ -5,7 +5,7 @@ transaccion la controla el caso de uso.
 """
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.persistence.models.conversation import Conversation
@@ -24,7 +24,9 @@ def _owner_clause(owner: CallerIdentity):
 
 
 def _to_entity(row: Conversation) -> ConversationEntity:
-    return ConversationEntity(id=row.id, title=row.title, last_message_at=row.last_message_at)
+    return ConversationEntity(
+        id=row.id, title=row.title, last_message_at=row.last_message_at, summary=row.summary
+    )
 
 
 class ConversationPostgresAdapter:
@@ -107,3 +109,20 @@ class ConversationPostgresAdapter:
         res = await self.session.execute(stmt)
         row = res.scalar_one_or_none()
         return _to_entity(row) if row is not None else None
+
+    async def assign_title_if_missing(self, conversation_id: uuid.UUID, title: str) -> bool:
+        stmt = (
+            update(Conversation)
+            .where(Conversation.id == conversation_id, Conversation.title.is_(None))
+            .values(title=title)
+        )
+        res = await self.session.execute(stmt)
+        return res.rowcount == 1
+
+    async def touch(self, conversation_id: uuid.UUID) -> None:
+        stmt = (
+            update(Conversation)
+            .where(Conversation.id == conversation_id)
+            .values(last_message_at=func.now(), updated_at=func.now())
+        )
+        await self.session.execute(stmt)

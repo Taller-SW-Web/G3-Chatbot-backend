@@ -27,6 +27,8 @@ class Settings:
     llm_timeout_seconds: float = 15.0
     llm_api_key: str | None = None
     llm_vision_enabled: bool = True
+    # Name the assistant introduces itself with (SPEC-05 Req. 12; provisional value from the spec).
+    assistant_name: str = "Botleta"
 
 
 @lru_cache
@@ -40,4 +42,5 @@ def get_settings() -> Settings:
         llm_timeout_seconds=_number("LLM_TIMEOUT_SECONDS", "15", float, minimum=0.1),
         llm_api_key=os.getenv("LLM_API_KEY", "").strip() or None,
         llm_vision_enabled=os.getenv("LLM_VISION_ENABLED", "true").strip().lower() != "false",
+        assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
     )

@@ -22,3 +22,11 @@ class ConversationRepositoryPort(Protocol):
     ) -> Conversation | None:
         """None when the conversation does not exist or belongs to someone else."""
         ...
+
+    async def assign_title_if_missing(self, conversation_id: uuid.UUID, title: str) -> bool:
+        """Set the title only while it is still empty. True when this call set it."""
+        ...
+
+    async def touch(self, conversation_id: uuid.UUID) -> None:
+        """Move `last_message_at` to now (sidebar ordering)."""
+        ...
