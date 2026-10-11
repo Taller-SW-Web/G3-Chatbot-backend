@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.persistence.models.message import Message
+from src.domain.entities.message import Message as MessageEntity
+from src.domain.entities.message import MessageRole
 
 
 class MessagePostgresAdapter:
@@ -36,3 +38,18 @@ class MessagePostgresAdapter:
         )
         result = await self.session.execute(stmt)
         return list(reversed(result.scalars().all()))
+
+    # Implements MessageRepositoryPort (English name, domain objects).
+    async def list_recent(self, conversation_id: uuid.UUID, *, limit: int) -> list[MessageEntity]:
+        rows = await self.listar_recientes(conversation_id, limite=limit)
+        return [
+            MessageEntity(
+                id=r.id,
+                conversation_id=r.conversation_id,
+                role=MessageRole(r.role),
+                text=r.content or "",
+                blocks=r.blocks,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
