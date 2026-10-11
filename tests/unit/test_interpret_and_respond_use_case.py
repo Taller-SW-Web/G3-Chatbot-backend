@@ -244,7 +244,7 @@ async def test_provider_failure_keeps_the_customer_message_and_replies_degraded(
     events = await run(uc, conv, "zapatillas")
     assert kinds(events) == [MessageAcceptedEvent, DegradedEvent, BlockEvent, FinalEvent]
     assert events[1] == DegradedEvent(reason)
-    assert events[2].block["type"] == "QUICK_ACTIONS" and len(events[2].block["actions"]) == 6
+    assert events[2].block["tipo"] == "ACCIONES_RAPIDAS" and len(events[2].block["acciones"]) == 6
     assert events[-1].message.text == DEGRADED_TEXT
     assert [r["text"] for r in messages.rows] == ["zapatillas", DEGRADED_TEXT]
     assert uow.rollbacks == 0 and uow.commits == 2
@@ -391,7 +391,7 @@ async def test_degraded_reply_keeps_blocks_of_executed_tools_before_the_quick_ac
     events = await run(uc, conv)
     streamed = [e.block for e in events if isinstance(e, BlockEvent)]
     stored = messages.by_role(MessageRole.ASSISTANT)[0]["blocks"]["blocks"]
-    assert streamed == stored and stored[0] == block and stored[1]["type"] == "QUICK_ACTIONS"
+    assert streamed == stored and stored[0] == block and stored[1]["tipo"] == "ACCIONES_RAPIDAS"
 
 
 @pytest.mark.asyncio

@@ -67,13 +67,13 @@ TOOL_RESULT_MAX_CHARS = 6000  # provisional cap on what one tool result adds to 
 
 # Spec text of the degraded reply and its quick actions (SPEC-05 Req. 10).
 DEGRADED_TEXT = "Estoy teniendo problemas para entenderte, pero puedes usar estas opciones"
-QUICK_ACTIONS = (
-    "Buscar por categoría",
-    "Ofertas",
-    "Carrito",
-    "Mis pedidos",
-    "Mis reclamos",
-    "Mis devoluciones",
+QUICK_ACTIONS = (  # (action id, label); ids are provisional, the spec only names VER_OFERTAS
+    ("BUSCAR_POR_CATEGORIA", "Buscar por categoría"),
+    ("VER_OFERTAS", "Ofertas"),
+    ("VER_CARRITO", "Carrito"),
+    ("MIS_PEDIDOS", "Mis pedidos"),
+    ("MIS_RECLAMOS", "Mis reclamos"),
+    ("MIS_DEVOLUCIONES", "Mis devoluciones"),
 )
 # Provisional copy: the spec only gives the text for the persistent-validation-error case as an example.
 ITERATION_LIMIT_TEXT = (
@@ -316,7 +316,12 @@ class InterpretAndRespondUseCase:
         if reason == "invalid_arguments":
             return INVALID_ARGUMENTS_TEXT, []
         text = ITERATION_LIMIT_TEXT if reason == "iteration_limit" else DEGRADED_TEXT
-        return text, [{"type": "QUICK_ACTIONS", "actions": [{"label": a} for a in QUICK_ACTIONS]}]
+        block = {
+            "id": str(uuid.uuid4()),
+            "tipo": "ACCIONES_RAPIDAS",
+            "acciones": [{"id": action_id, "etiqueta": label} for action_id, label in QUICK_ACTIONS],
+        }
+        return text, [block]
 
     async def _persist_reply(
         self, conversation_id: uuid.UUID, text: str, blocks: list[dict[str, Any]], turn: "_Turn", started: float

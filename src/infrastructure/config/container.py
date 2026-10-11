@@ -1,4 +1,7 @@
 """Minimal dependency wiring (ADR-0002): builds use cases from a request-scoped DB session."""
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +15,7 @@ from src.adapters.outbound.tools.empty_tool_adapter import EmptyToolAdapter
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.infrastructure.config.settings import Settings, get_settings
+from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
 from src.ports.outbound.llm_provider_port import LLMProvider
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
@@ -47,9 +51,7 @@ def provide_tool_executor() -> ToolExecutorPort:
     return EmptyToolAdapter()
 
 
-def provide_interpret_and_respond(
-    session: AsyncSession = Depends(get_session),
-) -> InterpretAndRespondUseCase:
+def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUseCase:
     settings = get_settings()
     return InterpretAndRespondUseCase(
         conversations=ConversationPostgresAdapter(session),
@@ -61,3 +63,17 @@ def provide_interpret_and_respond(
         llm_timeout_seconds=settings.llm_timeout_seconds,
         # sanitize_text stays identity until the SensitiveDataFilter of the tools module is merged.
     )
+
+
+def provide_interpret_and_respond(
+    session: AsyncSession = Depends(get_session),
+) -> InterpretAndRespondUseCase:
+    return build_interpret_and_respond(session)
+
+
+@asynccontextmanager
+async def provide_turn_scope() -> AsyncIterator[InterpretAndRespondUseCase]:
+    """One database session per use: a WebSocket outlives any request-scoped session, so each turn opens its own."""
+    connection.get_engine()
+    async with connection.AsyncSessionLocal() as session:
+        yield build_interpret_and_respond(session)
