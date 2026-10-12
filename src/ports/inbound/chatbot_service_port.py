@@ -18,6 +18,10 @@ class ChatbotServicePort(Protocol):
         self, caller: CallerIdentity | None, page: int
     ) -> list[ConversationSummary]: ...
 
+    async def search_conversations(
+        self, caller: CallerIdentity | None, query: str, page: int
+    ) -> list[ConversationSummary]: ...
+
     async def get_history(
         self, caller: CallerIdentity | None, conversation_id: uuid.UUID
     ) -> list[Message]:

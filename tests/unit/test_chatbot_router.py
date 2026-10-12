@@ -25,6 +25,7 @@ class FakeService:
     def __init__(self):
         self.created_for = None
         self.list_call = None
+        self.search_call = None
 
     async def create_conversation(self, caller):
         self.created_for = caller
@@ -32,6 +33,12 @@ class FakeService:
 
     async def list_conversations(self, caller, page):
         self.list_call = (caller, page)
+        if caller is None:
+            return []
+        return [ConversationSummary(id=CID, title="Zapatillas", preview="Talla 42", last_message_at=NOW)]
+
+    async def search_conversations(self, caller, query, page):
+        self.search_call = (caller, query, page)
         if caller is None:
             return []
         return [ConversationSummary(id=CID, title="Zapatillas", preview="Talla 42", last_message_at=NOW)]
@@ -170,3 +177,48 @@ def test_health_router_aislado():
     app = FastAPI()
     app.include_router(health_router)
     assert TestClient(app).get("/health").status_code == 200
+
+
+def test_buscar_devuelve_forma_del_listado_recorta_q_y_pagina(service):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats."""
+    client = make_client(service, identity=CallerIdentity(customer_id=uuid.uuid4()))
+    res = client.get(f"{BASE}/buscar", params={"q": "  zapatillas ", "pagina": 2})
+    assert res.status_code == 200
+    assert res.json() == [{
+        "id": str(CID), "titulo": "Zapatillas", "preview": "Talla 42",
+        "ultimoMensajeEn": "2026-10-01T00:00:00Z",
+    }]
+    assert service.search_call[1:] == ("zapatillas", 2)
+
+
+def test_buscar_no_es_capturada_por_las_rutas_con_id(service):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats (`buscar` is not parsed as a conversation id)."""
+    res = make_client(service, identity=CallerIdentity(customer_id=uuid.uuid4())).get(f"{BASE}/buscar?q=a")
+    assert res.status_code == 200 and service.search_call is not None
+
+
+def test_buscar_sin_cookie_es_lista_vacia(service):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats (visitante sin cookie)."""
+    res = make_client(service).get(f"{BASE}/buscar", params={"q": "zapatillas"})
+    assert res.status_code == 200 and res.json() == []
+    assert service.search_call == (None, "zapatillas", 1)
+
+
+@pytest.mark.parametrize("params", [{}, {"q": ""}, {"q": "   "}, {"q": "x" * 101}, {"q": "a", "pagina": 0}])
+def test_buscar_consulta_invalida_es_validacion(service, params):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats (q missing, blank, too long or bad page)."""
+    res = make_client(service, identity=CallerIdentity(customer_id=uuid.uuid4())).get(
+        f"{BASE}/buscar", params=params
+    )
+    assert res.status_code == 400
+    assert res.headers["content-type"].startswith("application/problem+json")
+    assert res.json()["code"] == "VALIDACION"
+    assert service.search_call is None
+
+
+def test_buscar_acepta_q_de_100_caracteres(service):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats (length boundary)."""
+    res = make_client(service, identity=CallerIdentity(customer_id=uuid.uuid4())).get(
+        f"{BASE}/buscar", params={"q": "x" * 100}
+    )
+    assert res.status_code == 200

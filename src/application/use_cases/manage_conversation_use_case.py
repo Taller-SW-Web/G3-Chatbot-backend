@@ -43,6 +43,15 @@ class ManageConversationUseCase:
             caller, limit=CONVERSATIONS_PAGE_SIZE, offset=(max(page, 1) - 1) * CONVERSATIONS_PAGE_SIZE
         )
 
+    async def search_conversations(
+        self, caller: CallerIdentity | None, query: str, page: int
+    ) -> list[ConversationSummary]:
+        if caller is None:  # visitor without chat_sid owns nothing
+            return []
+        return await self._conversations.search_summaries(
+            caller, query, limit=CONVERSATIONS_PAGE_SIZE, offset=(max(page, 1) - 1) * CONVERSATIONS_PAGE_SIZE
+        )
+
     async def get_history(
         self, caller: CallerIdentity | None, conversation_id: uuid.UUID
     ) -> list[Message]:

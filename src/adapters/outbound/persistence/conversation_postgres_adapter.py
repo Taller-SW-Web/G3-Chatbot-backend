@@ -5,7 +5,7 @@ transaccion la controla el caso de uso.
 """
 import uuid
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.persistence.models.conversation import Conversation
@@ -15,6 +15,9 @@ from src.domain.entities.conversation import ConversationSummary
 from src.domain.value_objects.caller_identity import CallerIdentity
 
 PREVIEW_MAX_CHARS = 100
+# The generated tsvector columns (migration 0001) use this configuration; the query must use the same one
+# or the GIN indexes cannot serve it.
+SEARCH_CONFIG = "spanish"
 
 
 def _owner_clause(owner: CallerIdentity):
@@ -90,6 +93,49 @@ class ConversationPostgresAdapter:
         stmt = (
             select(Conversation, preview)
             .where(_owner_clause(owner), Conversation.title.is_not(None))
+            .order_by(Conversation.last_message_at.desc(), Conversation.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        res = await self.session.execute(stmt)
+        return [
+            ConversationSummary(
+                id=row.id, title=row.title, preview=text or "", last_message_at=row.last_message_at
+            )
+            for row, text in res.all()
+        ]
+
+    async def search_summaries(
+        self, owner: CallerIdentity, query: str, *, limit: int, offset: int
+    ) -> list[ConversationSummary]:
+        # `query` is a bound parameter parsed by websearch_to_tsquery, which never raises on user syntax.
+        tsquery = func.websearch_to_tsquery(SEARCH_CONFIG, query)
+        # Each branch is one GIN index scan; UNION de-duplicates conversations matched through several messages.
+        matching_ids = union(
+            select(Conversation.id).where(Conversation.title_search_vector.op("@@")(tsquery)),
+            select(Message.conversation_id).where(
+                Message.search_vector.op("@@")(tsquery),
+                Message.role.in_(("CUSTOMER", "ASSISTANT")),  # TOOL rows hold internal payloads
+            ),
+        )
+        preview = (
+            select(func.left(Message.content, PREVIEW_MAX_CHARS))
+            .where(
+                Message.conversation_id == Conversation.id,
+                Message.role.in_(("CUSTOMER", "ASSISTANT")),
+            )
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+            .correlate(Conversation)
+            .scalar_subquery()
+        )
+        stmt = (
+            select(Conversation, preview)
+            .where(
+                _owner_clause(owner),
+                Conversation.title.is_not(None),
+                Conversation.id.in_(matching_ids),
+            )
             .order_by(Conversation.last_message_at.desc(), Conversation.id.desc())
             .limit(limit)
             .offset(offset)

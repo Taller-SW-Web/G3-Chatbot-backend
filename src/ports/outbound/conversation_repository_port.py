@@ -17,6 +17,13 @@ class ConversationRepositoryPort(Protocol):
         """Titled conversations of `owner`, most recent activity first."""
         ...
 
+    async def search_summaries(
+        self, owner: CallerIdentity, query: str, *, limit: int, offset: int
+    ) -> list[ConversationSummary]:
+        """Titled conversations of `owner` whose title or customer/assistant messages match `query`,
+        each once, most recent activity first."""
+        ...
+
     async def find_owned(
         self, conversation_id: uuid.UUID, owner: CallerIdentity
     ) -> Conversation | None:

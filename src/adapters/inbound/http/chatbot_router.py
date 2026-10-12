@@ -27,6 +27,9 @@ from src.application.use_cases.interpret_and_respond_use_case import (
 from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.inbound.chatbot_service_port import ChatbotServicePort, ConversationNotFoundError
 
+# Provisional: the specs leave the search query length undefined.
+SEARCH_QUERY_MAX_CHARS = 100
+
 # Anonymous conversations expire after 7 days of inactivity (modelo-datos.md); provisional cookie lifetime.
 CHAT_SID_MAX_AGE_SECONDS = 7 * 24 * 3600
 
@@ -75,6 +78,19 @@ def create_chatbot_router(
         service: ChatbotServicePort = Depends(service_provider),
     ):
         summaries = await service.list_conversations(caller, pagina)
+        return [ConversationSummaryOut.from_domain(c) for c in summaries]
+
+    @router.get("/buscar", response_model=list[ConversationSummaryOut])
+    async def search_conversations(
+        q: str = Query(..., max_length=SEARCH_QUERY_MAX_CHARS),
+        pagina: int = Query(1, ge=1),
+        caller: CallerIdentity | None = Depends(get_caller_identity),
+        service: ChatbotServicePort = Depends(service_provider),
+    ):
+        query = q.strip()
+        if not query:
+            raise ProblemError(400, "VALIDACION", "Invalid request", "`q` must not be blank.")
+        summaries = await service.search_conversations(caller, query, pagina)
         return [ConversationSummaryOut.from_domain(c) for c in summaries]
 
     @router.get("/{conversation_id}/mensajes", response_model=list[MessageOut])

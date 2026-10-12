@@ -25,6 +25,7 @@ class FakeConversations:
         self.summaries: list[ConversationSummary] = []
         self.fail_on_create = fail_on_create
         self.list_args = None
+        self.search_args = None
 
     async def create(self, owner):
         if self.fail_on_create:
@@ -35,6 +36,10 @@ class FakeConversations:
 
     async def list_summaries(self, owner, *, limit, offset):
         self.list_args = (owner, limit, offset)
+        return self.summaries
+
+    async def search_summaries(self, owner, query, *, limit, offset):
+        self.search_args = (owner, query, limit, offset)
         return self.summaries
 
     async def find_owned(self, conversation_id, owner):
@@ -141,3 +146,22 @@ async def test_retomar_conversacion_ajena_inexistente_o_sin_identidad_es_no_enco
         with pytest.raises(ConversationNotFoundError):
             await use_case.get_history(caller, target)
     assert messages.limit is None  # never read messages of a conversation that is not theirs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("page,offset", [(1, 0), (3, 2 * CONVERSATIONS_PAGE_SIZE), (0, 0)])
+async def test_buscar_delega_en_el_repositorio_con_la_misma_pagina_del_listado(page, offset):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats."""
+    use_case, conversations, _, _ = build()
+    summary = ConversationSummary(id=uuid.uuid4(), title="Zapatillas", preview="hola", last_message_at=NOW)
+    conversations.summaries = [summary]
+    assert await use_case.search_conversations(ANA, "zapatillas", page) == [summary]
+    assert conversations.search_args == (ANA, "zapatillas", CONVERSATIONS_PAGE_SIZE, offset)
+
+
+@pytest.mark.asyncio
+async def test_buscar_sin_identidad_devuelve_lista_vacia():
+    """SPEC-05 Req. 1 · Scenario: Buscar chats (visitante sin cookie)."""
+    use_case, conversations, _, _ = build()
+    assert await use_case.search_conversations(None, "zapatillas", 1) == []
+    assert conversations.search_args is None
