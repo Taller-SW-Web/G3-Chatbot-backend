@@ -45,7 +45,7 @@ async def test_search_sends_real_param_names_and_pagination():
         size=10,
         correlation_id="corr-1",
     )
-    assert result["total"] == 12
+    assert result["total"] == 100
     assert len(result["items"]) == 10
     assert result["items"][0]["product_id"] == "prod-001"
     request = route.calls[0].request
@@ -71,6 +71,21 @@ async def test_search_rejects_bad_pagination():
         await catalog.search_products(size=11)
     with pytest.raises(ValueError):
         await catalog.search_products(size=0)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_search_paginates_full_catalog():
+    product_mocks.mock_product_search(BASE_URL)
+    catalog = make_catalog()
+    page2 = await catalog.search_products(page=2, size=10)
+    assert page2["total"] == 100
+    assert page2["pagina"] == 2
+    assert [item["product_id"] for item in page2["items"]][0] == "prod-011"
+    last = await catalog.search_products(page=10, size=10)
+    assert [item["product_id"] for item in last["items"]][-1] == "prod-100"
+    short = await catalog.search_products(page=1, size=5)
+    assert len(short["items"]) == 5
 
 
 @respx.mock

@@ -18,10 +18,34 @@ def load_fixture(name: str):
         return json.load(handle)
 
 
+def load_catalog() -> list:
+    return load_fixture("products_catalog.json")
+
+
 def mock_product_search(base_url: str = "http://mock:4011"):
-    return respx.get(f"{base_url}/productos").mock(
-        return_value=httpx.Response(200, json=load_fixture("search_page1.json"))
-    )
+    """Paginated search over the 100-product catalog seed.
+
+    Reads `pagina`/`tamanio` from the request query (filters are accepted
+    but not applied: the mock paginates the full catalog).
+    """
+
+    def handler(request):
+        params = request.url.params
+        page = int(params.get("pagina", "1"))
+        size = int(params.get("tamanio", "10"))
+        catalog = load_catalog()
+        start = (page - 1) * size
+        return httpx.Response(
+            200,
+            json={
+                "items": catalog[start : start + size],
+                "pagina": page,
+                "tamanio": size,
+                "total": len(catalog),
+            },
+        )
+
+    return respx.get(f"{base_url}/productos").mock(side_effect=handler)
 
 
 def mock_product_detail(
