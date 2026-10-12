@@ -1,0 +1,1 @@
+{"coupon_applied":true,"coupon_code":"SPORT10","currency":"PEN","customer_ref":"cust-123","discounts":[{"code":"SPORT10","description":"10% chat coupon","percent":10}],"lines":[{"coupon_discount":28.0,"line_total":251.9,"product_id":"prod-001","quantity":1,"sku":"NIK-REV7-42-NEG","unit_price":279.9}],"shipping_cost":0.0,"subtotal":279.9,"total":251.9}
