@@ -5,6 +5,7 @@ Switching mock<->real stays config-only: tests point the clients at the
 mock base URL, production points them at the real module.
 """
 import json
+from functools import lru_cache
 from pathlib import Path
 
 import httpx
@@ -18,6 +19,7 @@ def load_fixture(name: str):
         return json.load(handle)
 
 
+@lru_cache(maxsize=1)
 def load_catalog() -> list:
     return load_fixture("products_catalog.json")
 
@@ -61,7 +63,7 @@ def mock_product_detail_not_found(
 ):
     return respx.get(f"{base_url}/productos/{product_id}").mock(
         return_value=httpx.Response(
-            404, json={"code": "PRODUCT_UNAVAILABLE", "title": "Producto no disponible"}
+            404, json={"code": "RECURSO_NO_ENCONTRADO", "title": "No encontrado"}
         )
     )
 

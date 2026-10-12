@@ -6,18 +6,20 @@ SPEC-11 pricing hooks. No network, no real module, no database.
 import httpx
 import pytest
 import respx
+from decimal import Decimal
 
 from src.adapters.outbound.http_clients.base_client import ModuleUnavailableError
-from src.adapters.outbound.http_clients.inventario_api_adapter import (
+from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
     InventoryClient,
 )
-from src.adapters.outbound.http_clients.productos_api_adapter import ProductsClient
+from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.infrastructure.config.container import (
     provide_inventory_client,
     provide_products_client,
 )
 from src.infrastructure.config.settings import Settings
+from src.ports.outbound.product_repository_port import ModuleRequestError
 from tests.helpers import product_mocks
 
 BASE_URL = "http://mock:4011"
@@ -34,6 +36,8 @@ def make_inventory() -> InventoryClient:
 @respx.mock
 @pytest.mark.asyncio
 async def test_search_sends_real_param_names_and_pagination():
+    # The mock paginates the full seed catalog without applying filters:
+    # this test pins the request shape, not the filtering itself.
     route = product_mocks.mock_product_search(BASE_URL)
     result = await make_catalog().search_products(
         q="zapatillas",
@@ -57,9 +61,30 @@ async def test_search_sends_real_param_names_and_pagination():
     assert params["pagina"] == "1"
     assert params["tamanio"] == "10"
     assert params["estado"] == "ACTIVO"
-    assert params["precioMin"] == "100"
-    assert params["precioMax"] == "350"
+    assert params["precioMin"] == "100.00"
+    assert params["precioMax"] == "350.00"
     assert request.headers["x-correlation-id"] == "corr-1"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_search_formats_float_prices_with_two_decimals():
+    route = product_mocks.mock_product_search(BASE_URL)
+    await make_catalog().search_products(min_price=0.1 + 0.2, max_price=Decimal("10.5"))
+    params = dict(route.calls[0].request.url.params)
+    assert params["precioMin"] == "0.30"
+    assert params["precioMax"] == "10.50"
+
+
+@pytest.mark.asyncio
+async def test_search_rejects_negative_and_inverted_prices():
+    catalog = make_catalog()
+    with pytest.raises(ValueError):
+        await catalog.search_products(min_price=-5)
+    with pytest.raises(ValueError):
+        await catalog.search_products(max_price=-5)
+    with pytest.raises(ValueError):
+        await catalog.search_products(min_price=400, max_price=100)
 
 
 @pytest.mark.asyncio
@@ -101,12 +126,68 @@ async def test_detail_returns_variants_with_real_keys():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_detail_not_found_carries_product_unavailable_code():
+async def test_detail_not_found_raises_with_contract_code():
     product_mocks.mock_product_detail_not_found("prod-missing", BASE_URL)
-    client = make_catalog()
-    response = await client._request("GET", "/productos/prod-missing")
-    assert response.status_code == 404
-    assert response.json()["code"] == "PRODUCT_UNAVAILABLE"
+    with pytest.raises(ModuleRequestError) as error:
+        await make_catalog().get_product_detail("prod-missing")
+    assert error.value.status == 404
+    assert error.value.code == "RECURSO_NO_ENCONTRADO"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_detail_encodes_path_identifiers():
+    route = product_mocks.mock_product_detail("prod-001", BASE_URL)
+    respx.get(f"{BASE_URL}/productos/a%2Fb").mock(
+        return_value=httpx.Response(200, json={"product_id": "a/b"})
+    )
+    detail = await make_catalog().get_product_detail("a/b")
+    assert detail["product_id"] == "a/b"
+    assert not route.called
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_search_400_raises_with_validation_code():
+    respx.get(f"{BASE_URL}/productos").mock(
+        return_value=httpx.Response(400, json={"code": "VALIDACION"})
+    )
+    with pytest.raises(ModuleRequestError) as error:
+        await make_catalog().search_products(q="x")
+    assert error.value.status == 400
+    assert error.value.code == "VALIDACION"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_categories_401_raises_instead_of_shape_error():
+    respx.get(f"{BASE_URL}/categorias").mock(
+        return_value=httpx.Response(401, json={"code": "TOKEN_INVALIDO"})
+    )
+    with pytest.raises(ModuleRequestError) as error:
+        await make_catalog().list_categories()
+    assert (error.value.status, error.value.code) == (401, "TOKEN_INVALIDO")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_4xx_reads_legacy_codigo_field():
+    respx.get(f"{BASE_URL}/precios/skus/X").mock(
+        return_value=httpx.Response(404, json={"codigo": "RECURSO_NO_ENCONTRADO"})
+    )
+    with pytest.raises(ModuleRequestError) as error:
+        await make_catalog().get_price("X")
+    assert (error.value.status, error.value.code) == (404, "RECURSO_NO_ENCONTRADO")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_invalid_json_body_maps_to_unavailable():
+    respx.get(f"{BASE_URL}/marcas").mock(
+        return_value=httpx.Response(200, text="<html>nope</html>")
+    )
+    with pytest.raises(ModuleUnavailableError):
+        await make_catalog().list_brands()
 
 
 @respx.mock
@@ -146,9 +227,11 @@ async def test_single_and_bulk_prices():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_bulk_prices_reject_empty_skus():
+async def test_bulk_prices_reject_empty_and_over_20_skus():
     with pytest.raises(ValueError):
         await make_catalog().get_prices([])
+    with pytest.raises(ValueError):
+        await make_catalog().get_prices([f"SKU-{n}" for n in range(21)])
 
 
 @respx.mock
@@ -207,6 +290,43 @@ async def test_availability_rejects_empty_and_over_20_skus():
         await inventory.get_availability([])
     with pytest.raises(ValueError):
         await inventory.get_availability([f"SKU-{n}" for n in range(21)])
+    with pytest.raises(ValueError):
+        await inventory.get_availability(["  "])
+    with pytest.raises(ValueError):
+        await inventory.get_availability(["A,B"])
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_availability_dedupes_before_the_limit():
+    route = product_mocks.mock_availability(BASE_URL)
+    rows = await make_inventory().get_availability(["NIK-REV7-42-NEG"] * 20)
+    assert len(route.calls) == 1
+    assert dict(route.calls[0].request.url.params)["skus"] == "NIK-REV7-42-NEG"
+    assert rows[0]["sku"] == "NIK-REV7-42-NEG"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_availability_409_raises_with_contract_code():
+    respx.get(f"{BASE_URL}/inventario/disponibilidad").mock(
+        return_value=httpx.Response(409, json={"code": "PRODUCTO_NO_DISPONIBLE"})
+    )
+    with pytest.raises(ModuleRequestError) as error:
+        await make_inventory().get_availability(["SKU-X"])
+    assert (error.value.status, error.value.code) == (409, "PRODUCTO_NO_DISPONIBLE")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_availability_rejects_negative_stock():
+    respx.get(f"{BASE_URL}/inventario/disponibilidad").mock(
+        return_value=httpx.Response(
+            200, json=[{"sku": "SKU-X", "available": -3, "status": "IN_STOCK"}]
+        )
+    )
+    with pytest.raises(ValueError):
+        await make_inventory().get_availability(["SKU-X"])
 
 
 @respx.mock

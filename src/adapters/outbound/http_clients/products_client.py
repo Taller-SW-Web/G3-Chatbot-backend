@@ -2,21 +2,68 @@
 
 Speaks the real Productos contract (`{PRO}/api/v1`, provisional scopes A5):
 search, detail, categories, brands, prices and promotions evaluation.
-Transport failures (timeout/connection/5xx) raise `ModuleUnavailableError`
-and map to 503 + module upstream. External `codigo` fields normalize to
-`code` on the way out.
+Only 2xx bodies are returned as data: 4xx answers raise
+`ModuleRequestError` with the contract `code`, and transport failures
+(timeout/connection/5xx) raise `ModuleUnavailableError` (503 + module).
+External `codigo` fields normalize to `code` on the way out.
+
+Provisional until Productos confirms (A5): the `GET /precios` query names
+(`skus`, `channel_id`, from busqueda-filtrado/design.md — the search uses
+`canal` instead) and the `at` field sent to `POST /promociones/evaluar`
+(not listed in contratos-integracion.md §3.2).
+
+Open question (hito-3.md, H3-01 pending): respx mocks live in
+`tests/helpers`; the default `http://localhost:4011` has no server behind,
+so deployed environments still need a mocks hosting decision (ADR-0017).
 """
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
-from src.adapters.outbound.http_clients.base_client import BaseModuleClient
+from src.adapters.outbound.http_clients.base_client import (
+    BaseModuleClient,
+    ModuleUnavailableError,
+)
+from src.ports.outbound.product_repository_port import (
+    normalize_sku_list,
+    parse_product_body,
+)
+
+MAX_PRICE_DECIMALS = Decimal("0.01")
+MAX_SKUS_PER_CALL = 20
 
 
-class ProductsClient(BaseModuleClient):
+def format_price(value: Decimal | float | int, name: str) -> str:
+    """Two-decimal wire format; rejects negatives and non-numbers."""
+    try:
+        amount = Decimal(str(value)).quantize(MAX_PRICE_DECIMALS)
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"{name} must be a number, got {value!r}") from exc
+    if amount < 0:
+        raise ValueError(f"{name} must be >= 0, got {value!r}")
+    return f"{amount:.2f}"
+
+
+class ProductsBaseClient(BaseModuleClient):
+    """Shared Productos transport: module name plus the single 2xx/4xx checkpoint."""
+
     module: str = "productos"
 
+    async def _parse_response(self, response: httpx.Response) -> Any:
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise ModuleUnavailableError(
+                self.module, f"invalid JSON body: {exc}"
+            ) from exc
+        parsed = parse_product_body(self.module, response.status_code, body)
+        return self.normalize_code(parsed) if isinstance(parsed, dict) else parsed
+
+
+class ProductsClient(ProductsBaseClient):
     def __init__(
         self,
         base_url: str,
@@ -35,8 +82,8 @@ class ProductsClient(BaseModuleClient):
         page: int = 1,
         size: int = 10,
         state: str = "ACTIVO",
-        min_price: float | None = None,
-        max_price: float | None = None,
+        min_price: Decimal | float | int | None = None,
+        max_price: Decimal | float | int | None = None,
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
         if page < 1:
@@ -56,21 +103,28 @@ class ProductsClient(BaseModuleClient):
         if brand_id is not None:
             params["marcaId"] = brand_id
         if min_price is not None:
-            params["precioMin"] = min_price
+            params["precioMin"] = format_price(min_price, "min_price")
         if max_price is not None:
-            params["precioMax"] = max_price
+            params["precioMax"] = format_price(max_price, "max_price")
+        if min_price is not None and max_price is not None:
+            if Decimal(params["precioMin"]) > Decimal(params["precioMax"]):
+                raise ValueError(
+                    f"min_price must be <= max_price, got {min_price!r} > {max_price!r}"
+                )
         response = await self._request(
             "GET", "/productos", params=params, correlation_id=correlation_id
         )
-        return self.normalize_code(response.json())
+        return await self._parse_response(response)
 
     async def get_product_detail(
         self, product_id: str, *, correlation_id: str | None = None
     ) -> dict[str, Any]:
         response = await self._request(
-            "GET", f"/productos/{product_id}", correlation_id=correlation_id
+            "GET",
+            f"/productos/{quote(product_id, safe='')}",
+            correlation_id=correlation_id,
         )
-        return self.normalize_code(response.json())
+        return await self._parse_response(response)
 
     async def list_categories(
         self, *, correlation_id: str | None = None
@@ -78,21 +132,23 @@ class ProductsClient(BaseModuleClient):
         response = await self._request(
             "GET", "/categorias", correlation_id=correlation_id
         )
-        return self._unwrap_list(response.json())
+        return self._unwrap_list(await self._parse_response(response))
 
     async def list_brands(
         self, *, correlation_id: str | None = None
     ) -> list[dict[str, Any]]:
         response = await self._request("GET", "/marcas", correlation_id=correlation_id)
-        return self._unwrap_list(response.json())
+        return self._unwrap_list(await self._parse_response(response))
 
     async def get_price(
         self, sku: str, *, correlation_id: str | None = None
     ) -> dict[str, Any]:
         response = await self._request(
-            "GET", f"/precios/skus/{sku}", correlation_id=correlation_id
+            "GET",
+            f"/precios/skus/{quote(sku, safe='')}",
+            correlation_id=correlation_id,
         )
-        return self.normalize_code(response.json())
+        return await self._parse_response(response)
 
     async def get_prices(
         self,
@@ -101,15 +157,14 @@ class ProductsClient(BaseModuleClient):
         channel: str = "CHATBOT",
         correlation_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        if not skus:
-            raise ValueError("skus must not be empty")
+        clean = normalize_sku_list(skus, limit=MAX_SKUS_PER_CALL)
         response = await self._request(
             "GET",
             "/precios",
-            params={"skus": ",".join(skus), "channel_id": channel},
+            params={"skus": ",".join(clean), "channel_id": channel},
             correlation_id=correlation_id,
         )
-        return self._unwrap_list(response.json())
+        return self._unwrap_list(await self._parse_response(response))
 
     async def evaluate_promotions(
         self,
@@ -132,7 +187,7 @@ class ProductsClient(BaseModuleClient):
         response = await self._request(
             "POST", "/promociones/evaluar", json=payload, correlation_id=correlation_id
         )
-        return self.normalize_code(response.json())
+        return await self._parse_response(response)
 
     @staticmethod
     def _unwrap_list(payload: Any) -> list[dict[str, Any]]:

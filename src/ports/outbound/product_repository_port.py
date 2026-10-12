@@ -8,6 +8,60 @@ implements `InventoryPort`.
 from typing import Any, Protocol
 
 
+class ModuleRequestError(Exception):
+    """A 4xx answer from a module: the request was rejected, not a data row.
+
+    Carries the HTTP `status` and the contract `code` (`codigo` normalized)
+    so agent tools can tell "not found / not available" apart from valid
+    results (SPEC-09, SPEC-10). Only 2xx bodies are returned as data.
+    """
+
+    def __init__(self, module: str, status: int, code: str, detail: str = ""):
+        self.module = module
+        self.status = status
+        self.code = code
+        self.detail = detail
+        message = f"{module} request failed: HTTP {status} {code}"
+        super().__init__(f"{message}: {detail}" if detail else message)
+
+
+def parse_product_body(module: str, status_code: int, body: Any) -> Any:
+    """Single checkpoint: return 2xx bodies, raise on 4xx.
+
+    Reads `code` (or legacy `codigo`) from the body; unknown shapes fall
+    back to `HTTP_{status_code}`. 5xx never reaches here: the base client
+    already maps it to `ModuleUnavailableError`.
+    """
+    if 200 <= status_code < 300:
+        return body
+    code = f"HTTP_{status_code}"
+    if isinstance(body, dict):
+        code = str(body.get("code", body.get("codigo", code)))
+    raise ModuleRequestError(module, status_code, code)
+
+
+def normalize_sku_list(skus: list[str], *, limit: int = 20) -> list[str]:
+    """Clean shared SKU input: strip, drop blanks/duplicates, enforce the cap.
+
+    Commas are rejected (comma is the wire separator), so `["A,B"]` cannot
+    smuggle two SKUs past the limit, and `["A"] * 20` counts as one.
+    """
+    if not skus:
+        raise ValueError("skus must not be empty")
+    clean: list[str] = []
+    for sku in skus:
+        item = sku.strip() if isinstance(sku, str) else ""
+        if not item:
+            raise ValueError(f"skus must not contain blanks, got {sku!r}")
+        if "," in item:
+            raise ValueError(f"sku must not contain a comma, got {item!r}")
+        if item not in clean:
+            clean.append(item)
+    if len(clean) > limit:
+        raise ValueError(f"max {limit} SKUs per call, got {len(clean)}")
+    return clean
+
+
 class ProductCatalogPort(Protocol):
     async def search_products(
         self,

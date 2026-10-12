@@ -15,11 +15,11 @@ from src.adapters.outbound.tools.empty_tool_adapter import EmptyToolAdapter
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
-from src.adapters.outbound.http_clients.inventario_api_adapter import (
+from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
     InventoryClient,
 )
-from src.adapters.outbound.http_clients.productos_api_adapter import ProductsClient
+from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
