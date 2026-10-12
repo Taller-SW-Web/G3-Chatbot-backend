@@ -29,6 +29,16 @@ class Settings:
     llm_vision_enabled: bool = True
     # Name the assistant introduces itself with (SPEC-05 Req. 12; provisional value from the spec).
     assistant_name: str = "Botleta"
+    # Module base URLs (ADR-0017): mock or real, switched by config without code changes.
+    security_base_url: str = "http://localhost:4010"
+    products_base_url: str = "http://localhost:4011"
+    sales_base_url: str = "http://localhost:4012"
+    dispatch_base_url: str = "http://localhost:4013"
+    # Per-module timeouts in seconds (DoD: exact timeouts per integration).
+    security_timeout_seconds: float = 5.0
+    products_timeout_seconds: float = 4.0
+    sales_timeout_seconds: float = 5.0
+    dispatch_timeout_seconds: float = 4.0
 
 
 @lru_cache
@@ -43,4 +53,12 @@ def get_settings() -> Settings:
         llm_api_key=os.getenv("LLM_API_KEY", "").strip() or None,
         llm_vision_enabled=os.getenv("LLM_VISION_ENABLED", "true").strip().lower() != "false",
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
+        security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),
+        products_base_url=os.getenv("PRODUCTS_BASE_URL", "http://localhost:4011").strip().rstrip("/"),
+        sales_base_url=os.getenv("SALES_BASE_URL", "http://localhost:4012").strip().rstrip("/"),
+        dispatch_base_url=os.getenv("DISPATCH_BASE_URL", "http://localhost:4013").strip().rstrip("/"),
+        security_timeout_seconds=_number("SECURITY_TIMEOUT_SECONDS", "5", float, minimum=0.1),
+        products_timeout_seconds=_number("PRODUCTS_TIMEOUT_SECONDS", "4", float, minimum=0.1),
+        sales_timeout_seconds=_number("SALES_TIMEOUT_SECONDS", "5", float, minimum=0.1),
+        dispatch_timeout_seconds=_number("DISPATCH_TIMEOUT_SECONDS", "4", float, minimum=0.1),
     )

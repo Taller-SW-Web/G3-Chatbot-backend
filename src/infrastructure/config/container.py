@@ -14,6 +14,7 @@ from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.tools.empty_tool_adapter import EmptyToolAdapter
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
+from src.adapters.outbound.http_clients.base_client import BaseModuleClient
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
@@ -49,6 +50,28 @@ def provide_llm_provider(settings: Settings | None = None) -> LLMProvider:
 def provide_tool_executor() -> ToolExecutorPort:
     """TEMPORARY: no tools until the ToolRegistry of the tools module is merged and adapted to ToolExecutorPort."""
     return EmptyToolAdapter()
+
+
+def provide_module_client(module: str, settings: Settings | None = None) -> BaseModuleClient:
+    """Module client wiring (H3-05, ADR-0017): base URL + timeout from Settings.
+
+    Switching mock<->real is config-only: point *_BASE_URL at Prism/respx or
+    the real module. H3-06/H3-07 build the typed clients on top of this.
+    """
+    settings = settings or get_settings()
+    wiring = {
+        "security": (settings.security_base_url, settings.security_timeout_seconds),
+        "products": (settings.products_base_url, settings.products_timeout_seconds),
+        "sales": (settings.sales_base_url, settings.sales_timeout_seconds),
+        "dispatch": (settings.dispatch_base_url, settings.dispatch_timeout_seconds),
+    }
+    try:
+        base_url, timeout_seconds = wiring[module]
+    except KeyError:
+        raise ValueError(f"unknown module {module!r} (security/products/sales/dispatch)") from None
+    client = BaseModuleClient(base_url=base_url, timeout_seconds=timeout_seconds)
+    client.module = module
+    return client
 
 
 def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUseCase:
