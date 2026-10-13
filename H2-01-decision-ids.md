@@ -1,9 +1,9 @@
 # H2-01 — Decisión de IDs y convenciones BD
 
-## Decisión (Sebastian)
-- **PostgreSQL 18 en Supabase + Python 3.12.7** (confirmado por equipo).
-- IDs: `uuid DEFAULT uuidv7()` **nativo de PG18** con `server_default=text("uuidv7()")` en cada modelo.
-- No se usa `uuid6`/`uuid_utils` ni función SQL propia. Si Supabase resultara no ser PG18, el fallback sería UUID v7 en app, sin cambiar `modelo-datos.md`.
+## Decisión (Sebastian) + ajuste H2-10
+- **Supabase real: PostgreSQL 17.11** (verificado `SELECT version()` en H2-10; en H2-01 se asumía PG18).
+- IDs: `server_default=text("uuidv7()")` en cada modelo, resuelto con **función SQL propia `public.uuidv7()`** creada en la migración `0001` (plpgsql + pgcrypto, bits versión 7 / variante RFC 9562). Sin tocar los 14 modelos.
+- `set_updated_at()` + trigger `BEFORE UPDATE trg_<tabla>_updated_at` en las 9 tablas con `updated_at`, también en `0001` (autogenerate no detecta funciones/triggers).
 - Engine **async** (`create_async_engine` + `asyncpg` + `AsyncSession`), acorde a FastAPI + httpx async del proyecto.
 
 ## Convención models/__init__.py

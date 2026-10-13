@@ -5,10 +5,31 @@ transaccion la controla el caso de uso.
 """
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.persistence.models.conversation import Conversation
+from src.adapters.outbound.persistence.models.message import Message
+from src.domain.entities.conversation import Conversation as ConversationEntity
+from src.domain.entities.conversation import ConversationSummary
+from src.domain.value_objects.caller_identity import CallerIdentity
+
+PREVIEW_MAX_CHARS = 100
+# The generated tsvector columns (migration 0001) use this configuration; the query must use the same one
+# or the GIN indexes cannot serve it.
+SEARCH_CONFIG = "spanish"
+
+
+def _owner_clause(owner: CallerIdentity):
+    if owner.customer_id is not None:
+        return Conversation.customer_id == owner.customer_id
+    return (Conversation.anonymous_sid == owner.anonymous_sid) & Conversation.customer_id.is_(None)
+
+
+def _to_entity(row: Conversation) -> ConversationEntity:
+    return ConversationEntity(
+        id=row.id, title=row.title, last_message_at=row.last_message_at, summary=row.summary
+    )
 
 
 class ConversationPostgresAdapter:
@@ -44,3 +65,110 @@ class ConversationPostgresAdapter:
         )
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
+
+    # Methods below implement ConversationRepositoryPort (English names, domain objects).
+
+    async def create(self, owner: CallerIdentity) -> ConversationEntity:
+        row = await self.guardar(
+            Conversation(customer_id=owner.customer_id, anonymous_sid=owner.anonymous_sid)
+        )
+        await self.session.refresh(row)  # load server defaults (last_message_at)
+        return _to_entity(row)
+
+    async def list_summaries(
+        self, owner: CallerIdentity, *, limit: int, offset: int
+    ) -> list[ConversationSummary]:
+        # One query: the preview is a correlated subquery over the latest CUSTOMER/ASSISTANT message.
+        preview = (
+            select(func.left(Message.content, PREVIEW_MAX_CHARS))
+            .where(
+                Message.conversation_id == Conversation.id,
+                Message.role.in_(("CUSTOMER", "ASSISTANT")),
+            )
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+            .correlate(Conversation)
+            .scalar_subquery()
+        )
+        stmt = (
+            select(Conversation, preview)
+            .where(_owner_clause(owner), Conversation.title.is_not(None))
+            .order_by(Conversation.last_message_at.desc(), Conversation.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        res = await self.session.execute(stmt)
+        return [
+            ConversationSummary(
+                id=row.id, title=row.title, preview=text or "", last_message_at=row.last_message_at
+            )
+            for row, text in res.all()
+        ]
+
+    async def search_summaries(
+        self, owner: CallerIdentity, query: str, *, limit: int, offset: int
+    ) -> list[ConversationSummary]:
+        # `query` is a bound parameter parsed by websearch_to_tsquery, which never raises on user syntax.
+        tsquery = func.websearch_to_tsquery(SEARCH_CONFIG, query)
+        # Each branch is one GIN index scan; UNION de-duplicates conversations matched through several messages.
+        matching_ids = union(
+            select(Conversation.id).where(Conversation.title_search_vector.op("@@")(tsquery)),
+            select(Message.conversation_id).where(
+                Message.search_vector.op("@@")(tsquery),
+                Message.role.in_(("CUSTOMER", "ASSISTANT")),  # TOOL rows hold internal payloads
+            ),
+        )
+        preview = (
+            select(func.left(Message.content, PREVIEW_MAX_CHARS))
+            .where(
+                Message.conversation_id == Conversation.id,
+                Message.role.in_(("CUSTOMER", "ASSISTANT")),
+            )
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+            .correlate(Conversation)
+            .scalar_subquery()
+        )
+        stmt = (
+            select(Conversation, preview)
+            .where(
+                _owner_clause(owner),
+                Conversation.title.is_not(None),
+                Conversation.id.in_(matching_ids),
+            )
+            .order_by(Conversation.last_message_at.desc(), Conversation.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        res = await self.session.execute(stmt)
+        return [
+            ConversationSummary(
+                id=row.id, title=row.title, preview=text or "", last_message_at=row.last_message_at
+            )
+            for row, text in res.all()
+        ]
+
+    async def find_owned(
+        self, conversation_id: uuid.UUID, owner: CallerIdentity
+    ) -> ConversationEntity | None:
+        stmt = select(Conversation).where(Conversation.id == conversation_id, _owner_clause(owner))
+        res = await self.session.execute(stmt)
+        row = res.scalar_one_or_none()
+        return _to_entity(row) if row is not None else None
+
+    async def assign_title_if_missing(self, conversation_id: uuid.UUID, title: str) -> bool:
+        stmt = (
+            update(Conversation)
+            .where(Conversation.id == conversation_id, Conversation.title.is_(None))
+            .values(title=title)
+        )
+        res = await self.session.execute(stmt)
+        return res.rowcount == 1
+
+    async def touch(self, conversation_id: uuid.UUID) -> None:
+        stmt = (
+            update(Conversation)
+            .where(Conversation.id == conversation_id)
+            .values(last_message_at=func.now(), updated_at=func.now())
+        )
+        await self.session.execute(stmt)
