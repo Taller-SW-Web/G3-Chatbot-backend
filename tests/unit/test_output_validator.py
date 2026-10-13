@@ -57,6 +57,31 @@ def test_monto_valido_se_valida_aunque_cierre_la_oracion():
     assert result.texto == text and not result.corregido
 
 
+@pytest.mark.parametrize("texto,monto", [
+    ("S/.150", "150"),
+    ("S/.150.00", "150.00"),
+    ("S/ **150**", "150"),
+    ("150 nuevos soles", "150"),
+])
+def test_reconoce_formatos_comunes_de_precios_pen(texto, monto):
+    result = OutputValidator().validar(texto, montos=[Decimal(monto)])
+    assert result.texto == texto and not result.corregido
+    unverified = OutputValidator().validar(texto, montos=[])
+    assert unverified.texto == "[importe no verificado]" and unverified.corregido
+
+
+def test_moneda_dolar_se_detecta_pero_no_se_autoriza_con_un_monto_pen():
+    result = OutputValidator().validar("$ 50", montos=[Decimal("50")])
+    assert result.texto == "[importe no verificado]"
+    assert result.corregido
+
+
+def test_importe_no_absorbe_cantidad_adyacente():
+    text = "S/ 199.90 2 unidades"
+    result = OutputValidator().validar(text, montos=[Decimal("199.90")])
+    assert result.texto == text and not result.corregido
+
+
 @pytest.mark.parametrize("texto", [
     "Polo 100% algodón", "Es 100% original", "100% algodón con 10% de descuento",
 ])
@@ -69,3 +94,15 @@ def test_porcentaje_textil_no_se_confunde_con_descuento(texto):
 def test_descuentos_sin_respaldo_se_corrigen(texto):
     result = OutputValidator().validar(texto, montos=[])
     assert result.corregido and "%" not in result.texto
+
+
+@pytest.mark.parametrize("texto", [
+    "descuento de hasta 50%",
+    "ahorras 30%",
+    "un 15% menos",
+    "15% de dcto",
+])
+def test_detecta_formas_naturales_de_anunciar_descuento(texto):
+    result = OutputValidator().validar(texto, montos=[], porcentajes=[])
+    assert "[descuento no verificado]" in result.texto
+    assert result.corregido

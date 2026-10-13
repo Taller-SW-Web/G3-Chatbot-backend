@@ -356,13 +356,17 @@ async def test_system_prompt_introduces_the_assistant_only_on_the_first_reply():
 @pytest.mark.asyncio
 async def test_sanitizer_runs_before_persisting_prompting_and_titling():
     """SPEC-05 Req. 9: the filter of the tools module plugs in as `sanitize_text`."""
+    from src.domain.services.sensitive_data_filter import SensitiveDataFilter
+
     uc, conv, messages, _, llm, _ = build(
-        [reply("ok")], sanitize=lambda t: t.replace("4111111111111111", "[tarjeta oculta]")
+        [reply("ok")], sanitize=lambda t: SensitiveDataFilter().redactar(t).texto
     )
-    await run(uc, conv, "mi tarjeta 4111111111111111")
-    assert messages.rows[0]["text"] == "mi tarjeta [tarjeta oculta]"
-    assert llm.calls[0][0][-1].content == (TextPart("mi tarjeta [tarjeta oculta]"),)
-    assert conv.title == "mi tarjeta [tarjeta oculta]"
+    text = "mi tarjeta 4111111111111111 y mi contraseña es Secreta123!"
+    expected = "mi tarjeta [tarjeta oculta] y mi contraseña es [contraseña oculta]!"
+    await run(uc, conv, text)
+    assert messages.rows[0]["text"] == expected
+    assert llm.calls[0][0][-1].content == (TextPart(expected),)
+    assert conv.title == expected[:40]
 
 
 @pytest.mark.asyncio

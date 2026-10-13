@@ -6,18 +6,25 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 
-_NUMBER = r"(?<![\d.,])[-+]?[0-9]+(?:[., ][0-9]+)*(?!\d|[.,]\d)"
+_INTEGER = r"(?:[0-9]{1,3}(?:[., ][0-9]{3})+|[0-9]+)"
+_NUMBER_BODY = rf"[-+]?{_INTEGER}(?:[.,][0-9]+)?(?!\d|[.,]\d)"
+_NUMBER = rf"(?<![\d.,]){_NUMBER_BODY}"
 _AMOUNT = re.compile(
-    rf"(?:(?:S/\.?|PEN)\s*(?P<antes>{_NUMBER})"
-    rf"|(?P<despues>{_NUMBER})\s*(?:soles|PEN)\b)", re.IGNORECASE,
+    rf"(?:(?<!\w)(?P<moneda_antes>S/\s*\.?|PEN|US\$|\$)\s*"
+    rf"(?:\*{{1,2}})?(?P<antes>{_NUMBER_BODY})(?:\*{{1,2}})?"
+    rf"|(?P<despues>{_NUMBER})\s*(?P<moneda_despues>nuevos\s+soles|soles|PEN)\b)",
+    re.IGNORECASE,
 )
 _PERCENT = re.compile(rf"(?P<numero>{_NUMBER})\s*%")
 _DISCOUNT_AFTER = re.compile(
-    r"^\s*(?:(?:de|del|en)\s+)?(?:descuentos?|ahorro|rebajas?|off)\b", re.IGNORECASE,
+    r"^\s*(?:(?:de|del)\s+)?(?:(?:hasta)\s+)?"
+    r"(?:descuentos?|dcto\.?|ahorr\w*|rebajas?|off|menos)\b",
+    re.IGNORECASE,
 )
 _DISCOUNT_BEFORE = re.compile(
-    r"\b(?:descuentos?|ahorro|rebajas?|ofertas?|promoci[oó]n)"
-    r"(?:\s+(?:de|del|es))?\s*[:=]?\s*$", re.IGNORECASE,
+    r"\b(?:descuentos?|dcto\.?|ahorr\w*|rebajas?|ofertas?|promoci[oó]n)"
+    r"(?:\s+(?:de|del|es|hasta|ahora|solo|por)){0,3}\s*[:=]?\s*$",
+    re.IGNORECASE,
 )
 
 
@@ -88,7 +95,12 @@ class OutputValidator:
 
         def importe(match: re.Match[str]) -> str:
             nonlocal corregido
+            currency = (match["moneda_antes"] or match["moneda_despues"] or "").upper()
             valor = _decimal(match["antes"] or match["despues"])
+            # Tool amounts are PEN. A matching number does not authorize an amount stated in USD.
+            if currency.strip() in {"$", "US$"}:
+                corregido = True
+                return "[importe no verificado]"
             if valor in montos_validos:
                 return match[0]
             corregido = True

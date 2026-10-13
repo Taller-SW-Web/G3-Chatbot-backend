@@ -34,14 +34,14 @@ _CATEGORIES = frozenset({
 })
 _UNSAFE = re.compile(
     r"\b(?:agrega\w*|anad\w*|quita\w*|elimina\w*|vacia\w*|borra\w*|"
-    r"compra\w*|paga\w*|cambia\w*|pon|descuento\w*|ignora\w*|instruccion\w*)\b",
+    r"paga\w*|cambia\w*|pon|cancela\w*|anula\w*|devuelve\w*|"
+    r"descuento\w*|ignora\w*|instruccion\w*)\b",
 )
 
 
 class DegradedMode:
     @staticmethod
-    def activo(*, llm_disponible: bool, websocket_disponible: bool = True) -> bool:
-        # Si solo falla WS, todavía puede obtenerse respuesta LLM por REST/polling.
+    def activo(*, llm_disponible: bool) -> bool:
         return not llm_disponible
 
     def responder(self, texto: str, *, fallo_imagen: bool = False) -> DegradedResponse:
@@ -56,10 +56,13 @@ class DegradedMode:
             if unicodedata.category(c) != "Mn"
         )
         aviso = "No pude analizar la imagen. " if fallo_imagen else ""
-        if not _UNSAFE.search(normalizado) and _CATEGORIES.intersection(re.findall(r"\w+", normalizado)):
+        palabras_clave = tuple(dict.fromkeys(
+            palabra for palabra in re.findall(r"\w+", normalizado) if palabra in _CATEGORIES
+        ))
+        if not _UNSAFE.search(normalizado) and palabras_clave:
             return DegradedResponse(
                 aviso + "Voy a buscar productos con esas palabras.",
-                _MENU, "buscar_productos", texto.strip()[:1000],
+                _MENU, "buscar_productos", " ".join(palabras_clave),
             )
         return DegradedResponse(
             aviso + "Estoy teniendo problemas para entenderte, pero puedes usar estas opciones",

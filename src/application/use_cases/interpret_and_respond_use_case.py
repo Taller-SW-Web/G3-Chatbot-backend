@@ -106,8 +106,11 @@ class InterpretAndRespondUseCase:
         llm_timeout_seconds: float,
         sanitize_text: Callable[[str], str] | None = None,
     ):
-        """`sanitize_text` redacts sensitive data (SPEC-05 Req. 9) before persisting or prompting; the
-        SensitiveDataFilter of the tools module plugs in here. Defaults to identity."""
+        """`sanitize_text` redacts sensitive data (SPEC-05 Req. 9) before persistence or prompting.
+
+        The production container supplies SensitiveDataFilter. The identity default keeps direct
+        constructions explicit and convenient for tests and adapters that do not use the container.
+        """
         self._conversations = conversations
         self._messages = messages
         self._uow = uow
