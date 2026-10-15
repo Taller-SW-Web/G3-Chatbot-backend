@@ -16,6 +16,11 @@ from src.application.use_cases.interpret_and_respond_use_case import InterpretAn
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
+from src.adapters.outbound.http_clients.inventory_client import (
+    INVENTORY_TIMEOUT_SECONDS,
+    InventoryClient,
+)
+from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
@@ -78,6 +83,24 @@ def provide_module_client(module: str, settings: Settings | None = None) -> Base
     client = BaseModuleClient(base_url=base_url, timeout_seconds=timeout_seconds)
     client.module = module
     return client
+
+
+def provide_products_client(settings: Settings | None = None) -> ProductsClient:
+    """Typed Productos catalog client (H3-06): base URL + 4 s timeout from Settings."""
+    settings = settings or get_settings()
+    return ProductsClient(
+        base_url=settings.products_base_url,
+        timeout_seconds=settings.products_timeout_seconds,
+    )
+
+
+def provide_inventory_client(settings: Settings | None = None) -> InventoryClient:
+    """Typed Productos inventory client (H3-06, SPEC-10): live stock, 3 s timeout."""
+    settings = settings or get_settings()
+    return InventoryClient(
+        base_url=settings.products_base_url,
+        timeout_seconds=INVENTORY_TIMEOUT_SECONDS,
+    )
 
 
 def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUseCase:
