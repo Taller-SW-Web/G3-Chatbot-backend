@@ -11,7 +11,7 @@ import httpx
 
 
 class ModuleUnavailableError(Exception):
-    """Timeout/connection/5xx talking to a module. Mapped to 503 + module name."""
+    """Timeout/connection/transport error/5xx talking to a module. Mapped to 503 + module name."""
 
     def __init__(self, module: str, detail: str = ""):
         self.module = module
@@ -49,7 +49,7 @@ class BaseModuleClient:
         headers = self._headers(correlation_id, kwargs.pop("headers", None))
         try:
             response = await self._client.request(method, path, headers=headers, **kwargs)
-        except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        except httpx.TransportError as exc:  # timeouts, connect/read/protocol errors
             raise ModuleUnavailableError(self.module, str(exc)) from exc
         if response.status_code >= 500:
             raise ModuleUnavailableError(self.module, f"HTTP {response.status_code}")

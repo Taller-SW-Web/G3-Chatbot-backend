@@ -27,13 +27,20 @@ from src.adapters.outbound.http_clients.base_client import (
     BaseModuleClient,
     ModuleUnavailableError,
 )
+from src.ports.outbound.module_errors import ModuleRequestError
 from src.ports.outbound.product_repository_port import (
+    MAX_SKUS_PER_CALL,
     normalize_sku_list,
-    parse_product_body,
 )
 
 MAX_PRICE_DECIMALS = Decimal("0.01")
-MAX_SKUS_PER_CALL = 20
+
+# Used when a 4xx body carries no `code`/`codigo` (or is not JSON at all).
+FALLBACK_ERROR_CODES = {
+    400: "VALIDACION",
+    401: "NO_AUTORIZADO",
+    404: "RECURSO_NO_ENCONTRADO",
+}
 
 
 def format_price(value: Decimal | float | int, name: str) -> str:
@@ -47,6 +54,25 @@ def format_price(value: Decimal | float | int, name: str) -> str:
     return f"{amount:.2f}"
 
 
+def parse_product_body(module: str, status_code: int, body: Any) -> Any:
+    """Single checkpoint: return 2xx bodies, raise on 4xx, reject the rest.
+
+    4xx reads `code` (or legacy `codigo`) from the body; missing codes fall
+    back to `FALLBACK_ERROR_CODES` or `HTTP_{status_code}`. 5xx never reaches
+    here (the base client maps it to `ModuleUnavailableError`). 1xx/3xx are
+    unexpected (the client does not follow redirects), so they raise
+    `ModuleUnavailableError`, never `ModuleRequestError`.
+    """
+    if 200 <= status_code < 300:
+        return body
+    if 400 <= status_code < 500:
+        code = FALLBACK_ERROR_CODES.get(status_code, f"HTTP_{status_code}")
+        if isinstance(body, dict):
+            code = str(body.get("code", body.get("codigo", code)))
+        raise ModuleRequestError(module, status_code, code)
+    raise ModuleUnavailableError(module, f"unexpected HTTP {status_code}")
+
+
 class ProductsBaseClient(BaseModuleClient):
     """Shared Productos transport: module name plus the single 2xx/4xx checkpoint."""
 
@@ -56,9 +82,15 @@ class ProductsBaseClient(BaseModuleClient):
         try:
             body = response.json()
         except ValueError as exc:
-            raise ModuleUnavailableError(
-                self.module, f"invalid JSON body: {exc}"
-            ) from exc
+            # A non-JSON 4xx (e.g. an HTML 404 from a proxy) is still a
+            # rejected request: keep the status. Anything else is a broken
+            # module answer.
+            if 400 <= response.status_code < 500:
+                body = None
+            else:
+                raise ModuleUnavailableError(
+                    self.module, f"invalid JSON body: {exc}"
+                ) from exc
         parsed = parse_product_body(self.module, response.status_code, body)
         return self.normalize_code(parsed) if isinstance(parsed, dict) else parsed
 

@@ -8,39 +8,10 @@ implements `InventoryPort`.
 from typing import Any, Protocol
 
 
-class ModuleRequestError(Exception):
-    """A 4xx answer from a module: the request was rejected, not a data row.
-
-    Carries the HTTP `status` and the contract `code` (`codigo` normalized)
-    so agent tools can tell "not found / not available" apart from valid
-    results (SPEC-09, SPEC-10). Only 2xx bodies are returned as data.
-    """
-
-    def __init__(self, module: str, status: int, code: str, detail: str = ""):
-        self.module = module
-        self.status = status
-        self.code = code
-        self.detail = detail
-        message = f"{module} request failed: HTTP {status} {code}"
-        super().__init__(f"{message}: {detail}" if detail else message)
+MAX_SKUS_PER_CALL = 20
 
 
-def parse_product_body(module: str, status_code: int, body: Any) -> Any:
-    """Single checkpoint: return 2xx bodies, raise on 4xx.
-
-    Reads `code` (or legacy `codigo`) from the body; unknown shapes fall
-    back to `HTTP_{status_code}`. 5xx never reaches here: the base client
-    already maps it to `ModuleUnavailableError`.
-    """
-    if 200 <= status_code < 300:
-        return body
-    code = f"HTTP_{status_code}"
-    if isinstance(body, dict):
-        code = str(body.get("code", body.get("codigo", code)))
-    raise ModuleRequestError(module, status_code, code)
-
-
-def normalize_sku_list(skus: list[str], *, limit: int = 20) -> list[str]:
+def normalize_sku_list(skus: list[str], *, limit: int = MAX_SKUS_PER_CALL) -> list[str]:
     """Clean shared SKU input: strip, drop blanks/duplicates, enforce the cap.
 
     Commas are rejected (comma is the wire separator), so `["A,B"]` cannot

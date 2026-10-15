@@ -12,9 +12,11 @@ from typing import Any
 import httpx
 
 from src.adapters.outbound.http_clients.products_client import ProductsBaseClient
-from src.ports.outbound.product_repository_port import normalize_sku_list
+from src.ports.outbound.product_repository_port import (
+    MAX_SKUS_PER_CALL,
+    normalize_sku_list,
+)
 
-MAX_SKUS_PER_CALL = 20
 INVENTORY_TIMEOUT_SECONDS = 3.0
 
 

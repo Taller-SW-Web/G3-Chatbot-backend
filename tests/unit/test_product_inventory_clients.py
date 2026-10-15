@@ -19,7 +19,7 @@ from src.infrastructure.config.container import (
     provide_products_client,
 )
 from src.infrastructure.config.settings import Settings
-from src.ports.outbound.product_repository_port import ModuleRequestError
+from src.ports.outbound.module_errors import ModuleRequestError
 from tests.helpers import product_mocks
 
 BASE_URL = "http://mock:4011"
@@ -365,3 +365,88 @@ def test_container_wiring_uses_settings():
     assert catalog.timeout_seconds == 4.0
     assert inventory.base_url == "http://mock:4011"
     assert inventory.timeout_seconds == INVENTORY_TIMEOUT_SECONDS == 3.0
+
+
+# --- Residual fixes after H3-06 review ---------------------------------
+
+
+@respx.mock
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (404, "RECURSO_NO_ENCONTRADO"),
+        (400, "VALIDACION"),
+        (401, "NO_AUTORIZADO"),
+        (409, "HTTP_409"),
+    ],
+)
+async def test_non_json_4xx_keeps_status_and_falls_back_to_a_code(status, code):
+    respx.get(f"{BASE_URL}/productos/prod-1").mock(
+        return_value=httpx.Response(status, text="<html>error</html>")
+    )
+    with pytest.raises(ModuleRequestError) as error:
+        await make_catalog().get_product_detail("prod-1")
+    assert (error.value.status, error.value.code) == (status, code)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_non_json_4xx_on_inventory_keeps_status():
+    respx.get(f"{BASE_URL}/inventario/disponibilidad").mock(
+        return_value=httpx.Response(404, text="<html>not found</html>")
+    )
+    with pytest.raises(ModuleRequestError) as error:
+        await make_inventory().get_availability(["SKU-1"])
+    assert error.value.status == 404
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_non_json_2xx_is_module_unavailable():
+    respx.get(f"{BASE_URL}/productos/prod-1").mock(
+        return_value=httpx.Response(200, text="<html>oops</html>")
+    )
+    with pytest.raises(ModuleUnavailableError):
+        await make_catalog().get_product_detail("prod-1")
+
+
+@respx.mock
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [{"code": "X"}, "<html>moved</html>"])
+async def test_3xx_is_module_unavailable_not_a_request_error(body):
+    kwargs = {"json": body} if isinstance(body, dict) else {"text": body}
+    respx.get(f"{BASE_URL}/productos/prod-1").mock(
+        return_value=httpx.Response(302, **kwargs)
+    )
+    with pytest.raises(ModuleUnavailableError):
+        await make_catalog().get_product_detail("prod-1")
+
+
+@respx.mock
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exc",
+    [
+        httpx.ReadError("connection reset"),
+        httpx.RemoteProtocolError("server disconnected"),
+        httpx.WriteError("broken pipe"),
+    ],
+)
+async def test_transport_errors_become_module_unavailable(exc):
+    respx.get(f"{BASE_URL}/productos/prod-1").mock(side_effect=exc)
+    with pytest.raises(ModuleUnavailableError) as error:
+        await make_catalog().get_product_detail("prod-1")
+    assert error.value.module == "productos"
+
+
+def test_max_skus_per_call_is_defined_once():
+    from src.adapters.outbound.http_clients import inventory_client, products_client
+    from src.ports.outbound import product_repository_port
+
+    assert (
+        inventory_client.MAX_SKUS_PER_CALL
+        is products_client.MAX_SKUS_PER_CALL
+        is product_repository_port.MAX_SKUS_PER_CALL
+    )
+    assert product_repository_port.MAX_SKUS_PER_CALL == 20
