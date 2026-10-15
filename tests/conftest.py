@@ -34,7 +34,7 @@ async def postgres_session(persistence_metadata):
     if not url:
         pytest.skip("Falta TEST_DATABASE_URL: integración PostgreSQL 18 no ejecutada")
     engine = create_async_engine(url)
-    schema = f"h2_06_test_{uuid.uuid4().hex}"
+    schema = f"persistence_test_{uuid.uuid4().hex}"
     try:
         async with engine.connect() as connection:
             transaction = await connection.begin()
