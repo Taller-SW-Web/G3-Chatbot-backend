@@ -34,6 +34,8 @@ class Settings:
     products_base_url: str = "http://localhost:4011"
     sales_base_url: str = "http://localhost:4012"
     dispatch_base_url: str = "http://localhost:4013"
+    # Mock secret for Prism (H3-07, ADR-0017/A3): real credentials arrive in Hito 4.
+    security_client_secret: str = "secreto-de-prueba"
     # Per-module timeouts in seconds (DoD: exact timeouts per integration).
     security_timeout_seconds: float = 5.0
     products_timeout_seconds: float = 4.0
@@ -54,6 +56,7 @@ def get_settings() -> Settings:
         llm_vision_enabled=os.getenv("LLM_VISION_ENABLED", "true").strip().lower() != "false",
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
         security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),
+        security_client_secret=os.getenv("SECURITY_CLIENT_SECRET", "secreto-de-prueba").strip(),
         products_base_url=os.getenv("PRODUCTS_BASE_URL", "http://localhost:4011").strip().rstrip("/"),
         sales_base_url=os.getenv("SALES_BASE_URL", "http://localhost:4012").strip().rstrip("/"),
         dispatch_base_url=os.getenv("DISPATCH_BASE_URL", "http://localhost:4013").strip().rstrip("/"),
