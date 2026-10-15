@@ -14,6 +14,7 @@ from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.tools.empty_tool_adapter import EmptyToolAdapter
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
+from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
@@ -52,6 +53,11 @@ def provide_tool_executor() -> ToolExecutorPort:
     return EmptyToolAdapter()
 
 
+def sanitize_sensitive_text(text: str) -> str:
+    """Redact customer secrets before they are persisted or sent to the LLM."""
+    return SensitiveDataFilter().redactar(text).texto
+
+
 def provide_module_client(module: str, settings: Settings | None = None) -> BaseModuleClient:
     """Module client wiring (H3-05, ADR-0017): base URL + timeout from Settings.
 
@@ -84,7 +90,7 @@ def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUse
         tools=provide_tool_executor(),
         assistant_name=settings.assistant_name,
         llm_timeout_seconds=settings.llm_timeout_seconds,
-        # sanitize_text stays identity until the SensitiveDataFilter of the tools module is merged.
+        sanitize_text=sanitize_sensitive_text,
     )
 
 
