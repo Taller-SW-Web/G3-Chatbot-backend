@@ -288,6 +288,7 @@ class ManageCartUseCase:
         lines_out = [
             {
                 "item_id": str(row.id),
+                "sku": row.sku,
                 "nombre": row.name,
                 "variante": row.variant_description,
                 "cantidad": row.quantity,
