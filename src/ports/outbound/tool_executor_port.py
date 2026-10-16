@@ -4,7 +4,7 @@ Owned by the conversation engine. The ToolRegistry/ActionDispatcher of the tools
 through a thin adapter; no SDK or registry import here.
 """
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -29,7 +29,7 @@ class ToolResult:
     code: str
     data: Mapping[str, Any] = field(default_factory=dict)
     is_error: bool = False
-    block: Mapping[str, Any] | None = None  # structured block for the client (e.g. a product carousel)
+    blocks: Sequence[Mapping[str, Any]] = ()  # structured blocks for the client (e.g. a product carousel)
 
 
 class ToolExecutorPort(Protocol):

@@ -4,7 +4,15 @@ Fuente funcional: SPEC-01, SPEC-05, SPEC-06, SPEC-09, SPEC-10 y SPEC-11 de `G3-C
 
 ## Contratos para conectar
 
-`build_tool_registry(handlers)` recibe ocho handlers asíncronos: `buscar_productos`, `ver_detalle_producto`, `consultar_disponibilidad`, `agregar_al_carrito`, `ver_carrito`, `cambiar_cantidad`, `quitar_del_carrito` y `vaciar_carrito`. `solicitar_registro` ya devuelve el texto y el formulario.
+`build_tool_registry(handlers)` registra `solicitar_registro` siempre (ya devuelve el texto y el formulario) y solo los handlers comerciales recibidos en el mapeo nombre → handler (puede estar vacío). Los nombres soportados son `buscar_productos`, `ver_detalle_producto`, `consultar_disponibilidad`, `agregar_al_carrito`, `ver_carrito`, `cambiar_cantidad`, `quitar_del_carrito` y `vaciar_carrito`. Un nombre desconocido o un handler no invocable lanza `ValueError`. Los esquemas y descripciones de cada herramienta viven junto al constructor (`catalog_tools.py`): quien integra un módulo solo aporta el handler y lo agrega al mapeo de `provide_tool_executor()` en el contenedor.
+
+`RegistryToolAdapter` (`src/adapters/outbound/tools/registry_tool_adapter.py`) implementa `ToolExecutorPort` sobre el `ToolRegistry` y es lo que usa el bucle del agente:
+
+- `definitions()` traduce `registry.catalogo()` a `ToolDefinition` del proveedor LLM (`nombre`, `descripcion`, `parametros`).
+- `execute()` convierte `ToolExecutionContext` en `ExecutionContext` (UUID a texto, `anonymous_sid` a `chat_sid`, `None` se conserva) y llama a `registry.ejecutar`, que nunca confirma acciones.
+- `is_error=True` solo para los rechazos del registro: `HERRAMIENTA_DESCONOCIDA`, `ARGUMENTOS_INVALIDOS`, `REQUIERE_SESION` y `REQUIERE_CONFIRMACION`. Los códigos de los handlers pasan sin marcar error.
+- Los bloques de UI que el handler deja en `data["bloques"]` se extraen a `ToolResult.blocks` (el puerto transporta una secuencia de bloques y el caso de uso emite un `BlockEvent` por bloque) y se quitan de `data`, de modo que el modelo no recibe payloads de UI.
+- Las excepciones de los handlers se propagan; el caso de uso las convierte en `ERROR_INTERNO`.
 
 Cada handler recibe `(modelo_pydantic, ExecutionContext)` y devuelve `ToolResult(code, data)`. El adaptador de catálogo y carrito debe resolver ordinales y variantes, verificar pertenencia, consultar stock, recalcular precios y producir bloques con datos reales. No se deben registrar resultados comerciales simulados. `product_id` identifica el producto de integración; `productoRef` es el ordinal 1–10 del carrusel de esa conversación. `itemId`, `itemRef` y `nombre` son alternativas para resolver una línea del carrito. Cambiar cantidad a cero delega la eliminación.
 
@@ -29,4 +37,4 @@ python -m pytest -q
 git diff --check
 ```
 
-Las pruebas de integración con PostgreSQL requieren `TEST_DATABASE_URL`. Esta rama entrega los contratos, validadores y controles de seguridad; la integración de los handlers comerciales con los casos de uso, autenticación, historial y bloques queda coordinada con el resto del Hito 3.
+Las pruebas de integración con PostgreSQL requieren `TEST_DATABASE_URL`. Esta rama entrega los contratos, validadores y controles de seguridad; la integración de los handlers comerciales con los casos de uso, autenticación, historial y bloques queda coordinada con el resto de los módulos.

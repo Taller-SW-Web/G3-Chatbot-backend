@@ -186,8 +186,25 @@ def test_catalogo_no_comparte_estado_y_registro_rechaza_duplicados(tools):
         registry.registrar(ToolDefinition("ver_carrito", "x", EmptyArguments, AsyncMock()))
     with pytest.raises(ValueError, match="extra"):
         registry.registrar(ToolDefinition("sin_esquema", "x", BaseModel, AsyncMock()))
-    with pytest.raises(ValueError, match="ocho"):
-        build_tool_registry({})
+
+
+def test_registro_vacio_solo_expone_solicitar_registro():
+    assert [t["nombre"] for t in build_tool_registry({}).catalogo()] == ["solicitar_registro"]
+    assert [t["nombre"] for t in build_tool_registry().catalogo()] == ["solicitar_registro"]
+
+
+def test_registro_parcial_expone_solo_los_handlers_recibidos():
+    registry = build_tool_registry({"ver_carrito": AsyncMock(), "vaciar_carrito": AsyncMock()})
+    catalog = {t["nombre"]: t for t in registry.catalogo()}
+    assert set(catalog) == {"solicitar_registro", "ver_carrito", "vaciar_carrito"}
+    assert catalog["vaciar_carrito"]["requiere_confirmacion"] and not catalog["ver_carrito"]["requiere_confirmacion"]
+
+
+def test_registro_rechaza_nombres_desconocidos_y_handlers_no_invocables():
+    with pytest.raises(ValueError, match="desconocidos"):
+        build_tool_registry({"ver_carito": AsyncMock()})
+    with pytest.raises(ValueError, match="invocables"):
+        build_tool_registry({"ver_carrito": None})
 
 
 @pytest.mark.asyncio

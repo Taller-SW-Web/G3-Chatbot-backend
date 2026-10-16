@@ -216,8 +216,8 @@ class InterpretAndRespondUseCase:
                                 tool_call_id=call.id,
                             )
                         )
-                        if result.block is not None:
-                            block = dict(result.block)
+                        for tool_block in result.blocks:
+                            block = dict(tool_block)
                             turn.blocks.append(block)
                             yield BlockEvent(block)
                     if turn.validation_failures > MAX_VALIDATION_FAILURES:

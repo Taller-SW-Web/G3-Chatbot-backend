@@ -126,7 +126,7 @@ async def test_agent_loop_end_to_end_persists_the_turn(postgres_session):
             [ToolCallRequested(ToolCall("c1", "buscar_productos", {"marca": "Nike"})), Completed("tool_calls")],
             [TextDelta("Encontré "), TextDelta("dos opciones"), Completed("stop")],
         ]),
-        FakeToolExecutor({"buscar_productos": ToolResult("OK", {"total": 2}, block=block)}),
+        FakeToolExecutor({"buscar_productos": ToolResult("OK", {"total": 2}, blocks=(block,))}),
         assistant_name="Botleta", llm_timeout_seconds=5,
     )
     events = [e async for e in await use_case.send_message(ANA, cid, "zapatillas Nike")]

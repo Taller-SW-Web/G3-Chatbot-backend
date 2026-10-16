@@ -155,7 +155,7 @@ async def test_plain_reply_is_streamed_and_persisted():
 async def test_tool_call_then_final_answer():
     """SPEC-05 Req. 3 · Scenario: Intención clara con parámetros."""
     block = {"type": "CARRUSEL_PRODUCTOS", "items": []}
-    tools = FakeToolExecutor({"buscar_productos": ToolResult("OK", {"total": 2}, block=block)})
+    tools = FakeToolExecutor({"buscar_productos": ToolResult("OK", {"total": 2}, blocks=(block,))})
     uc, conv, messages, _, llm, tools = build(
         [tool_turn("c1", "buscar_productos", {"marca": "Nike"}), reply("Encontré 2 opciones")], tools=tools
     )
@@ -386,9 +386,19 @@ async def test_unexpected_persistence_failure_rolls_back_and_raises():
 
 
 @pytest.mark.asyncio
+async def test_each_block_of_a_tool_result_is_streamed_and_stored_in_order():
+    first, second = {"type": "CARRUSEL_PRODUCTOS"}, {"type": "FORMULARIO"}
+    tools = FakeToolExecutor({"buscar_productos": ToolResult("OK", blocks=(first, second))})
+    uc, conv, messages, _, _, _ = build([tool_turn("c1", "buscar_productos", {}), reply("listo")], tools=tools)
+    events = await run(uc, conv)
+    assert [e.block for e in events if isinstance(e, BlockEvent)] == [first, second]
+    assert messages.by_role(MessageRole.ASSISTANT)[0]["blocks"]["blocks"] == [first, second]
+
+
+@pytest.mark.asyncio
 async def test_degraded_reply_keeps_blocks_of_executed_tools_before_the_quick_actions():
     block = {"type": "CARRUSEL_PRODUCTOS", "items": []}
-    tools = FakeToolExecutor({"buscar_productos": ToolResult("OK", block=block)})
+    tools = FakeToolExecutor({"buscar_productos": ToolResult("OK", blocks=(block,))})
     uc, conv, messages, _, _, _ = build(
         [tool_turn("c1", "buscar_productos", {}), LLMUnavailableError("down")], tools=tools
     )
@@ -400,7 +410,7 @@ async def test_degraded_reply_keeps_blocks_of_executed_tools_before_the_quick_ac
 
 @pytest.mark.asyncio
 async def test_closing_the_stream_after_a_tool_ran_commits_its_row():
-    tools = FakeToolExecutor({"vaciar_carrito": ToolResult("OK", block={"type": "CARRITO"})})
+    tools = FakeToolExecutor({"vaciar_carrito": ToolResult("OK", blocks=({"type": "CARRITO"},))})
     uc, conv, messages, uow, _, _ = build([tool_turn("c1", "vaciar_carrito", {}), reply("listo")], tools=tools)
     stream = await uc.send_message(ANA, conv.id, "vacía mi carrito")
     seen = []

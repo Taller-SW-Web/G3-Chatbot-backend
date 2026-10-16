@@ -63,7 +63,7 @@ async def test_a_whole_turn_over_sse_is_persisted_and_ends_with_fin(postgres_ses
         [ToolCallRequested(ToolCall("c1", "buscar_productos", {"marca": "Nike"})), Completed("tool_calls")],
         [TextDelta("Encontré "), TextDelta("dos opciones"), Completed("stop")],
     ])
-    tools = FakeToolExecutor({"buscar_productos": ToolResult("OK", {"total": 2}, block=block)})
+    tools = FakeToolExecutor({"buscar_productos": ToolResult("OK", {"total": 2}, blocks=(block,))})
 
     async with make_client(postgres_session, llm, tools) as client:
         res = await client.post(f"/api/v1/chat/conversaciones/{cid}/mensajes", json={"texto": "zapatillas Nike"})

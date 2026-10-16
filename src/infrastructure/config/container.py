@@ -11,7 +11,8 @@ from src.adapters.outbound.persistence.conversation_postgres_adapter import (
 from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
 from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
-from src.adapters.outbound.tools.empty_tool_adapter import EmptyToolAdapter
+from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
+from src.application.tools.catalog_tools import build_tool_registry
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
@@ -55,8 +56,8 @@ def provide_llm_provider(settings: Settings | None = None) -> LLMProvider:
 
 
 def provide_tool_executor() -> ToolExecutorPort:
-    """TEMPORARY: no tools until the ToolRegistry of the tools module is merged and adapted to ToolExecutorPort."""
-    return EmptyToolAdapter()
+    """Registry with only the tools that have a handler; commercial handlers are added as modules land."""
+    return RegistryToolAdapter(build_tool_registry({}))
 
 
 def sanitize_sensitive_text(text: str) -> str:

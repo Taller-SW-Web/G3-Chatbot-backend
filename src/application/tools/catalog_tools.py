@@ -123,17 +123,27 @@ _TOOLS = (
 )
 
 
-def build_tool_registry(handlers: Mapping[str, ToolHandler]) -> ToolRegistry:
-    """Requiere todos los handlers comerciales; falla si falta alguno."""
-    esperados = {nombre for nombre, _, _ in _TOOLS}
-    if set(handlers) != esperados or not all(callable(h) for h in handlers.values()):
-        raise ValueError("Se requieren exactamente los ocho handlers comerciales")
+def build_tool_registry(handlers: Mapping[str, ToolHandler] | None = None) -> ToolRegistry:
+    """Registra `solicitar_registro` siempre y solo los handlers comerciales recibidos.
+
+    Los esquemas y descripciones viven en `_TOOLS`; quien integra un módulo solo aporta
+    el handler. Un nombre desconocido o un handler no invocable falla para atrapar errores
+    de escritura antes de exponer una herramienta rota al LLM.
+    """
+    handlers = {} if handlers is None else handlers
+    desconocidos = set(handlers) - {nombre for nombre, _, _ in _TOOLS}
+    if desconocidos:
+        raise ValueError(f"Handlers comerciales desconocidos: {sorted(desconocidos)}")
+    if not all(callable(handler) for handler in handlers.values()):
+        raise ValueError("Todos los handlers comerciales deben ser invocables")
     registry = ToolRegistry()
     registry.registrar(ToolDefinition(
         "solicitar_registro", "Mostrar el formulario seguro de registro sin pedir datos en el chat.",
         EmptyArguments, solicitar_registro,
     ))
     for nombre, descripcion, esquema in _TOOLS:
+        if nombre not in handlers:
+            continue
         registry.registrar(ToolDefinition(
             nombre, descripcion, esquema, handlers[nombre],
             requiere_confirmacion=nombre == "vaciar_carrito",
