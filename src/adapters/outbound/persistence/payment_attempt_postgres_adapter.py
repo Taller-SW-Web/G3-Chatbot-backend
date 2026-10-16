@@ -1,4 +1,4 @@
-"""Adapter payment_attempt (H2-04 David, SPEC-14 Req. 5).
+"""Adapter payment_attempt (SPEC-14 Req. 5).
 
 Solo insercion: el intento nunca se modifica. No hace commit: la
 transaccion la controla el caso de uso (checkout + intento + outbox).

@@ -1,4 +1,4 @@
-"""H3-10: a full SSE turn through the router against PostgreSQL 18 with a fake LLM and tools (needs TEST_DATABASE_URL)."""
+"""A full SSE turn through the router against PostgreSQL 18 with a fake LLM and tools (needs TEST_DATABASE_URL)."""
 import json
 from contextlib import asynccontextmanager
 

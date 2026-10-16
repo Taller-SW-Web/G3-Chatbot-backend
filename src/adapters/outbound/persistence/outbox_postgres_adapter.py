@@ -1,4 +1,4 @@
-"""Adapter outbox (H2-03, SPEC-15, SPEC-16).
+"""Adapter outbox (SPEC-15, SPEC-16).
 
 Operaciones minimas derivadas de modelo-datos.md (seccion `outbox`).
 No hace commit: la transaccion la controla el caso de uso (el INSERT del

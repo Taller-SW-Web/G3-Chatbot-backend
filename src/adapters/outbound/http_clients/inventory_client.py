@@ -1,4 +1,4 @@
-"""Productos inventory client (H3-06, SPEC-10, ADR-0017).
+"""Productos inventory client (SPEC-10, ADR-0017).
 
 Live per-SKU availability, one bulk call, no cache for decisions.
 Timeout is 3 s per SPEC-10 (shorter than the module default of 4 s):

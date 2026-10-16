@@ -1,4 +1,4 @@
-"""H3-05 contracts: settings per environment, base HTTP client, tool catalog, blocks/SSE DTOs."""
+"""Contracts: settings per environment, base HTTP client, tool catalog, blocks/SSE DTOs."""
 import httpx
 import pytest
 import respx
@@ -6,7 +6,7 @@ import respx
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient, ModuleUnavailableError
 from src.application.dto.chatbot_response_dto import AssistantTurnResult, ChatBlock
 from src.application.dto.incoming_message_dto import SendMessageRequest
-from src.application.tools.tool_contracts import HITO3_TOOL_CONTRACTS, get_tool_contract
+from src.application.tools.tool_contracts import TOOL_CONTRACTS, get_tool_contract
 from src.domain.value_objects.block import BlockType, FormKind, QuickActionId
 from src.infrastructure.config.container import provide_module_client
 from src.infrastructure.config.settings import get_settings
@@ -54,7 +54,7 @@ def test_tool_catalog_requires_session_and_confirmation():
     assert get_tool_contract("vaciar_carrito").requires_confirmation is True
     assert get_tool_contract("iniciar_checkout").requires_session is True
     assert get_tool_contract("buscar_productos").requires_session is False
-    assert len(HITO3_TOOL_CONTRACTS) == 16
+    assert len(TOOL_CONTRACTS) == 16
     with pytest.raises(KeyError):
         get_tool_contract("no_existe")
 

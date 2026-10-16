@@ -1,4 +1,4 @@
-"""H3-06 Productos mocks: typed clients over BaseModuleClient + respx seeds.
+"""Productos mocks: typed clients over BaseModuleClient + respx seeds.
 
 Covers SPEC-06 (search), SPEC-09 (detail), SPEC-10 (availability) and the
 SPEC-11 pricing hooks. No network, no real module, no database.
@@ -367,7 +367,7 @@ def test_container_wiring_uses_settings():
     assert inventory.timeout_seconds == INVENTORY_TIMEOUT_SECONDS == 3.0
 
 
-# --- Residual fixes after H3-06 review ---------------------------------
+# --- Residual fixes after the products client review ---------------------------------
 
 
 @respx.mock

@@ -34,7 +34,7 @@ class Settings:
     products_base_url: str = "http://localhost:4011"
     sales_base_url: str = "http://localhost:4012"
     dispatch_base_url: str = "http://localhost:4013"
-    # Seguridad client secret (H3-07, ADR-0017/A3). No code default: SecurityClient
+    # Seguridad client secret (ADR-0017/A3). No code default: SecurityClient
     # refuses to start without it (set SECURITY_CLIENT_SECRET, see .env.template).
     security_client_secret: str = ""
     # Per-module timeouts in seconds (DoD: exact timeouts per integration).

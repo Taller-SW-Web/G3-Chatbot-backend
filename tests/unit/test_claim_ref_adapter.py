@@ -1,4 +1,4 @@
-"""Tests H2-04 (David): modelo claim_ref + adapter sin BD (offline).
+"""Tests: modelo claim_ref + adapter sin BD (offline).
 
 Trazabilidad:
 - SPEC-19 (creacion-reclamo): idempotencia por Idempotency-Key.

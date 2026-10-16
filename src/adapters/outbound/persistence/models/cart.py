@@ -1,4 +1,4 @@
-"""Modelo cart (H2-03, SPEC-11).
+"""Modelo cart (SPEC-11).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `cart`).
 - Cabecera del carrito: anonimo (por conversacion, expira 7d) o cliente
@@ -8,7 +8,7 @@ Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `cart`).
 - shipping_snapshot / totals_snapshot son snapshots jsonb con los nombres
   reales del contrato (idZona, costoEnvio, ...), no se renombran.
 - version es bloqueo optimista para mutaciones concurrentes.
-- H2-10 debe instalar set_updated_at(); server_onupdate declara ese valor
+- La migración debe instalar set_updated_at(); server_onupdate declara ese valor
   generado, no crea el trigger.
 - PG18: id uuid DEFAULT uuidv7().
 """

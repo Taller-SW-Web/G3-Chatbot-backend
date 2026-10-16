@@ -1,7 +1,7 @@
-"""Tests H2-07: modelo conversation + adapter sin BD (offline).
+"""Test: modelo conversation + adapter sin BD (offline).
 
-Criterio hito-2.md: cada adapter con al menos un test.
-El test de integración contra Supabase (INSERT real + CHECKs + índices) se hace en H2-10.
+Criterio del proyecto: cada adapter con al menos un test.
+El test de integración contra Supabase (INSERT real + CHECKs + índices) queda para la migración compartida.
 """
 from sqlalchemy import CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID

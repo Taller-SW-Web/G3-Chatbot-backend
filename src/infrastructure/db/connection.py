@@ -1,6 +1,6 @@
-"""Engine/sesión async + Base declarativa (H2-01).
+"""Engine/sesión async + Base declarativa.
 
-Decisión H2-01: PostgreSQL 18 + Python 3.12.7.
+Decisión: PostgreSQL 18 + Python 3.12.7.
 - IDs con uuidv7() nativo de PG18 vía server_default en cada modelo.
 - Async con asyncpg (estándar FastAPI + httpx async del proyecto).
 - DATABASE_URL se lee de entorno, ej:

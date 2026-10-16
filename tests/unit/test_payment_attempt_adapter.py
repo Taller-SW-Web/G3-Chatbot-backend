@@ -1,4 +1,4 @@
-"""Tests H2-04 (David): modelo payment_attempt + adapter sin BD (offline).
+"""Tests: modelo payment_attempt + adapter sin BD (offline).
 
 Trazabilidad:
 - SPEC-14 (checkout-pago) Req. 5: maximo 3 intentos; APROBADO sin motivo,

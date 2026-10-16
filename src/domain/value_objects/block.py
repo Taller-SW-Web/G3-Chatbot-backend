@@ -1,4 +1,4 @@
-"""Structured reply blocks (H3-05, contratos-integracion.md §2.1).
+"""Structured reply blocks (contratos-integracion.md §2.1).
 
 `BlockType` mirrors `Bloque.tipo` exposed to the frontend. Commercial data
 (prices, stock, discounts) always comes from tools, never from LLM text.

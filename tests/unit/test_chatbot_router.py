@@ -1,4 +1,4 @@
-"""H3-10: HTTP edge of SPEC-05 Req. 1 with dependency overrides (no database)."""
+"""HTTP edge of SPEC-05 Req. 1 with dependency overrides (no database)."""
 import hashlib
 import uuid
 from datetime import datetime, timezone
@@ -159,7 +159,7 @@ def test_retomar_sin_cookie_es_404(service):
 
 @pytest.mark.parametrize("method,path", [("post", ""), ("get", ""), ("get", f"/{CID}/mensajes")])
 def test_authorization_header_responde_501_sin_confiar_en_el_token(service, method, path):
-    """Provisional: JWT validation belongs to H3-09; never trust an unverified token."""
+    """Provisional: JWT validation is pending (see caller_identity); never trust an unverified token."""
     client = make_client(service)
     res = getattr(client, method)(BASE + path, headers={"Authorization": "Bearer x.y.z"})
     assert res.status_code == 501

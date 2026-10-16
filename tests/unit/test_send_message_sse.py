@@ -1,4 +1,4 @@
-"""H3-10: POST /chat/conversaciones/{id}/mensajes streamed as Server-Sent Events (SPEC-05 Req. 4)."""
+"""POST /chat/conversaciones/{id}/mensajes streamed as Server-Sent Events (SPEC-05 Req. 4)."""
 import asyncio
 import json
 import uuid

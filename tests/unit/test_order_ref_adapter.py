@@ -1,8 +1,8 @@
-"""Tests H2-03 (Sonny): modelo order_ref y adapter sin BD (offline).
+"""Tests: modelo order_ref y adapter sin BD (offline).
 
-checkout.id aun no esta definido (H2-04 David): estos tests solo
-inspeccionan la tabla y no resuelven esa FK (patron de H2-07 con
-attachment.message_id antes de H2-06).
+checkout.id aun no esta definido: estos tests solo
+inspeccionan la tabla y no resuelven esa FK (mismo patron que
+attachment.message_id).
 """
 import uuid
 from unittest.mock import MagicMock
@@ -48,7 +48,7 @@ def test_pk_y_unique_checkout():
 
 
 def test_fk_checkout_sin_resolver():
-    # H2-04 creara el modelo checkout; aqui solo se verifica el nombre y el RESTRICT.
+    # El modelo checkout define la FK; aqui solo se verifica el nombre y el RESTRICT.
     fks = {fk.parent.name: fk for fk in table.foreign_keys}
     assert set(fks) == {"checkout_id"}
     assert fks["checkout_id"].target_fullname == "checkout.id"

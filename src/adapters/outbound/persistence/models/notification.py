@@ -1,4 +1,4 @@
-"""Modelo notification (H2-04 David, SPEC-16).
+"""Modelo notification (SPEC-16).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `notification`)
 + openspec/specs/notificacion-confirmacion (maximo 2 reenvios).
@@ -7,7 +7,7 @@ Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `notification`)
 - type se deduce de resend_number: 0 = ORDER_CONFIRMATION, 1-2 = RESEND.
 - attempts cuenta reintentos SMTP de ESTA notificacion, no reenvios.
 - Unicidad (order_id, resend_number): el mismo envio no se registra dos veces.
-- H2-10 debe instalar set_updated_at(); server_onupdate declara ese valor
+- La migración debe instalar set_updated_at(); server_onupdate declara ese valor
   generado, no crea el trigger.
 - PG18: id uuid DEFAULT uuidv7().
 """

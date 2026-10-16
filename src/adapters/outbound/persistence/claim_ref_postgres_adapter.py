@@ -1,4 +1,4 @@
-"""Adapter claim_ref (H2-04 David, SPEC-19, SPEC-20).
+"""Adapter claim_ref (SPEC-19, SPEC-20).
 
 Referencia local idempotente al reclamo de Ventas. No hace commit: la
 transaccion la controla el caso de uso.

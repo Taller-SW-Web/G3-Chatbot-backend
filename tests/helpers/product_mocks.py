@@ -1,4 +1,4 @@
-"""Productos mock helpers (H3-06, ADR-0017).
+"""Productos mock helpers (ADR-0017).
 
 respx routes backed by seed fixtures in `tests/fixtures/products/`.
 Switching mock<->real stays config-only: tests point the clients at the

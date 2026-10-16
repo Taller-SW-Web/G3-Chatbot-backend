@@ -1,4 +1,4 @@
-"""Adapter conversation (H2-07, SPEC-05).
+"""Adapter conversation (SPEC-05).
 
 Operaciones minimas derivadas de modelo-datos.md (seccion `conversation`). No hace commit: la
 transaccion la controla el caso de uso.

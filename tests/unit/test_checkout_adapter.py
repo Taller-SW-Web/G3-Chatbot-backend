@@ -1,4 +1,4 @@
-"""Tests H2-04 (David): modelo checkout + adapter sin BD (offline).
+"""Tests: modelo checkout + adapter sin BD (offline).
 
 Trazabilidad:
 - SPEC-12 (direccion-cotizacion-envio): summary con contacto + envio.

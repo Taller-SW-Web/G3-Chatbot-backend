@@ -1,4 +1,4 @@
-"""Seguridad mock helpers (H3-07, ADR-0017).
+"""Seguridad mock helpers (ADR-0017).
 
 respx routes shaped like Prism over Seguridad's published `openapi.yaml`
 (`:4010`, no `/api/v1` prefix, examples picked with `Prefer`).

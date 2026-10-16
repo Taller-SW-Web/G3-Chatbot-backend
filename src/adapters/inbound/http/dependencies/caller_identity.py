@@ -1,8 +1,8 @@
 """Resolves who is calling (SPEC-05 Req. 1).
 
 Anonymous visitors are identified by the `chat_sid` cookie; the stored value is its SHA-256 hex.
-Authenticated access (JWT validation, H3-09) is NOT implemented here: any Authorization header is
-refused with 501 so an unverified token is never trusted. H3-09 replaces `get_caller_identity`
+Authenticated access (JWT validation) is NOT implemented here: any Authorization header is
+refused with 501 so an unverified token is never trusted. The JWT work replaces `get_caller_identity`
 (it is a plain FastAPI dependency, overridable) and returns CallerIdentity(customer_id=...).
 """
 import hashlib

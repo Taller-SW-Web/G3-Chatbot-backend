@@ -1,4 +1,4 @@
-"""Adapter cart_item (H2-03, SPEC-10, SPEC-11).
+"""Adapter cart_item (SPEC-10, SPEC-11).
 
 Operaciones minimas derivadas de modelo-datos.md (seccion `cart_item`).
 No hace commit: la transaccion la controla el caso de uso. La validacion

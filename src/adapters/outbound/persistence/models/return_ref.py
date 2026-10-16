@@ -1,4 +1,4 @@
-"""Modelo return_ref (H2-04 David, SPEC-21, SPEC-22).
+"""Modelo return_ref (SPEC-21, SPEC-22).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `return_ref`).
 - Referencia local a la devolucion/cambio registrada en Ventas (F3).
@@ -10,7 +10,7 @@ Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `return_ref`).
   sentidos el literal del contrato con Ventas (EXCHANGE <-> CAMBIO,
   MONEY_REFUND <-> DEVOLUCION_DINERO).
 - Sin evidence_refs jsonb: las evidencias se obtienen con
-  WHERE return_id = ? sobre evidence (tabla de Alonso, H2-06).
+  WHERE return_id = ? sobre evidence (tabla evidence).
 - Solo insercion: sin updated_at.
 """
 import uuid

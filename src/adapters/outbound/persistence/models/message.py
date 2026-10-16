@@ -1,4 +1,4 @@
-"""Mensaje persistido (H2-06, SPEC-05). El texto debe llegar redactado.
+"""Mensaje persistido (SPEC-05). El texto debe llegar redactado.
 
 Solo inserción. La identidad y pertenencia se validan en el caso de uso;
 conversation_id referencia el modelo Conversation de Mathias.

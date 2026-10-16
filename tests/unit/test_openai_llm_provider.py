@@ -1,4 +1,4 @@
-"""H3-10: OpenAI adapter of LLMProvider against a mocked HTTP layer. No network, no real key."""
+"""OpenAI adapter of LLMProvider against a mocked HTTP layer. No network, no real key."""
 import json
 
 import httpx

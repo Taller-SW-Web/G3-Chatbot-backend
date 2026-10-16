@@ -1,4 +1,4 @@
-"""Productos catalog client (H3-06, ADR-0017).
+"""Productos catalog client (ADR-0017).
 
 Speaks the real Productos contract (`{PRO}/api/v1`, provisional scopes A5):
 search, detail, categories, brands, prices and promotions evaluation.
@@ -12,7 +12,7 @@ Provisional until Productos confirms (A5): the `GET /precios` query names
 `canal` instead) and the `at` field sent to `POST /promociones/evaluar`
 (not listed in contratos-integracion.md §3.2).
 
-Open question (hito-3.md, H3-01 pending): respx mocks live in
+Open question: respx mocks live in
 `tests/helpers`; the default `http://localhost:4011` has no server behind,
 so deployed environments still need a mocks hosting decision (ADR-0017).
 """

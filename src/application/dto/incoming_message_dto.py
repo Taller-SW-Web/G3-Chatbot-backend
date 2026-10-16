@@ -1,4 +1,4 @@
-"""Inbound DTOs: POST /chat/conversaciones/{id}/mensajes (H3-05, ADR-0021).
+"""Inbound DTOs: POST /chat/conversaciones/{id}/mensajes (ADR-0021).
 
 One body, three shapes: `texto` (+ optional `adjuntoIds`, SPEC-23),
 or a direct `accion` answered by the ActionDispatcher without the LLM.

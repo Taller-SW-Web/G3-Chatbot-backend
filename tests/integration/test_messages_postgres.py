@@ -1,4 +1,4 @@
-"""H3-10: message writes and agent-loop persistence against PostgreSQL 18 (needs TEST_DATABASE_URL)."""
+"""Message writes and agent-loop persistence against PostgreSQL 18 (needs TEST_DATABASE_URL)."""
 import uuid
 from datetime import datetime, timedelta, timezone
 

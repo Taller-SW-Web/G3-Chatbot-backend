@@ -1,4 +1,4 @@
-"""Base HTTP client for module integrations (H3-05, ADR-0017).
+"""Base HTTP client for module integrations (ADR-0017).
 
 Every module client (Security, Products, Sales, Dispatch) inherits from this:
 the base URL comes from Settings (mock or real, no code change), each call

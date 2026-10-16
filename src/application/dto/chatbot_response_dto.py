@@ -1,4 +1,4 @@
-"""Outbound DTOs: assistant turn result (H3-05).
+"""Outbound DTOs: assistant turn result.
 
 The streamed text is informational; the persisted assistant message
 (`mensajeId` in `fin`) is authoritative (OutputValidator corrects there).

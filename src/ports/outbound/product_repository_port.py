@@ -1,4 +1,4 @@
-"""Outbound ports: Productos module catalog and inventory (H3-06, ADR-0017).
+"""Outbound ports: Productos module catalog and inventory (ADR-0017).
 
 The chatbot never touches the Productos database. Everything goes through
 these ports over HTTP; switching mock<->real is config-only (base URL).

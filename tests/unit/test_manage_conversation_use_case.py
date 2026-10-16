@@ -1,4 +1,4 @@
-"""H3-10: use case of SPEC-05 Req. 1, tested with fake adapters (ADR-0002)."""
+"""Use case of SPEC-05 Req. 1, tested with fake adapters (ADR-0002)."""
 import uuid
 from datetime import datetime, timedelta, timezone
 

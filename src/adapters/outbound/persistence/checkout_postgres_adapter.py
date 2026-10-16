@@ -1,4 +1,4 @@
-"""Adapter checkout (H2-04 David, SPEC-12, SPEC-14).
+"""Adapter checkout (SPEC-12, SPEC-14).
 
 Operaciones minimas derivadas de modelo-datos.md (seccion `checkout`).
 No hace commit: la transaccion la controla el caso de uso. La creacion

@@ -1,6 +1,6 @@
-"""Verificación real H2-06, solo con TEST_DATABASE_URL PostgreSQL 18+.
+"""Verificación real, solo con TEST_DATABASE_URL PostgreSQL 18+.
 
-Conversation/Attachment reales y return_ref mínimo en esquema exclusivo; no prueba H2-10.
+Conversation/Attachment reales y return_ref mínimo en esquema exclusivo; no prueba la migración compartida.
 """
 
 import uuid

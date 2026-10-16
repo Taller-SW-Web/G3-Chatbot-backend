@@ -4,7 +4,7 @@ Fuente funcional: SPEC-01, SPEC-05, SPEC-06, SPEC-09, SPEC-10 y SPEC-11 de `G3-C
 
 ## Contratos para conectar
 
-`crear_registro_h3(handlers)` recibe ocho handlers asíncronos: `buscar_productos`, `ver_detalle_producto`, `consultar_disponibilidad`, `agregar_al_carrito`, `ver_carrito`, `cambiar_cantidad`, `quitar_del_carrito` y `vaciar_carrito`. `solicitar_registro` ya devuelve el texto y el formulario.
+`build_tool_registry(handlers)` recibe ocho handlers asíncronos: `buscar_productos`, `ver_detalle_producto`, `consultar_disponibilidad`, `agregar_al_carrito`, `ver_carrito`, `cambiar_cantidad`, `quitar_del_carrito` y `vaciar_carrito`. `solicitar_registro` ya devuelve el texto y el formulario.
 
 Cada handler recibe `(modelo_pydantic, ExecutionContext)` y devuelve `ToolResult(code, data)`. El adaptador de catálogo y carrito debe resolver ordinales y variantes, verificar pertenencia, consultar stock, recalcular precios y producir bloques con datos reales. No se deben registrar resultados comerciales simulados. `product_id` identifica el producto de integración; `productoRef` es el ordinal 1–10 del carrusel de esa conversación. `itemId`, `itemRef` y `nombre` son alternativas para resolver una línea del carrito. Cambiar cantidad a cero delega la eliminación.
 

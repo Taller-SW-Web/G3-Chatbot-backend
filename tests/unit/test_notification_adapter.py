@@ -1,4 +1,4 @@
-"""Tests H2-04 (David): modelo notification + adapter sin BD (offline).
+"""Tests: modelo notification + adapter sin BD (offline).
 
 Trazabilidad:
 - SPEC-16 (notificacion-confirmacion) Req. 3: confirmacion + maximo 2

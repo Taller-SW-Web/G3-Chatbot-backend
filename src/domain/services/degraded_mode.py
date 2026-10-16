@@ -48,7 +48,7 @@ class DegradedMode:
         """Recibe texto previamente redactado. No ejecuta herramientas ni I/O.
 
         El orquestador ejecuta el plan por ToolRegistry y responde por REST.
-        El menú incluye capacidades H4 para las que el equipo debe registrar
+        El menú incluye capacidades futuras para las que el equipo debe registrar
         handlers cuando las implemente; nunca simula sus resultados.
         """
         normalizado = "".join(

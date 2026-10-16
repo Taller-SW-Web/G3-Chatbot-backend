@@ -1,4 +1,4 @@
-"""Hito 3 tool catalog (H3-05 contract, implemented by H3-11).
+"""Tool catalog contract.
 
 Each entry binds a tool name to the owning use case plus the SPEC-05 Req. 6
 flags the ToolRegistry enforces: `requires_session` and
@@ -16,7 +16,7 @@ class ToolContract:
     requires_confirmation: bool = False
 
 
-HITO3_TOOL_CONTRACTS: tuple[ToolContract, ...] = (
+TOOL_CONTRACTS: tuple[ToolContract, ...] = (
     ToolContract("buscar_productos", "manage_catalog"),
     ToolContract("ver_detalle_producto", "manage_catalog"),
     ToolContract("consultar_disponibilidad", "manage_catalog"),
@@ -37,7 +37,7 @@ HITO3_TOOL_CONTRACTS: tuple[ToolContract, ...] = (
 
 
 def get_tool_contract(name: str) -> ToolContract:
-    for contract in HITO3_TOOL_CONTRACTS:
+    for contract in TOOL_CONTRACTS:
         if contract.name == name:
             return contract
-    raise KeyError(f"unknown tool {name!r} (Hito 3 catalog)")
+    raise KeyError(f"unknown tool {name!r} (tool catalog)")

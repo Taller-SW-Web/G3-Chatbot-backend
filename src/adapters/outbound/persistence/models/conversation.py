@@ -1,4 +1,4 @@
-"""Modelo conversation (H2-07, SPEC-05).
+"""Modelo conversation (SPEC-05).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `conversation`).
 - Toda conversacion tiene dueno: cliente autenticado o sid anonimo.

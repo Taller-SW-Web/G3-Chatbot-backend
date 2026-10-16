@@ -1,4 +1,4 @@
-"""Modelo attachment (H2-07, SPEC-23, ADR-0019).
+"""Modelo attachment (SPEC-23, ADR-0019).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `attachment`).
 - Solo referencias: los bytes viven en un bucket privado (puerto AttachmentStorage).
@@ -37,7 +37,7 @@ class Attachment(Base):
         ForeignKey("conversation.id", ondelete="CASCADE"),
         nullable=False,
     )
-    # Null mientras el estado es PENDING. FK como cadena: el modelo message se agrega en H2-06.
+    # Null mientras el estado es PENDING. FK como cadena: el modelo message se agrega después.
     message_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("message.id", ondelete="CASCADE"),

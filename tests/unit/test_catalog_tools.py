@@ -7,7 +7,7 @@ import pytest
 from pydantic import BaseModel
 
 from src.application.tools.action_dispatcher import ActionDispatcher
-from src.application.tools.catalog_tools import EmptyArguments, QuantityArguments, crear_registro_h3
+from src.application.tools.catalog_tools import EmptyArguments, QuantityArguments, build_tool_registry
 from src.application.tools.tool_registry import (
     ExecutionContext, ToolDefinition, ToolRegistry, ToolResult,
 )
@@ -22,7 +22,7 @@ NAMES = (
 @pytest.fixture
 def tools():
     handlers = {name: AsyncMock(return_value=ToolResult("OK", {"desde": name})) for name in NAMES}
-    return crear_registro_h3(handlers), handlers, ExecutionContext("conv-1", "cliente-real", "anon-1")
+    return build_tool_registry(handlers), handlers, ExecutionContext("conv-1", "cliente-real", "anon-1")
 
 
 @pytest.mark.asyncio
@@ -187,7 +187,7 @@ def test_catalogo_no_comparte_estado_y_registro_rechaza_duplicados(tools):
     with pytest.raises(ValueError, match="extra"):
         registry.registrar(ToolDefinition("sin_esquema", "x", BaseModel, AsyncMock()))
     with pytest.raises(ValueError, match="ocho"):
-        crear_registro_h3({})
+        build_tool_registry({})
 
 
 @pytest.mark.asyncio

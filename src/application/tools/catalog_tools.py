@@ -1,4 +1,4 @@
-"""Esquemas y registro de las herramientas asignadas a Alonso en Hito 3.
+"""Esquemas y registro de las herramientas del catálogo comercial.
 
 Los handlers de catálogo/carrito se inyectan desde sus casos de uso. Resolver
 referencias, normalizar filtros, validar stock y pertenencia es tarea de ellos.
@@ -123,11 +123,11 @@ _TOOLS = (
 )
 
 
-def crear_registro_h3(handlers: Mapping[str, ToolHandler]) -> ToolRegistry:
+def build_tool_registry(handlers: Mapping[str, ToolHandler]) -> ToolRegistry:
     """Requiere todos los handlers comerciales; falla si falta alguno."""
     esperados = {nombre for nombre, _, _ in _TOOLS}
     if set(handlers) != esperados or not all(callable(h) for h in handlers.values()):
-        raise ValueError("Se requieren exactamente los ocho handlers comerciales H3")
+        raise ValueError("Se requieren exactamente los ocho handlers comerciales")
     registry = ToolRegistry()
     registry.registrar(ToolDefinition(
         "solicitar_registro", "Mostrar el formulario seguro de registro sin pedir datos en el chat.",

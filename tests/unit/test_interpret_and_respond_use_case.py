@@ -1,4 +1,4 @@
-"""H3-10: agent loop of SPEC-05 Req. 3 and 4 with the fake provider and fake tools (ADR-0002, ADR-0005)."""
+"""Agent loop of SPEC-05 Req. 3 and 4 with the fake provider and fake tools (ADR-0002, ADR-0005)."""
 import asyncio
 import uuid
 from datetime import datetime, timezone

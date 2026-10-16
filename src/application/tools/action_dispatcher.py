@@ -6,7 +6,7 @@ from typing import Any
 from src.application.tools.tool_registry import ExecutionContext, ToolRegistry, ToolResult
 
 
-H3_ACTIONS = {
+QUICK_ACTIONS = {
     "SOLICITAR_REGISTRO": "solicitar_registro",
     "BUSCAR_PRODUCTOS": "buscar_productos",
     "BUSCAR_PAGINA": "buscar_productos",
@@ -25,7 +25,7 @@ class ActionDispatcher:
         self, registry: ToolRegistry, acciones: Mapping[str, str] | None = None,
     ) -> None:
         self._registry = registry
-        self._acciones = dict(H3_ACTIONS if acciones is None else acciones)
+        self._acciones = dict(QUICK_ACTIONS if acciones is None else acciones)
 
     async def despachar(
         self, accion: Mapping[str, Any], contexto: ExecutionContext,

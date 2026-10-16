@@ -1,4 +1,4 @@
-"""H3-10: conversation queries against PostgreSQL 18 (needs TEST_DATABASE_URL, skipped otherwise)."""
+"""Conversation queries against PostgreSQL 18 (needs TEST_DATABASE_URL, skipped otherwise)."""
 import uuid
 from datetime import datetime, timedelta, timezone
 

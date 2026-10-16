@@ -65,10 +65,10 @@ def sanitize_sensitive_text(text: str) -> str:
 
 
 def provide_module_client(module: str, settings: Settings | None = None) -> BaseModuleClient:
-    """Module client wiring (H3-05, ADR-0017): base URL + timeout from Settings.
+    """Module client wiring (ADR-0017): base URL + timeout from Settings.
 
     Switching mock<->real is config-only: point *_BASE_URL at Prism/respx or
-    the real module. H3-06/H3-07 build the typed clients on top of this.
+    the real module. The typed clients are built on top of this.
     """
     settings = settings or get_settings()
     wiring = {
@@ -87,7 +87,7 @@ def provide_module_client(module: str, settings: Settings | None = None) -> Base
 
 
 def provide_products_client(settings: Settings | None = None) -> ProductsClient:
-    """Typed Productos catalog client (H3-06): base URL + 4 s timeout from Settings."""
+    """Typed Productos catalog client: base URL + 4 s timeout from Settings."""
     settings = settings or get_settings()
     return ProductsClient(
         base_url=settings.products_base_url,
@@ -96,7 +96,7 @@ def provide_products_client(settings: Settings | None = None) -> ProductsClient:
 
 
 def provide_inventory_client(settings: Settings | None = None) -> InventoryClient:
-    """Typed Productos inventory client (H3-06, SPEC-10): live stock, 3 s timeout."""
+    """Typed Productos inventory client (SPEC-10): live stock, 3 s timeout."""
     settings = settings or get_settings()
     return InventoryClient(
         base_url=settings.products_base_url,
@@ -107,7 +107,7 @@ def provide_inventory_client(settings: Settings | None = None) -> InventoryClien
 def provide_security_client(
     settings: Settings | None = None, client_secret: str | None = None
 ) -> SecurityClient:
-    """Typed Seguridad client (H3-07, SPEC-01..03): base URL + 5 s timeout
+    """Typed Seguridad client (SPEC-01..03): base URL + 5 s timeout
     from Settings. The secret must come from SECURITY_CLIENT_SECRET (A3)."""
     settings = settings or get_settings()
     return SecurityClient(

@@ -1,14 +1,14 @@
-"""Modelo order_ref (H2-03, SPEC-15).
+"""Modelo order_ref (SPEC-15).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `order_ref`).
 - Referencia local al pedido creado en Ventas. La verdad del pedido vive
   en Ventas; aqui solo idempotencia y pertenencia para seguimiento.
 - order_id es el ID de Ventas (text, formato del dueno) y es la PK.
 - checkout_id tiene UNIQUE: un checkout genera como maximo un pedido.
-  FK como cadena: el modelo checkout lo implementa David (H2-04).
+  FK como cadena: el modelo checkout lo implementa David.
 - local_status guarda el valor en ingles; el adapter traduce en ambos
   sentidos el literal de Ventas (ANULADO <-> CANCELLED).
-- H2-10 debe instalar set_updated_at(); server_onupdate declara ese valor
+- La migración debe instalar set_updated_at(); server_onupdate declara ese valor
   generado, no crea el trigger.
 """
 import uuid
@@ -28,7 +28,7 @@ class OrderRef(Base):
     order_id: Mapped[str] = mapped_column(Text, primary_key=True)
     # sub del token, sin FK (ADR-0013).
     customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    # FK como cadena: checkout se agrega en H2-04 (David).
+    # FK como cadena: checkout se agrega después.
     checkout_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("checkout.id", ondelete="RESTRICT"),

@@ -1,4 +1,4 @@
-"""Alembic env (H2-01). target_metadata = Base.metadata para autogenerate."""
+"""Alembic env. target_metadata = Base.metadata para autogenerate."""
 import os
 import sys
 from logging.config import fileConfig
@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from src.infrastructure.db.connection import Base  # noqa: E402
 
 # Importa modelos para que autogenerate los detecte (convención models/__init__.py).
-# Las 14 tablas (nombres en inglés) tienen modelo poblado desde H2-02..H2-07.
+# Las 14 tablas (nombres en inglés) tienen modelo poblado.
 try:
     import src.adapters.outbound.persistence.models  # noqa: F401,E402
 except Exception:
@@ -28,7 +28,7 @@ target_metadata = Base.metadata
 db_url = os.getenv("DATABASE_URL")
 if db_url:
     # Alembic corre en sync; si viene asyncpg lo adapta a psycopg2 para el offline/online.
-    # En H2-10 se usa Supabase con peer adecuado; aquí solo se deja el override.
+    # En Supabase se usa con peer adecuado; aquí solo se deja el override.
     sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
     config.set_main_option("sqlalchemy.url", sync_url)
 

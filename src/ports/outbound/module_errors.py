@@ -1,4 +1,4 @@
-"""Errors shared by every outbound module port (H3-06, ADR-0017)."""
+"""Errors shared by every outbound module port (ADR-0017)."""
 
 
 class ModuleRequestError(Exception):

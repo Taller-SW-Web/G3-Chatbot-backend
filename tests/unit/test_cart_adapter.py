@@ -1,8 +1,8 @@
-"""Tests H2-03 (Sonny): modelos cart + cart_item y adapters sin BD (offline).
+"""Tests: modelos cart + cart_item y adapters sin BD (offline).
 
-Criterio hito-2.md: cada adapter con al menos un test.
+Criterio del proyecto: cada adapter con al menos un test.
 El test de integracion contra Supabase (INSERT real + CHECKs + indices)
-se hace en H2-10. Sigue el patron de test_conversation_adapter.py (H2-07).
+queda para la migración compartida. Sigue el patron de test_conversation_adapter.py.
 """
 import uuid
 from unittest.mock import MagicMock
@@ -60,7 +60,7 @@ def test_cart_pk_y_defaults():
     assert str(cart_table.columns["version"].server_default.arg) == "0"
     assert "now()" in str(cart_table.columns["created_at"].server_default.arg)
     assert "now()" in str(cart_table.columns["updated_at"].server_default.arg)
-    # H2-10 instala el trigger; el modelo solo declara el valor generado.
+    # La migración instala el trigger; el modelo solo declara el valor generado.
     assert cart_table.columns["updated_at"].server_onupdate is not None
 
 

@@ -1,4 +1,4 @@
-"""Adapter cart (H2-03, SPEC-11).
+"""Adapter cart (SPEC-11).
 
 Operaciones minimas derivadas de modelo-datos.md (seccion `cart`). No hace
 commit: la transaccion la controla el caso de uso. El bloqueo optimista

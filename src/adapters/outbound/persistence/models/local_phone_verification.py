@@ -1,4 +1,4 @@
-"""Modelo local_phone_verification (H2-02, SPEC-04).
+"""Modelo local_phone_verification (SPEC-04).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `local_phone_verification`) + SPEC-04 validacion-celular.
 - Verificación propia del chatbot, independiente de Seguridad (acuerdo A2).

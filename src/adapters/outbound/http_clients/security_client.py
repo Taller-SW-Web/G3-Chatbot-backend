@@ -1,4 +1,4 @@
-"""Security and users client (H3-07, SPEC-01..03, ADR-0017).
+"""Security and users client (SPEC-01..03, ADR-0017).
 
 Speaks the Seguridad contract (`{SEG}/api/v1`, confirmed): registration
 with `canalOrigen: "CHATBOT"`, email verification, login with optional MFA,
@@ -6,7 +6,7 @@ refresh/logout/me, addresses and introspection.
 
 Mock strategy: Prism serves Seguridad's published `openapi.yaml` on `:4010`
 without the `/api/v1` prefix, examples picked with the `Prefer` header and
-a `client_secret` header (SECURITY_CLIENT_SECRET, mandatory: no code default) until Hito 4. Only 2xx bodies are
+a `client_secret` header (SECURITY_CLIENT_SECRET, mandatory: no code default) until real authentication replaces it. Only 2xx bodies are
 returned as data: 4xx answers raise `ModuleRequestError` with the contract
 `code`, and transport failures (timeout/connection/5xx) raise
 `ModuleUnavailableError` (503 + module). External `codigo` fields
@@ -234,7 +234,7 @@ class SecurityClient(SecurityBaseClient):
         )
 
     async def introspect(self, access_token: str, *, correlation_id: str | None = None) -> dict[str, Any]:
-        """Pre-payment introspection (SPEC-14 RNF, A3): mocked until Hito 4."""
+        """Pre-payment introspection (SPEC-14 RNF, A3): mocked until the real module is available."""
         response = await self._request(
             "POST",
             "/auth/introspeccion",

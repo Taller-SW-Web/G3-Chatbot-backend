@@ -1,4 +1,4 @@
-"""Modelo payment_attempt (H2-04 David, SPEC-14).
+"""Modelo payment_attempt (SPEC-14).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `payment_attempt`)
 + openspec/specs/checkout-pago (Req. 5: maximo 3 intentos).

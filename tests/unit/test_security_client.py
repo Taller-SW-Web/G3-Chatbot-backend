@@ -1,4 +1,4 @@
-"""H3-07 Seguridad mocks: typed client over BaseModuleClient + respx seeds.
+"""Seguridad mocks: typed client over BaseModuleClient + respx seeds.
 
 Covers SPEC-01 (register, password policy), SPEC-02 (verify, resend) and
 SPEC-03 (login, MFA, refresh, logout, me). No network, no Prism, no database.
