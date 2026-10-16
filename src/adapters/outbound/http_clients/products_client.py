@@ -7,9 +7,9 @@ Only 2xx bodies are returned as data: 4xx answers raise
 (timeout/connection/5xx) raise `ModuleUnavailableError` (503 + module).
 External `codigo` fields normalize to `code` on the way out.
 
-Provisional until Productos confirms (A5): the `GET /precios` query names
-(`skus`, `channel_id`, from busqueda-filtrado/design.md — the search uses
-`canal` instead) and the `at` field sent to `POST /promociones/evaluar`
+Provisional until Productos confirms (A5/A16): the `GET /precios`
+query names (`skus`, `canal`, from busqueda-filtrado/design.md) and the
+`at` field sent to `POST /promociones/evaluar`
 (not listed in contratos-integracion.md §3.2).
 
 Open question: respx mocks live in
@@ -193,8 +193,18 @@ class ProductsClient(ProductsBaseClient):
         response = await self._request(
             "GET",
             "/precios",
-            params={"skus": ",".join(clean), "channel_id": channel},
+            params={"skus": ",".join(clean), "canal": channel},
             correlation_id=correlation_id,
+        )
+        return self._unwrap_list(await self._parse_response(response))
+
+    async def list_promotions(
+        self, *, correlation_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Current promotions (`GET /promociones`): resolves `promotion_id`
+        to a display name. Provisional shape until Productos confirms (A5)."""
+        response = await self._request(
+            "GET", "/promociones", correlation_id=correlation_id
         )
         return self._unwrap_list(await self._parse_response(response))
 
