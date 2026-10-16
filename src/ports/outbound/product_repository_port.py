@@ -13,7 +13,10 @@ MAX_SKUS_PER_CALL = 20
 # Commercial availability batches (Productos HTTP 0.5.0, SPEC-10): the
 # projection endpoint accepts up to 100 SKUs per call; prices keep the
 # shared 20-SKU cap above.
-MAX_COMERCIAL_SKUS = 100
+MAX_COMMERCIAL_SKUS = 100
+
+# Deprecated Spanish-spelling alias (kept for backward compat, remove in Hito 4).
+MAX_COMERCIAL_SKUS = MAX_COMMERCIAL_SKUS
 
 
 def normalize_sku_list(skus: list[str], *, limit: int = MAX_SKUS_PER_CALL) -> list[str]:

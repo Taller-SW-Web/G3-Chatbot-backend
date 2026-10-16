@@ -23,7 +23,6 @@ from src.application.catalog.product_lookup import (
 from src.domain.entities.message import MessageRole
 from src.domain.services.cart_line_resolver import CartLineResolver
 from src.domain.services.stock_validator import StockValidator
-from src.domain.services.stock_validator import StockValidator
 from src.domain.services.totals_calculator import PricedLine, TotalsCalculator
 from src.domain.services.variant_resolver import VariantResolver
 
@@ -62,7 +61,6 @@ class ManageCartUseCase:
         self._totals = totals or TotalsCalculator()
         self._lines = CartLineResolver()
         self._variants = VariantResolver()
-        self._stock = StockValidator()
         self._stock = StockValidator()
 
     # -- public operations ----------------------------------------------------
