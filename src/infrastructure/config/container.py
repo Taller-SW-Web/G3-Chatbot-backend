@@ -21,6 +21,7 @@ from src.adapters.outbound.http_clients.inventory_client import (
     InventoryClient,
 )
 from src.adapters.outbound.http_clients.products_client import ProductsClient
+from src.adapters.outbound.http_clients.security_client import SecurityClient
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
@@ -100,6 +101,19 @@ def provide_inventory_client(settings: Settings | None = None) -> InventoryClien
     return InventoryClient(
         base_url=settings.products_base_url,
         timeout_seconds=INVENTORY_TIMEOUT_SECONDS,
+    )
+
+
+def provide_security_client(
+    settings: Settings | None = None, client_secret: str | None = None
+) -> SecurityClient:
+    """Typed Seguridad client (H3-07, SPEC-01..03): base URL + 5 s timeout
+    from Settings. The secret must come from SECURITY_CLIENT_SECRET (A3)."""
+    settings = settings or get_settings()
+    return SecurityClient(
+        base_url=settings.security_base_url,
+        timeout_seconds=settings.security_timeout_seconds,
+        client_secret=client_secret or settings.security_client_secret,
     )
 
 
