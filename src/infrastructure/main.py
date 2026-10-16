@@ -1,10 +1,17 @@
 """FastAPI application factory. Run: uvicorn src.infrastructure.main:app"""
 from fastapi import FastAPI
 
+from src.adapters.inbound.http.cart_router import create_cart_router
+from src.adapters.inbound.http.catalog_router import create_catalog_router
 from src.adapters.inbound.http.chatbot_router import TurnScope, create_chatbot_router
 from src.adapters.inbound.http.health_router import router as health_router
 from src.adapters.inbound.http.problem import register_problem_handlers
-from src.infrastructure.config.container import provide_chatbot_service, provide_turn_scope
+from src.infrastructure.config.container import (
+    provide_cart_service,
+    provide_catalog_service,
+    provide_chatbot_service,
+    provide_turn_scope,
+)
 from src.infrastructure.config.settings import get_settings
 
 API_PREFIX = "/api/v1"
@@ -24,6 +31,10 @@ def create_app(turn_scope: TurnScope | None = None) -> FastAPI:
         ),
         prefix=API_PREFIX,
     )
+    app.include_router(
+        create_catalog_router(provide_catalog_service), prefix=API_PREFIX
+    )
+    app.include_router(create_cart_router(provide_cart_service), prefix=API_PREFIX)
     return app
 
 

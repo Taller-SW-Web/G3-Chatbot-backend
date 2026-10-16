@@ -9,11 +9,13 @@ class ProblemResponse(JSONResponse):
 
 
 class ProblemError(Exception):
-    def __init__(self, status: int, code: str, title: str, detail: str | None = None):
+    def __init__(self, status: int, code: str, title: str, detail: str | None = None,
+                 extra: dict | None = None):
         self.status = status
         self.code = code
         self.title = title
         self.detail = detail
+        self.extra = extra or {}
 
 
 def not_found(detail: str = "The resource does not exist or is not available to you.") -> ProblemError:
@@ -31,7 +33,10 @@ def _body(status: int, code: str, title: str, detail: str | None, **extra) -> di
 def register_problem_handlers(app: FastAPI) -> None:
     @app.exception_handler(ProblemError)
     async def _problem(_: Request, exc: ProblemError) -> ProblemResponse:
-        return ProblemResponse(_body(exc.status, exc.code, exc.title, exc.detail), status_code=exc.status)
+        return ProblemResponse(
+            _body(exc.status, exc.code, exc.title, exc.detail, **exc.extra),
+            status_code=exc.status,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> ProblemResponse:

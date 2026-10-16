@@ -5,6 +5,10 @@ from contextlib import asynccontextmanager
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
+    CartItemPostgresAdapter,
+)
+from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
 from src.adapters.outbound.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
@@ -16,6 +20,10 @@ from src.application.tools.catalog_tools import build_tool_registry
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
+from src.adapters.outbound.fakes.fake_products import (
+    FakeCatalogPort,
+    FakeInventoryPort,
+)
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
 from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
@@ -23,6 +31,10 @@ from src.adapters.outbound.http_clients.inventory_client import (
 )
 from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.http_clients.security_client import SecurityClient
+from src.application.tools.cart_handlers import build_cart_handlers
+from src.application.tools.catalog_handlers import build_catalog_handlers
+from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
+from src.application.use_cases.manage_catalog_use_case import ManageCatalogUseCase
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
@@ -56,9 +68,58 @@ def provide_llm_provider(settings: Settings | None = None) -> LLMProvider:
     raise ValueError(f"Unknown LLM_PROVIDER {settings.llm_provider!r} (supported: openai)")
 
 
-def provide_tool_executor() -> ToolExecutorPort:
-    """Registry with only the tools that have a handler; commercial handlers are added as modules land."""
-    return RegistryToolAdapter(build_tool_registry({}))
+def provide_tool_executor(session: AsyncSession) -> ToolExecutorPort:
+    """Registry with handlers bound to session-scoped commercial use cases."""
+    catalog = provide_catalog_service(session)
+    cart = provide_cart_service(session)
+    handlers = {}
+    handlers.update(build_catalog_handlers(catalog))
+    handlers.update(build_cart_handlers(cart))
+    return RegistryToolAdapter(build_tool_registry(handlers))
+
+
+def provide_product_catalog(settings: Settings | None = None):
+    """Catalog port honoring `MODULES_MODE` (ADR-0022): in-process fakes
+    for deployed environments without real modules, HTTP otherwise."""
+    settings = settings or get_settings()
+    if settings.modules_mode == "fake":
+        return FakeCatalogPort()
+    return provide_products_client(settings)
+
+
+def provide_product_inventory(settings: Settings | None = None):
+    """Inventory port honoring `MODULES_MODE` (ADR-0022)."""
+    settings = settings or get_settings()
+    if settings.modules_mode == "fake":
+        return FakeInventoryPort()
+    return provide_inventory_client(settings)
+
+
+def provide_catalog_service(
+    session: AsyncSession = Depends(get_session),
+) -> ManageCatalogUseCase:
+    settings = get_settings()
+    return ManageCatalogUseCase(
+        provide_product_catalog(settings),
+        provide_product_inventory(settings),
+        ConversationPostgresAdapter(session),
+        SqlAlchemyUnitOfWork(session),
+    )
+
+
+def provide_cart_service(
+    session: AsyncSession = Depends(get_session),
+) -> ManageCartUseCase:
+    settings = get_settings()
+    return ManageCartUseCase(
+        CartPostgresAdapter(session),
+        CartItemPostgresAdapter(session),
+        provide_product_catalog(settings),
+        provide_product_inventory(settings),
+        ConversationPostgresAdapter(session),
+        MessagePostgresAdapter(session),
+        SqlAlchemyUnitOfWork(session),
+    )
 
 
 def sanitize_sensitive_text(text: str) -> str:
@@ -126,7 +187,7 @@ def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUse
         messages=MessagePostgresAdapter(session),
         uow=SqlAlchemyUnitOfWork(session),
         llm=provide_llm_provider(settings),
-        tools=provide_tool_executor(),
+        tools=provide_tool_executor(session),
         assistant_name=settings.assistant_name,
         llm_timeout_seconds=settings.llm_timeout_seconds,
         sanitize_text=sanitize_sensitive_text,

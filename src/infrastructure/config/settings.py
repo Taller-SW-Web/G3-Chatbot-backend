@@ -25,6 +25,13 @@ def _number(name: str, default: str, cast, *, minimum: float):
     return value
 
 
+def _modules_mode() -> str:
+    value = os.getenv("MODULES_MODE", "http").strip().lower()
+    if value not in ("fake", "http"):
+        raise ValueError(f"MODULES_MODE must be fake or http, got {value!r}")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     # `Secure` flag of the chat_sid cookie. Default on; set COOKIE_SECURE=false for plain-HTTP local dev.
@@ -49,6 +56,9 @@ class Settings:
     # Seguridad client secret (ADR-0017/A3). No code default: SecurityClient
     # refuses to start without it (set SECURITY_CLIENT_SECRET, see .env.template).
     security_client_secret: str = ""
+    # In-process module fakes for deployed environments without real
+    # modules (ADR-0022). Environment wiring belongs to the deploy track.
+    modules_mode: str = "http"
     # Per-module timeouts in seconds (DoD: exact timeouts per integration).
     security_timeout_seconds: float = 5.0
     products_timeout_seconds: float = 4.0
@@ -69,6 +79,7 @@ def get_settings() -> Settings:
         llm_vision_enabled=os.getenv("LLM_VISION_ENABLED", "true").strip().lower() != "false",
         llm_reasoning_effort=_choice("LLM_REASONING_EFFORT", "none", LLM_REASONING_EFFORTS),
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
+        modules_mode=_modules_mode(),
         security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),
         security_client_secret=os.getenv("SECURITY_CLIENT_SECRET", "").strip(),
         products_base_url=os.getenv("PRODUCTS_BASE_URL", "http://localhost:4011").strip().rstrip("/"),

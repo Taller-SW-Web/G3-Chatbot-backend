@@ -12,7 +12,7 @@ def test_interpret_and_respond_wires_sensitive_data_filter(monkeypatch):
     monkeypatch.setattr(container, "MessagePostgresAdapter", lambda _: object())
     monkeypatch.setattr(container, "SqlAlchemyUnitOfWork", lambda _: object())
     monkeypatch.setattr(container, "provide_llm_provider", lambda _: object())
-    monkeypatch.setattr(container, "provide_tool_executor", lambda: object())
+    monkeypatch.setattr(container, "provide_tool_executor", lambda _: object())
 
     use_case = container.build_interpret_and_respond(object())
 
