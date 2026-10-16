@@ -3,6 +3,8 @@
 Covers SPEC-01 (register, password policy), SPEC-02 (verify, resend) and
 SPEC-03 (login, MFA, refresh, logout, me). No network, no Prism, no database.
 """
+import json
+
 import httpx
 import pytest
 import respx
@@ -10,14 +12,16 @@ import respx
 from src.adapters.outbound.http_clients.base_client import ModuleUnavailableError
 from src.adapters.outbound.http_clients.security_client import SecurityClient
 from src.infrastructure.config.container import provide_security_client
+from src.infrastructure.config.settings import get_settings
 from src.ports.outbound.module_errors import ModuleRequestError
 from tests.helpers import security_mocks
 
 BASE_URL = "http://mock:4010"
+TEST_SECRET = "test-secret"
 
 
 def make_client() -> SecurityClient:
-    return SecurityClient(base_url=BASE_URL, timeout_seconds=5.0)
+    return SecurityClient(base_url=BASE_URL, timeout_seconds=5.0, client_secret=TEST_SECRET)
 
 
 @respx.mock
@@ -26,8 +30,6 @@ async def test_register_sends_channel_and_returns_pending():
     route = security_mocks.mock_register(BASE_URL)
     result = await make_client().register("a@b.pe", "Passw0rd!", "+51987654321")
     assert result["estado"] == "PENDIENTE_VERIFICACION"
-    import json
-
     assert json.loads(route.calls[0].request.content)["canalOrigen"] == "CHATBOT"
 
 
@@ -51,9 +53,9 @@ async def test_password_policy():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_verify_email_ok_and_expired():
+async def test_verify_email_ok_returns_empty_dict():
     security_mocks.mock_verify_email_ok(BASE_URL)
-    await make_client().verify_email("tok")
+    assert await make_client().verify_email("tok") == {}
 
 
 @respx.mock
@@ -77,7 +79,26 @@ async def test_resend_verification():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_login_ok_mfa_and_invalid():
+async def test_empty_2xx_body_returns_empty_dict():
+    respx.post(f"{BASE_URL}/auth/verificar-correo/reenviar").mock(
+        return_value=httpx.Response(202)
+    )
+    assert await make_client().resend_verification("a@b.pe") == {}
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_non_json_2xx_body_is_module_unavailable():
+    respx.post(f"{BASE_URL}/auth/verificar-correo/reenviar").mock(
+        return_value=httpx.Response(200, text="<html/>")
+    )
+    with pytest.raises(ModuleUnavailableError):
+        await make_client().resend_verification("a@b.pe")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_login_ok_returns_tokens():
     security_mocks.mock_login_ok(BASE_URL)
     result = await make_client().login("a@b.pe", "Passw0rd!")
     assert result["accessToken"] == "acc"
@@ -99,6 +120,18 @@ async def test_login_invalid_is_generic():
     security_mocks.mock_login_invalid(BASE_URL)
     with pytest.raises(ModuleRequestError) as exc:
         await make_client().login("a@b.pe", "wrong")
+    assert exc.value.code == "CREDENCIALES_INVALIDAS"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_login_401_with_other_code_is_generic():
+    respx.post(f"{BASE_URL}/auth/login").mock(
+        return_value=httpx.Response(401, json={"code": "CUENTA_BLOQUEADA"})
+    )
+    with pytest.raises(ModuleRequestError) as exc:
+        await make_client().login("a@b.pe", "x")
+    assert exc.value.status == 401
     assert exc.value.code == "CREDENCIALES_INVALIDAS"
 
 
@@ -141,6 +174,42 @@ async def test_addresses_and_introspect():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_list_addresses_forwards_authorization_and_escapes_user_id():
+    route = security_mocks.mock_addresses(BASE_URL)
+    await make_client().list_addresses("a/b c", "holder-token")
+    request = route.calls[0].request
+    assert request.headers["authorization"] == "Bearer holder-token"
+    assert request.url.raw_path == b"/usuarios/a%2Fb%20c/direcciones"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_list_addresses_unexpected_shape_is_module_unavailable():
+    respx.get(url__regex=r".*/usuarios/.+/direcciones").mock(
+        return_value=httpx.Response(200, json={"unexpected": True})
+    )
+    with pytest.raises(ModuleUnavailableError):
+        await make_client().list_addresses("cust-001", "holder-token")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_client_secret_header_is_sent():
+    route = security_mocks.mock_password_policy(BASE_URL)
+    await make_client().password_policy()
+    assert route.calls[0].request.headers["client_secret"] == TEST_SECRET
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_5xx_maps_to_module_unavailable():
+    respx.post(f"{BASE_URL}/auth/login").mock(return_value=httpx.Response(502))
+    with pytest.raises(ModuleUnavailableError):
+        await make_client().login("a@b.pe", "x")
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_module_down_maps_503():
     security_mocks.mock_module_down(base_url=BASE_URL)
     with pytest.raises(ModuleUnavailableError):
@@ -156,8 +225,27 @@ async def test_non_json_4xx_keeps_status():
     assert exc.value.status == 404
 
 
-def test_container_wiring_uses_settings():
-    client = provide_security_client()
+def test_container_wiring_uses_settings(monkeypatch):
+    monkeypatch.setenv("SECURITY_CLIENT_SECRET", "wired-secret")
+    get_settings.cache_clear()
+    try:
+        client = provide_security_client()
+    finally:
+        get_settings.cache_clear()
     assert client.base_url.startswith("http")
     assert client.timeout_seconds == 5.0
-    assert client.client_secret == "secreto-de-prueba"
+    assert client.client_secret == "wired-secret"
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_missing_client_secret_fails_loudly(monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv("SECURITY_CLIENT_SECRET", raising=False)
+    else:
+        monkeypatch.setenv("SECURITY_CLIENT_SECRET", value)
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="SECURITY_CLIENT_SECRET"):
+            provide_security_client()
+    finally:
+        get_settings.cache_clear()

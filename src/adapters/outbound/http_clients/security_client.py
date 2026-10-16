@@ -6,7 +6,7 @@ refresh/logout/me, addresses and introspection.
 
 Mock strategy: Prism serves Seguridad's published `openapi.yaml` on `:4010`
 without the `/api/v1` prefix, examples picked with the `Prefer` header and
-`client_secret=secreto-de-prueba` until Hito 4. Only 2xx bodies are
+a `client_secret` header (SECURITY_CLIENT_SECRET, mandatory: no code default) until Hito 4. Only 2xx bodies are
 returned as data: 4xx answers raise `ModuleRequestError` with the contract
 `code`, and transport failures (timeout/connection/5xx) raise
 `ModuleUnavailableError` (503 + module). External `codigo` fields
@@ -25,8 +25,6 @@ from src.adapters.outbound.http_clients.base_client import (
     ModuleUnavailableError,
 )
 from src.ports.outbound.module_errors import ModuleRequestError
-
-MOCK_CLIENT_SECRET = "secreto-de-prueba"
 
 # Used when a 4xx body carries no `code`/`codigo` (or is not JSON at all).
 FALLBACK_ERROR_CODES = {
@@ -61,7 +59,8 @@ class SecurityBaseClient(BaseModuleClient):
     module: str = "security"
 
     async def _parse_response(self, response: httpx.Response) -> Any:
-        if response.status_code == 204:
+        if not response.content and 200 <= response.status_code < 300:
+            # Any 2xx without a body (204, or 202 on resend) means "done".
             return {}
         try:
             body = response.json()
@@ -85,17 +84,19 @@ class SecurityClient(SecurityBaseClient):
         base_url: str,
         timeout_seconds: float = 5.0,
         client: httpx.AsyncClient | None = None,
-        client_secret: str = MOCK_CLIENT_SECRET,
+        client_secret: str = "",
     ):
+        if not client_secret.strip():
+            raise ValueError(
+                "SECURITY_CLIENT_SECRET is required: set it in the environment "
+                "(see .env.template); there is no code default."
+            )
         super().__init__(base_url=base_url, timeout_seconds=timeout_seconds, client=client)
         self.client_secret = client_secret
 
-    def _mock_headers(self, prefer: str | None = None) -> dict[str, str]:
-        """Prism mock headers: example picker + mock secret (ADR-0017)."""
-        headers = {"client_secret": self.client_secret}
-        if prefer is not None:
-            headers["Prefer"] = prefer
-        return headers
+    def _mock_headers(self) -> dict[str, str]:
+        """Prism mock header: the client secret (ADR-0017)."""
+        return {"client_secret": self.client_secret}
 
     async def register(
         self, email: str, password: str, phone: str, *, correlation_id: str | None = None
@@ -151,7 +152,14 @@ class SecurityClient(SecurityBaseClient):
             headers=self._mock_headers(),
             correlation_id=correlation_id,
         )
-        return await self._parse_response(response)
+        try:
+            return await self._parse_response(response)
+        except ModuleRequestError as exc:
+            if exc.status == 401 and exc.code != "CREDENCIALES_INVALIDAS":
+                raise ModuleRequestError(
+                    self.module, 401, "CREDENCIALES_INVALIDAS"
+                ) from None
+            raise
 
     async def request_mfa(self, challenge_token: str, *, correlation_id: str | None = None) -> dict[str, Any]:
         response = await self._request(
@@ -220,7 +228,10 @@ class SecurityClient(SecurityBaseClient):
             return body
         if isinstance(body, dict) and isinstance(body.get("items"), list):
             return body["items"]
-        raise ValueError(f"expected a list or paginated items, got {type(body).__name__}")
+        raise ModuleUnavailableError(
+            self.module,
+            f"unexpected addresses shape: {type(body).__name__}",
+        )
 
     async def introspect(self, access_token: str, *, correlation_id: str | None = None) -> dict[str, Any]:
         """Pre-payment introspection (SPEC-14 RNF, A3): mocked until Hito 4."""

@@ -108,7 +108,7 @@ def provide_security_client(
     settings: Settings | None = None, client_secret: str | None = None
 ) -> SecurityClient:
     """Typed Seguridad client (H3-07, SPEC-01..03): base URL + 5 s timeout
-    from Settings. Mock secret until Hito 4 real credentials (A3)."""
+    from Settings. The secret must come from SECURITY_CLIENT_SECRET (A3)."""
     settings = settings or get_settings()
     return SecurityClient(
         base_url=settings.security_base_url,
