@@ -16,6 +16,7 @@ from src.adapters.inbound.http.dependencies.caller_identity import (
 from src.adapters.inbound.http.problem import ProblemError, not_found
 from src.adapters.inbound.http.schemas.conversation_schemas import (
     ConversationCreatedOut,
+    ConversationSearchResultOut,
     ConversationSummaryOut,
     MessageOut,
 )
@@ -80,7 +81,7 @@ def create_chatbot_router(
         summaries = await service.list_conversations(caller, pagina)
         return [ConversationSummaryOut.from_domain(c) for c in summaries]
 
-    @router.get("/buscar", response_model=list[ConversationSummaryOut])
+    @router.get("/buscar", response_model=list[ConversationSearchResultOut])
     async def search_conversations(
         q: str = Query(..., max_length=SEARCH_QUERY_MAX_CHARS),
         pagina: int = Query(1, ge=1),
@@ -91,7 +92,7 @@ def create_chatbot_router(
         if not query:
             raise ProblemError(400, "VALIDACION", "Invalid request", "`q` must not be blank.")
         summaries = await service.search_conversations(caller, query, pagina)
-        return [ConversationSummaryOut.from_domain(c) for c in summaries]
+        return [ConversationSearchResultOut.from_domain(c) for c in summaries]
 
     @router.get("/{conversation_id}/mensajes", response_model=list[MessageOut])
     async def get_history(
