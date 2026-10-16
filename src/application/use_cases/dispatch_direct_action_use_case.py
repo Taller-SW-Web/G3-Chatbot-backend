@@ -62,6 +62,7 @@ class DispatchDirectActionUseCase:
             result = await self._dispatcher.despachar(action, context)
             raw_data = dict(result.data)
             raw_blocks = raw_data.pop("bloques", ())
+            text = self._sanitize(str(raw_data.pop("texto", "")))
             blocks = tuple(
                 json.loads(self._sanitize(json.dumps(dict(block), ensure_ascii=False, default=str)))
                 for block in raw_blocks if isinstance(block, Mapping)
@@ -70,9 +71,9 @@ class DispatchDirectActionUseCase:
                 blocks = ({
                     "id": str(uuid.uuid4()),
                     "tipo": "ERROR",
-                    "datos": {"code": result.code},
+                    "code": result.code,
+                    "mensaje": text or "No se pudo completar la acción.",
                 },)
-            text = self._sanitize(str(raw_data.pop("texto", "")))
             safe_data = json.loads(self._sanitize(json.dumps(raw_data, ensure_ascii=False, default=str)))
 
             action_type = str(action.get("tipo", "accion"))

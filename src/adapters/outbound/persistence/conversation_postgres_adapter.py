@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.adapters.outbound.persistence.models.conversation import Conversation
 from src.adapters.outbound.persistence.models.message import Message
 from src.domain.entities.conversation import Conversation as ConversationEntity
-from src.domain.entities.conversation import ConversationSummary
+from src.domain.entities.conversation import (
+    ConversationSummary,
+    HighlightSegment,
+    SearchHighlight,
+)
 from src.domain.value_objects.caller_identity import CallerIdentity
 
 PREVIEW_MAX_CHARS = 100
@@ -19,11 +23,39 @@ PREVIEW_MAX_CHARS = 100
 # or the GIN indexes cannot serve it.
 SEARCH_CONFIG = "spanish"
 
+# ts_headline marks matches with these control characters; they are stripped from the stored text first,
+# so a marker in the output always comes from ts_headline and never from user content.
+HIGHLIGHT_START = "\x02"
+HIGHLIGHT_STOP = "\x03"
+_HIGHLIGHT_MARKS = f"StartSel={HIGHLIGHT_START}, StopSel={HIGHLIGHT_STOP}"
+# The title is short: mark every match and keep it whole.
+TITLE_HEADLINE_OPTIONS = f"{_HIGHLIGHT_MARKS}, HighlightAll=true"
+# Message fragment around the first match, sized for one sidebar line.
+SNIPPET_HEADLINE_OPTIONS = f"{_HIGHLIGHT_MARKS}, MaxWords=15, MinWords=8, ShortWord=2"
+
 
 def _owner_clause(owner: CallerIdentity):
     if owner.customer_id is not None:
         return Conversation.customer_id == owner.customer_id
     return (Conversation.anonymous_sid == owner.anonymous_sid) & Conversation.customer_id.is_(None)
+
+
+def _without_marks(column):
+    return func.translate(column, HIGHLIGHT_START + HIGHLIGHT_STOP, "")
+
+
+def parse_headline(headline: str) -> tuple[HighlightSegment, ...]:
+    """Split ts_headline output into plain and matching segments, dropping empty ones."""
+    segments: list[HighlightSegment] = []
+    for chunk in headline.split(HIGHLIGHT_START):
+        match_text, sep, rest = chunk.partition(HIGHLIGHT_STOP)
+        if sep:
+            segments.append(HighlightSegment(match_text, True))
+        else:
+            rest = match_text  # no match in this chunk: it is all plain text
+        if rest:
+            segments.append(HighlightSegment(rest, False))
+    return tuple(s for s in segments if s.text)
 
 
 def _to_entity(row: Conversation) -> ConversationEntity:
@@ -129,8 +161,26 @@ class ConversationPostgresAdapter:
             .correlate(Conversation)
             .scalar_subquery()
         )
+        title_headline = func.ts_headline(
+            SEARCH_CONFIG, _without_marks(Conversation.title), tsquery, TITLE_HEADLINE_OPTIONS
+        )
+        # Fragment of the most recent matching message; NULL when only the title matched.
+        snippet_headline = (
+            select(func.ts_headline(
+                SEARCH_CONFIG, _without_marks(Message.content), tsquery, SNIPPET_HEADLINE_OPTIONS
+            ))
+            .where(
+                Message.conversation_id == Conversation.id,
+                Message.role.in_(("CUSTOMER", "ASSISTANT")),
+                Message.search_vector.op("@@")(tsquery),
+            )
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+            .correlate(Conversation)
+            .scalar_subquery()
+        )
         stmt = (
-            select(Conversation, preview)
+            select(Conversation, preview, title_headline, snippet_headline)
             .where(
                 _owner_clause(owner),
                 Conversation.title.is_not(None),
@@ -143,9 +193,13 @@ class ConversationPostgresAdapter:
         res = await self.session.execute(stmt)
         return [
             ConversationSummary(
-                id=row.id, title=row.title, preview=text or "", last_message_at=row.last_message_at
+                id=row.id, title=row.title, preview=text or "", last_message_at=row.last_message_at,
+                highlight=SearchHighlight(
+                    title=parse_headline(title_hl),
+                    snippet=parse_headline(snippet_hl) if snippet_hl is not None else None,
+                ),
             )
-            for row, text in res.all()
+            for row, text, title_hl, snippet_hl in res.all()
         ]
 
     async def find_owned(

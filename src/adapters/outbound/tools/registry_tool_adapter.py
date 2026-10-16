@@ -4,6 +4,7 @@ The registry speaks Spanish and carries UI blocks inside `data["bloques"]`; the 
 provider-neutral and carries blocks next to the data. This adapter translates between both and
 leaves handler exceptions untouched: the agent loop maps them to ERROR_INTERNO.
 """
+import uuid
 from collections.abc import Mapping
 from typing import Any
 
@@ -34,10 +35,15 @@ class RegistryToolAdapter:
         result = await self._registry.ejecutar(name, arguments, _to_registry_context(context))
         data = dict(result.data)
         raw_blocks = data.pop(_BLOCKS_KEY, ())  # UI payloads never reach the model
-        blocks = tuple(dict(b) for b in raw_blocks if isinstance(b, Mapping)) if isinstance(raw_blocks, list) else ()
+        blocks = tuple(_with_id(b) for b in raw_blocks if isinstance(b, Mapping)) if isinstance(raw_blocks, list) else ()
         return ToolResult(
             code=result.code, data=data, is_error=result.code in _REGISTRY_REJECTIONS, blocks=blocks
         )
+
+
+def _with_id(block: Mapping[str, Any]) -> dict[str, Any]:
+    """Every block the client renders needs an id; handlers may omit it, so one is assigned here."""
+    return {"id": str(uuid.uuid4()), **block} if not block.get("id") else dict(block)
 
 
 def _to_registry_context(context: ToolExecutionContext) -> ExecutionContext:

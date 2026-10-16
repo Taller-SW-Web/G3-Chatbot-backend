@@ -102,7 +102,7 @@ async def test_direct_action_hides_missing_or_foreign_conversation():
 @pytest.mark.asyncio
 async def test_direct_action_reports_unregistered_tools_without_fabricating_results():
     caller = CallerIdentity(anonymous_sid="sid-hash")
-    use_case, conversations, _, _ = make_use_case(caller)
+    use_case, conversations, messages, _ = make_use_case(caller)
 
     result = await use_case.execute(
         caller,
@@ -110,6 +110,11 @@ async def test_direct_action_reports_unregistered_tools_without_fabricating_resu
         {"tipo": "VER_CARRITO", "payload": {}},
     )
 
-    assert result.code == "HERRAMIENTA_DESCONOCIDA"
-    assert result.blocks[0]["tipo"] == "ERROR"
-    assert result.blocks[0]["datos"] == {"code": "HERRAMIENTA_DESCONOCIDA"}
+    assert result.code == "ACCION_DESCONOCIDA"
+    assert result.blocks[0] == {
+        "id": result.blocks[0]["id"],
+        "tipo": "ERROR",
+        "code": "ACCION_DESCONOCIDA",
+        "mensaje": "No se pudo completar la acción.",
+    }
+    assert messages.rows[-1]["blocks"] == {"blocks": list(result.blocks)}

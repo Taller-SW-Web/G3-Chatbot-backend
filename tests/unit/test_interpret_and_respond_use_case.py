@@ -289,10 +289,22 @@ async def test_provider_failure_keeps_the_customer_message_and_replies_degraded(
     events = await run(uc, conv, "zapatillas")
     assert kinds(events) == [MessageAcceptedEvent, DegradedEvent, BlockEvent, FinalEvent]
     assert events[1] == DegradedEvent(reason)
-    assert events[2].block["tipo"] == "ACCIONES_RAPIDAS" and len(events[2].block["acciones"]) == 6
+    assert events[2].block["tipo"] == "ACCIONES_RAPIDAS"
+    assert events[2].block["acciones"] == []  # this fake executor registers no runnable tools
     assert events[-1].message.text == DEGRADED_TEXT
     assert [r["text"] for r in messages.rows] == ["zapatillas", DEGRADED_TEXT]
     assert uow.rollbacks == 0 and uow.commits == 2
+
+
+def test_degraded_menu_contains_only_quick_actions_with_registered_handlers():
+    _, blocks, search_query = InterpretAndRespondUseCase._degraded_reply(
+        "unavailable",
+        available_tools={"buscar_productos", "ver_carrito"},
+    )
+    assert search_query is None
+    assert [a["id"] for a in blocks[0]["acciones"]] == [
+        "BUSCAR_POR_CATEGORIA", "VER_CARRITO",
+    ]
 
 
 @pytest.mark.asyncio

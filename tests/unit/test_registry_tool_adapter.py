@@ -66,16 +66,34 @@ async def test_blocks_are_extracted_and_stripped_from_the_data_for_the_model():
     block = {"tipo": "CARRUSEL_PRODUCTOS", "items": []}
     handler = AsyncMock(return_value=RegistryResult("OK", {"total": 2, "bloques": [block, "ignored"]}))
     result = await adapter_with(ver_carrito=handler).execute("ver_carrito", {}, ANA)
-    assert result.blocks == (block,)
+    assert [{k: v for k, v in b.items() if k != "id"} for b in result.blocks] == [block]
     assert dict(result.data) == {"total": 2}
+
+
+@pytest.mark.asyncio
+async def test_blocks_without_id_get_a_unique_one_and_existing_ids_are_kept():
+    blocks = [{"tipo": "A"}, {"tipo": "B"}, {"id": "keep-me", "tipo": "C"}]
+    handler = AsyncMock(return_value=RegistryResult("OK", {"bloques": blocks}))
+    result = await adapter_with(ver_carrito=handler).execute("ver_carrito", {}, ANA)
+    first, second, third = result.blocks
+    assert uuid.UUID(first["id"]) != uuid.UUID(second["id"])
+    assert third["id"] == "keep-me"
+    assert "id" not in blocks[0]  # the handler's payload is not mutated
 
 
 @pytest.mark.asyncio
 async def test_registration_form_block_is_emitted_without_leaking_into_data():
     result = await adapter_with().execute("solicitar_registro", {}, ANONYMOUS)
     assert result.code == "OK" and not result.is_error
-    assert result.blocks == ({"tipo": "FORMULARIO", "formulario": "REGISTRO"},)
+    (block,) = result.blocks
+    assert uuid.UUID(block["id"])
+    assert {k: v for k, v in block.items() if k != "id"} == {"tipo": "FORMULARIO", "formulario": "REGISTRO"}
     assert "bloques" not in result.data and result.data["texto"]
+
+
+def test_registration_tool_description_restricts_it_to_account_creation():
+    (registration,) = adapter_with().definitions()
+    assert "solo cuando" in registration.description and "productos" in registration.description
 
 
 @pytest.mark.asyncio

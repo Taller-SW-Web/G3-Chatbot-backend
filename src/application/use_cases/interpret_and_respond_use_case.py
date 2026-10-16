@@ -28,6 +28,7 @@ from src.application.prompts.system_prompt import (
     build_summary_message,
     build_system_prompt,
 )
+from src.application.tools.action_dispatcher import QUICK_ACTIONS as QUICK_ACTION_TO_TOOL
 from src.domain.entities.conversation import Conversation
 from src.domain.entities.message import Message, MessageRole
 from src.domain.services.degraded_mode import DegradedMode
@@ -70,7 +71,7 @@ TOOL_RESULT_MAX_CHARS = 6000  # provisional cap on what one tool result adds to 
 
 # Spec text of the degraded reply and its quick actions (SPEC-05 Req. 10).
 DEGRADED_TEXT = "Estoy teniendo problemas para entenderte, pero puedes usar estas opciones"
-QUICK_ACTIONS = (  # (action id, label); ids are provisional, the spec only names VER_OFERTAS
+QUICK_ACTIONS = (  # (stable action id, label), matching QuickActionId and ActionDispatcher
     ("BUSCAR_POR_CATEGORIA", "Buscar por categoría"),
     ("VER_OFERTAS", "Ofertas"),
     ("VER_CARRITO", "Carrito"),
@@ -381,6 +382,12 @@ class InterpretAndRespondUseCase:
                 response = mode.responder("")
             text = response.texto
             actions = tuple((action.tipo, action.etiqueta) for action in response.acciones)
+        if available_tools is not None:
+            actions = tuple(
+                (action_id, label)
+                for action_id, label in actions
+                if QUICK_ACTION_TO_TOOL.get(action_id) in available_tools
+            )
         block = {
             "id": str(uuid.uuid4()),
             "tipo": "ACCIONES_RAPIDAS",
