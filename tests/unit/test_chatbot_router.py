@@ -11,7 +11,12 @@ from src.adapters.inbound.http.chatbot_router import create_chatbot_router
 from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
 from src.adapters.inbound.http.health_router import router as health_router
 from src.adapters.inbound.http.problem import register_problem_handlers
-from src.domain.entities.conversation import Conversation, ConversationSummary
+from src.domain.entities.conversation import (
+    Conversation,
+    ConversationSummary,
+    HighlightSegment,
+    SearchHighlight,
+)
 from src.domain.entities.message import Message, MessageRole
 from src.domain.value_objects.caller_identity import CallerIdentity
 from src.infrastructure.main import create_app
@@ -41,7 +46,13 @@ class FakeService:
         self.search_call = (caller, query, page)
         if caller is None:
             return []
-        return [ConversationSummary(id=CID, title="Zapatillas", preview="Talla 42", last_message_at=NOW)]
+        return [ConversationSummary(
+            id=CID, title="Zapatillas", preview="Talla 42", last_message_at=NOW,
+            highlight=SearchHighlight(
+                title=(HighlightSegment("Zapatillas", True),),
+                snippet=(HighlightSegment("busco ", False), HighlightSegment("zapatillas", True)),
+            ),
+        )]
 
     async def get_history(self, caller, conversation_id):
         if caller is None or conversation_id != CID:
@@ -187,8 +198,26 @@ def test_buscar_devuelve_forma_del_listado_recorta_q_y_pagina(service):
     assert res.json() == [{
         "id": str(CID), "titulo": "Zapatillas", "preview": "Talla 42",
         "ultimoMensajeEn": "2026-10-01T00:00:00Z",
+        "resaltado": {
+            "titulo": [{"texto": "Zapatillas", "coincide": True}],
+            "fragmento": [{"texto": "busco ", "coincide": False}, {"texto": "zapatillas", "coincide": True}],
+        },
     }]
     assert service.search_call[1:] == ("zapatillas", 2)
+
+
+def test_buscar_solo_por_titulo_devuelve_fragmento_nulo(service):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats (only the title matched)."""
+    async def title_only(caller, query, page):
+        return [ConversationSummary(
+            id=CID, title="Zapatillas", preview="Talla 42", last_message_at=NOW,
+            highlight=SearchHighlight(title=(HighlightSegment("Zapatillas", True),), snippet=None),
+        )]
+    service.search_conversations = title_only
+    res = make_client(service, identity=CallerIdentity(customer_id=uuid.uuid4())).get(
+        f"{BASE}/buscar", params={"q": "zapatillas"}
+    )
+    assert res.json()[0]["resaltado"]["fragmento"] is None
 
 
 def test_buscar_no_es_capturada_por_las_rutas_con_id(service):

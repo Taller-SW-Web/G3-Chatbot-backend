@@ -191,3 +191,69 @@ async def test_buscar_omite_conversaciones_sin_titulo(postgres_session):
     untitled = await adapter.create(ana)
     await say(messages, untitled.id, "CUSTOMER", "zapatillas", 0)
     assert await search(adapter, ana, "zapatillas") == []
+
+
+def plain(segments):
+    return "".join(s.text for s in segments)
+
+
+def matches(segments):
+    return [s.text for s in segments if s.match]
+
+
+async def test_buscar_resalta_la_coincidencia_en_el_titulo_y_en_el_mensaje(postgres_session):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats (resaltando la coincidencia)."""
+    session = postgres_session
+    adapter, messages = ConversationPostgresAdapter(session), MessagePostgresAdapter(session)
+    ana = CallerIdentity(customer_id=uuid.uuid4())
+    cid = await titled(adapter, ana, "Zapatillas rojas", 0)
+    await say(messages, cid, "CUSTOMER", "busco una zapatilla para correr", 0)
+    await say(messages, cid, "ASSISTANT", "Te muestro opciones de running", 1)
+
+    [found] = await adapter.search_summaries(ana, "zapatillas", limit=20, offset=0)
+    title, snippet = found.highlight.title, found.highlight.snippet
+    assert plain(title) == "Zapatillas rojas" and matches(title) == ["Zapatillas"]
+    # Stemming: the singular in the message matches too; the preview stays the latest message.
+    assert matches(snippet) == ["zapatilla"] and "busco una" in plain(snippet)
+    assert found.preview == "Te muestro opciones de running"
+
+
+async def test_buscar_solo_por_titulo_no_trae_fragmento(postgres_session):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats (no matching message)."""
+    session = postgres_session
+    adapter, messages = ConversationPostgresAdapter(session), MessagePostgresAdapter(session)
+    ana = CallerIdentity(customer_id=uuid.uuid4())
+    cid = await titled(adapter, ana, "Zapatillas rojas", 0)
+    await say(messages, cid, "CUSTOMER", "hola", 0)
+    [found] = await adapter.search_summaries(ana, "zapatillas", limit=20, offset=0)
+    assert found.highlight.snippet is None
+    assert matches(found.highlight.title) == ["Zapatillas"]
+
+
+async def test_buscar_fragmento_del_mensaje_coincidente_mas_reciente_y_acotado(postgres_session):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats (snippet from the latest matching message, short)."""
+    session = postgres_session
+    adapter, messages = ConversationPostgresAdapter(session), MessagePostgresAdapter(session)
+    ana = CallerIdentity(customer_id=uuid.uuid4())
+    cid = await titled(adapter, ana, "chat", 0)
+    await say(messages, cid, "CUSTOMER", "zapatillas viejas", 0)
+    long_text = " ".join(["palabra"] * 40) + " zapatillas nuevas " + " ".join(["relleno"] * 40)
+    await say(messages, cid, "ASSISTANT", long_text, 1)
+    await say(messages, cid, "TOOL", "zapatillas internas", 2, tool_name="buscar_productos")
+    [found] = await adapter.search_summaries(ana, "zapatillas", limit=20, offset=0)
+    snippet = plain(found.highlight.snippet)
+    assert "nuevas" in snippet and "viejas" not in snippet and "internas" not in snippet
+    assert len(snippet.split()) <= 15
+    assert matches(found.highlight.title) == []
+
+
+async def test_buscar_las_marcas_del_resaltado_no_se_falsifican_desde_el_contenido(postgres_session):
+    """SPEC-05 Req. 1 · Scenario: Buscar chats (stored control characters cannot fake a match)."""
+    session = postgres_session
+    adapter, messages = ConversationPostgresAdapter(session), MessagePostgresAdapter(session)
+    ana = CallerIdentity(customer_id=uuid.uuid4())
+    cid = await titled(adapter, ana, "chat \x02falso\x03", 0)
+    await say(messages, cid, "CUSTOMER", "\x02inyectado\x03 zapatillas", 0)
+    [found] = await adapter.search_summaries(ana, "zapatillas", limit=20, offset=0)
+    assert matches(found.highlight.snippet) == ["zapatillas"]
+    assert matches(found.highlight.title) == [] and plain(found.highlight.title) == "chat falso"

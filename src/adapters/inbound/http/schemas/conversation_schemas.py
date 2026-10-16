@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from src.domain.entities.conversation import ConversationSummary
+from src.domain.entities.conversation import ConversationSummary, HighlightSegment
 from src.domain.entities.message import Message, MessageRole
 
 
@@ -26,6 +26,41 @@ class ConversationSummaryOut(BaseModel):
     @classmethod
     def from_domain(cls, c: ConversationSummary) -> "ConversationSummaryOut":
         return cls(id=c.id, titulo=c.title, preview=c.preview, ultimoMensajeEn=c.last_message_at)
+
+
+class HighlightSegmentOut(BaseModel):
+    texto: str
+    coincide: bool
+
+    @classmethod
+    def from_domain(cls, s: HighlightSegment) -> "HighlightSegmentOut":
+        return cls(texto=s.text, coincide=s.match)
+
+
+class SearchHighlightOut(BaseModel):
+    titulo: list[HighlightSegmentOut]
+    fragmento: list[HighlightSegmentOut] | None  # null when only the title matched
+
+
+class ConversationSearchResultOut(ConversationSummaryOut):
+    """Search row: the list shape plus `resaltado` (SPEC-05 Req. 1 · Buscar chats). Segments are plain
+    text; the client marks the ones with `coincide` and must not render them as HTML."""
+
+    resaltado: SearchHighlightOut | None = None
+
+    @classmethod
+    def from_domain(cls, c: ConversationSummary) -> "ConversationSearchResultOut":
+        base = ConversationSummaryOut.from_domain(c)
+        highlight = None
+        if c.highlight is not None:
+            highlight = SearchHighlightOut(
+                titulo=[HighlightSegmentOut.from_domain(s) for s in c.highlight.title],
+                fragmento=(
+                    [HighlightSegmentOut.from_domain(s) for s in c.highlight.snippet]
+                    if c.highlight.snippet is not None else None
+                ),
+            )
+        return cls(**base.model_dump(), resaltado=highlight)
 
 
 class MessageOut(BaseModel):
