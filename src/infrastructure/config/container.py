@@ -15,6 +15,7 @@ from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapte
 from src.application.tools.catalog_tools import build_tool_registry
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
+from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
 from src.adapters.outbound.http_clients.inventory_client import (
@@ -117,6 +118,11 @@ def provide_security_client(
         timeout_seconds=settings.security_timeout_seconds,
         client_secret=client_secret or settings.security_client_secret,
     )
+
+
+def provide_manage_session() -> ManageSessionUseCase:
+    """Customer session service (SPEC-03): orchestration over the Seguridad client."""
+    return ManageSessionUseCase(security=provide_security_client())
 
 
 def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUseCase:
