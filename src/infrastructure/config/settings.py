@@ -4,6 +4,16 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 
+LLM_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
+
+
+def _choice(name: str, default: str, allowed: tuple[str, ...]) -> str:
+    value = os.getenv(name, default).strip().lower()
+    if value not in allowed:
+        raise ValueError(f"{name} must be one of {', '.join(allowed)}, got {value!r}")
+    return value
+
+
 def _number(name: str, default: str, cast, *, minimum: float):
     raw = os.getenv(name, default).strip()
     try:
@@ -27,6 +37,8 @@ class Settings:
     llm_timeout_seconds: float = 15.0
     llm_api_key: str | None = None
     llm_vision_enabled: bool = True
+    # Reasoning effort sent to the model; "none" keeps tools and temperature available.
+    llm_reasoning_effort: str = "none"
     # Name the assistant introduces itself with (SPEC-05 Req. 12; provisional value from the spec).
     assistant_name: str = "Botleta"
     # Module base URLs (ADR-0017): mock or real, switched by config without code changes.
@@ -55,6 +67,7 @@ def get_settings() -> Settings:
         llm_timeout_seconds=_number("LLM_TIMEOUT_SECONDS", "15", float, minimum=0.1),
         llm_api_key=os.getenv("LLM_API_KEY", "").strip() or None,
         llm_vision_enabled=os.getenv("LLM_VISION_ENABLED", "true").strip().lower() != "false",
+        llm_reasoning_effort=_choice("LLM_REASONING_EFFORT", "none", LLM_REASONING_EFFORTS),
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
         security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),
         security_client_secret=os.getenv("SECURITY_CLIENT_SECRET", "").strip(),

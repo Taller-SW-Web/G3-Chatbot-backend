@@ -49,6 +49,7 @@ def provide_llm_provider(settings: Settings | None = None) -> LLMProvider:
             max_tokens=settings.llm_max_tokens,
             timeout_seconds=settings.llm_timeout_seconds,
             vision_enabled=settings.llm_vision_enabled,
+            reasoning_effort=settings.llm_reasoning_effort,
         )
     if settings.llm_provider == "claude":
         raise NotImplementedError("LLM_PROVIDER=claude is not implemented yet")
