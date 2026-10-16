@@ -138,7 +138,9 @@ def build_tool_registry(handlers: Mapping[str, ToolHandler] | None = None) -> To
         raise ValueError("Todos los handlers comerciales deben ser invocables")
     registry = ToolRegistry()
     registry.registrar(ToolDefinition(
-        "solicitar_registro", "Mostrar el formulario seguro de registro sin pedir datos en el chat.",
+        "solicitar_registro",
+        "Mostrar el formulario seguro de registro sin pedir datos en el chat. Usar solo cuando el "
+        "cliente pide crear una cuenta o registrarse; nunca para buscar productos ni para otras consultas.",
         EmptyArguments, solicitar_registro,
     ))
     for nombre, descripcion, esquema in _TOOLS:
