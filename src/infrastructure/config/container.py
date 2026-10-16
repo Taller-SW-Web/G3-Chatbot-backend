@@ -12,7 +12,10 @@ from src.adapters.outbound.persistence.message_postgres_adapter import MessagePo
 from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
+from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.catalog_tools import build_tool_registry
+from src.application.tools.tool_registry import ToolRegistry
+from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
@@ -57,7 +60,16 @@ def provide_llm_provider(settings: Settings | None = None) -> LLMProvider:
 
 def provide_tool_executor() -> ToolExecutorPort:
     """Registry with only the tools that have a handler; commercial handlers are added as modules land."""
-    return RegistryToolAdapter(build_tool_registry({}))
+    return RegistryToolAdapter(provide_tool_registry())
+
+
+def provide_tool_registry() -> ToolRegistry:
+    """Build the canonical registry shared by LLM and direct-UI dispatch paths."""
+    return build_tool_registry({})
+
+
+def provide_action_dispatcher() -> ActionDispatcher:
+    return ActionDispatcher(provide_tool_registry())
 
 
 def sanitize_sensitive_text(text: str) -> str:
@@ -144,3 +156,17 @@ async def provide_turn_scope() -> AsyncIterator[InterpretAndRespondUseCase]:
     connection.get_engine()
     async with connection.AsyncSessionLocal() as session:
         yield build_interpret_and_respond(session)
+
+
+@asynccontextmanager
+async def provide_action_scope() -> AsyncIterator[DispatchDirectActionUseCase]:
+    """One database session for a direct UI action; no LLM or SSE is opened."""
+    connection.get_engine()
+    async with connection.AsyncSessionLocal() as session:
+        yield DispatchDirectActionUseCase(
+            conversations=ConversationPostgresAdapter(session),
+            messages=MessagePostgresAdapter(session),
+            uow=SqlAlchemyUnitOfWork(session),
+            dispatcher=provide_action_dispatcher(),
+            sanitize_text=sanitize_sensitive_text,
+        )

@@ -176,6 +176,51 @@ async def test_tool_call_then_final_answer():
 
 
 @pytest.mark.asyncio
+async def test_final_output_only_keeps_amounts_authorized_by_successful_tools():
+    tools = FakeToolExecutor({
+        "ver_carrito": ToolResult("OK", {"currency": "PEN", "total": "199.90"}),
+    })
+    uc, conv, _, _, _, _ = build(
+        [tool_turn("c1", "ver_carrito", {}), reply("Total S/ 199.90; envío S/ 25.00")],
+        tools=tools,
+    )
+
+    events = await run(uc, conv)
+
+    assert events[-1].message.text == "Total S/ 199.90; envío [importe no verificado]"
+
+
+@pytest.mark.asyncio
+async def test_failed_tool_result_does_not_authorize_commercial_amounts():
+    tools = FakeToolExecutor({
+        "ver_carrito": ToolResult("SERVICIO_NO_DISPONIBLE", {"currency": "PEN", "total": "199.90"}),
+    })
+    uc, conv, _, _, _, _ = build(
+        [tool_turn("c1", "ver_carrito", {}), reply("Total S/ 199.90")],
+        tools=tools,
+    )
+
+    events = await run(uc, conv)
+
+    assert events[-1].message.text == "Total [importe no verificado]"
+
+
+@pytest.mark.asyncio
+async def test_degraded_mode_runs_only_registered_read_only_keyword_search():
+    result_block = {"id": "p1", "tipo": "CARRUSEL_PRODUCTOS", "datos": {"productos": []}}
+    tools = FakeToolExecutor({
+        "buscar_productos": ToolResult("OK", {}, blocks=(result_block,)),
+    })
+    uc, conv, _, _, _, _ = build([LLMUnavailableError("offline")], tools=tools)
+
+    events = await run(uc, conv, "busco zapatillas")
+
+    assert tools.executed[0][0:2] == ("buscar_productos", {"q": "zapatillas"})
+    assert any(isinstance(event, DegradedEvent) for event in events)
+    assert any(isinstance(event, BlockEvent) and event.block == result_block for event in events)
+
+
+@pytest.mark.asyncio
 async def test_tool_error_is_fed_back_to_the_model():
     """SPEC-05 Req. 6 · Scenario: Herramienta protegida sin sesión."""
     tools = FakeToolExecutor({"listar_pedidos": ToolResult("REQUIERE_SESION", is_error=True)})

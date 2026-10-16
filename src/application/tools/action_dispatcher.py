@@ -9,6 +9,7 @@ from src.application.tools.tool_registry import ExecutionContext, ToolRegistry, 
 QUICK_ACTIONS = {
     "SOLICITAR_REGISTRO": "solicitar_registro",
     "BUSCAR_PRODUCTOS": "buscar_productos",
+    "BUSCAR_POR_CATEGORIA": "buscar_productos",
     "BUSCAR_PAGINA": "buscar_productos",
     "VER_DETALLE_PRODUCTO": "ver_detalle_producto",
     "CONSULTAR_DISPONIBILIDAD": "consultar_disponibilidad",
