@@ -242,9 +242,11 @@ async def test_provider_failure_keeps_the_customer_message_and_replies_degraded(
     """SPEC-05 Req. 10 · Scenario: El LLM no responde."""
     uc, conv, messages, uow, _, _ = build([error])
     events = await run(uc, conv, "zapatillas")
-    assert kinds(events) == [MessageAcceptedEvent, DegradedEvent, BlockEvent, FinalEvent]
+    assert kinds(events) == [MessageAcceptedEvent, DegradedEvent, TokenEvent, BlockEvent, FinalEvent]
     assert events[1] == DegradedEvent(reason)
-    assert events[2].block["tipo"] == "ACCIONES_RAPIDAS" and len(events[2].block["acciones"]) == 6
+    # The fallback text is streamed after `degradado`, so the live message equals the stored one.
+    assert events[2] == TokenEvent(DEGRADED_TEXT)
+    assert events[3].block["tipo"] == "ACCIONES_RAPIDAS" and len(events[3].block["acciones"]) == 6
     assert events[-1].message.text == DEGRADED_TEXT
     assert [r["text"] for r in messages.rows] == ["zapatillas", DEGRADED_TEXT]
     assert uow.rollbacks == 0 and uow.commits == 2
@@ -260,7 +262,8 @@ async def test_failure_mid_stream_replaces_the_partial_text_with_the_fallback():
     uc, conv, messages, _, _, _ = build([])
     uc._llm = Breaking([])
     events = await run(uc, conv)
-    assert kinds(events)[:3] == [MessageAcceptedEvent, TokenEvent, DegradedEvent]
+    assert kinds(events)[:4] == [MessageAcceptedEvent, TokenEvent, DegradedEvent, TokenEvent]
+    assert events[3] == TokenEvent(DEGRADED_TEXT)
     assert messages.by_role(MessageRole.ASSISTANT)[0]["text"] == DEGRADED_TEXT
 
 

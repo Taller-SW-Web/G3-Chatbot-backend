@@ -88,8 +88,9 @@ async def test_a_degraded_turn_streams_the_spec_shaped_quick_actions(postgres_se
         res = await client.post(f"/api/v1/chat/conversaciones/{cid}/mensajes", json={"texto": "hola"})
 
     events = frames(res.text)
-    assert [name for name, _ in events] == ["aceptado", "degradado", "bloque", "fin"]
-    block = events[2][1]["bloque"]
+    assert [name for name, _ in events] == ["aceptado", "degradado", "token", "bloque", "fin"]
+    assert events[2][1]["texto"]  # the fallback text reaches the live message
+    block = events[3][1]["bloque"]
     assert block["tipo"] == "ACCIONES_RAPIDAS" and len(block["acciones"]) == 6
     assert set(block["acciones"][0]) == {"id", "etiqueta"}
 
