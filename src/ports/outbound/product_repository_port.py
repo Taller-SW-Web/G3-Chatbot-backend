@@ -10,6 +10,11 @@ from typing import Any, Protocol
 
 MAX_SKUS_PER_CALL = 20
 
+# Commercial availability batches (Productos HTTP 0.5.0, SPEC-10): the
+# projection endpoint accepts up to 100 SKUs per call; prices keep the
+# shared 20-SKU cap above.
+MAX_COMERCIAL_SKUS = 100
+
 
 def normalize_sku_list(skus: list[str], *, limit: int = MAX_SKUS_PER_CALL) -> list[str]:
     """Clean shared SKU input: strip, drop blanks/duplicates, enforce the cap.
@@ -73,6 +78,12 @@ class ProductCatalogPort(Protocol):
         """Price of one SKU on the channel (`GET /precios/skus/{sku}`)."""
         ...
 
+    async def list_promotions(
+        self, *, correlation_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Current promotions (`GET /promociones`, provisional shape)."""
+        ...
+
     async def get_prices(
         self,
         skus: list[str],
@@ -80,7 +91,7 @@ class ProductCatalogPort(Protocol):
         channel: str = "CHATBOT",
         correlation_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Bulk prices (`GET /precios?skus=&channel_id=`)."""
+        """Bulk prices (`GET /precios?skus=&canal=`, Productos HTTP 0.5.0)."""
         ...
 
     async def evaluate_promotions(
@@ -98,9 +109,24 @@ class ProductCatalogPort(Protocol):
 
 class InventoryPort(Protocol):
     async def get_availability(
-        self, skus: list[str], *, correlation_id: str | None = None
+        self,
+        skus: list[str],
+        *,
+        channel: str = "CHATBOT",
+        correlation_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Live availability per SKU, one call, max 20 SKUs (SPEC-10)."""
+        """Commercial projection per SKU (`status`), one call, max 100 SKUs (SPEC-10)."""
+        ...
+
+    async def verify_quantities(
+        self,
+        lines: list[dict[str, Any]],
+        *,
+        channel_id: str = "CHATBOT",
+        correlation_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Non-binding per-line verdicts (`SUFICIENTE`, `INSUFICIENTE`,
+        `INDETERMINADO`) for requested quantities (SPEC-10)."""
         ...
 
     async def get_sku_availability(

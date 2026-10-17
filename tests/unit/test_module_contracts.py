@@ -26,6 +26,13 @@ def test_normalize_codigo_to_code():
     assert BaseModuleClient.normalize_code({"codigo": "X", "a": 1})["code"] == "X"
 
 
+def test_module_unavailable_error_is_a_port_error():
+    # The exception belongs to the ports layer; the HTTP clients re-export it.
+    from src.ports.outbound.module_errors import ModuleUnavailableError as PortError
+
+    assert PortError is ModuleUnavailableError
+
+
 def test_module_unavailable_on_timeout():
     client = BaseModuleClient(base_url="http://x", timeout_seconds=0.01)
     client._client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: (_ for _ in ()).throw(httpx.ConnectError("down"))))

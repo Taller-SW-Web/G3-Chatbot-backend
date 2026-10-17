@@ -20,11 +20,11 @@ from urllib.parse import quote
 
 import httpx
 
-from src.adapters.outbound.http_clients.base_client import (
-    BaseModuleClient,
+from src.adapters.outbound.http_clients.base_client import BaseModuleClient
+from src.ports.outbound.module_errors import (
+    ModuleRequestError,
     ModuleUnavailableError,
 )
-from src.ports.outbound.module_errors import ModuleRequestError
 
 # Used when a 4xx body carries no `code`/`codigo` (or is not JSON at all).
 FALLBACK_ERROR_CODES = {

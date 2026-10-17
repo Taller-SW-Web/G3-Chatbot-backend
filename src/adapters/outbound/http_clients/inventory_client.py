@@ -1,11 +1,15 @@
-"""Productos inventory client (SPEC-10, ADR-0017).
+"""Productos inventory client (SPEC-10, Productos HTTP 0.5.0, ADR-0017).
 
-Live per-SKU availability, one bulk call, no cache for decisions.
-Timeout is 3 s per SPEC-10 (shorter than the module default of 4 s):
-stock answers must be live, never assumed. Only 2xx rows are returned:
-4xx answers raise `ModuleRequestError` with the contract `code`
-(`PRODUCTO_NO_DISPONIBLE`, ...), so SPEC-10 tools can tell "not
-available" apart from valid rows.
+Commercial availability projection: one bulk call, no cache for decisions.
+Timeout is 3 s per SPEC-10: stock answers must be live, never assumed.
+Only 2xx rows are returned: 4xx answers raise `ModuleRequestError` with
+the contract `code`, so SPEC-10 tools can tell "not available" apart
+from valid rows.
+
+The module exposes quantities nowhere in 0.5.0: `get_availability`
+returns per-SKU `status` and `verify_quantities` answers per line
+(`SUFICIENTE`, `INSUFICIENTE`, `INDETERMINADO`), non-binding and without
+reservation. Exact quantity enforcement happens in Ventas with 409.
 """
 from typing import Any
 
@@ -13,7 +17,7 @@ import httpx
 
 from src.adapters.outbound.http_clients.products_client import ProductsBaseClient
 from src.ports.outbound.product_repository_port import (
-    MAX_SKUS_PER_CALL,
+    MAX_COMERCIAL_SKUS,
     normalize_sku_list,
 )
 
@@ -30,13 +34,17 @@ class InventoryClient(ProductsBaseClient):
         super().__init__(base_url=base_url, timeout_seconds=timeout_seconds, client=client)
 
     async def get_availability(
-        self, skus: list[str], *, correlation_id: str | None = None
+        self,
+        skus: list[str],
+        *,
+        channel: str = "CHATBOT",
+        correlation_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        clean = normalize_sku_list(skus, limit=MAX_SKUS_PER_CALL)
+        clean = normalize_sku_list(skus, limit=MAX_COMERCIAL_SKUS)
         response = await self._request(
             "GET",
-            "/inventario/disponibilidad",
-            params={"skus": ",".join(clean)},
+            "/inventario/disponibilidad/comercial",
+            params={"skus": ",".join(clean), "canal": channel},
             correlation_id=correlation_id,
         )
         rows = await self._parse_response(response)
@@ -46,6 +54,34 @@ class InventoryClient(ProductsBaseClient):
             return [self._check_row(row) for row in rows["items"]]
         raise ValueError(
             f"expected a list or paginated items, got {type(rows).__name__}"
+        )
+
+    async def verify_quantities(
+        self,
+        lines: list[dict[str, Any]],
+        *,
+        channel_id: str = "CHATBOT",
+        correlation_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Non-binding per-line verdicts for requested quantities.
+
+        `channel_id` follows validacion-stock/design.md; provisional until
+        Productos confirms (A5/A16).
+        """
+        clean = self._check_lines(lines)
+        response = await self._request(
+            "POST",
+            "/inventario/disponibilidad/comercial/verificar",
+            json={"channel_id": channel_id, "lines": clean},
+            correlation_id=correlation_id,
+        )
+        verdicts = await self._parse_response(response)
+        if isinstance(verdicts, list):
+            return verdicts
+        if isinstance(verdicts, dict) and isinstance(verdicts.get("items"), list):
+            return verdicts["items"]
+        raise ValueError(
+            f"expected a list or paginated items, got {type(verdicts).__name__}"
         )
 
     async def get_sku_availability(
@@ -58,20 +94,30 @@ class InventoryClient(ProductsBaseClient):
         return None
 
     @staticmethod
+    def _check_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not lines:
+            raise ValueError("lines must not be empty")
+        clean: list[dict[str, Any]] = []
+        for line in lines:
+            if not isinstance(line, dict):
+                raise ValueError(f"expected a line mapping, got {line!r}")
+            sku = line.get("sku")
+            quantity = line.get("quantity")
+            if not isinstance(sku, str) or not sku.strip() or "," in sku:
+                raise ValueError(f"line sku must be a non-blank sku without commas, got {sku!r}")
+            if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity < 1:
+                raise ValueError(f"line quantity must be an int >= 1, got {quantity!r}")
+            clean.append({"sku": sku.strip(), "quantity": quantity})
+        return clean
+
+    @staticmethod
     def _check_row(row: Any) -> dict[str, Any]:
-        """Reject nonsense stock figures instead of passing them downstream."""
+        """Shape-check the commercial projection; unknown statuses pass
+        through and the stock validator maps them to INDETERMINADO."""
         if not isinstance(row, dict):
             raise ValueError(f"expected an availability row, got {type(row).__name__}")
-        for field in ("on_hand", "reserved", "available"):
-            value = row.get(field)
-            if value is None:
-                continue
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise ValueError(
-                    f"row {row.get('sku')!r}: {field} must be a number, got {value!r}"
-                )
-            if value < 0:
-                raise ValueError(
-                    f"row {row.get('sku')!r}: {field} must be >= 0, got {value!r}"
-                )
+        if not isinstance(row.get("sku"), str) or not row["sku"].strip():
+            raise ValueError(f"row must carry a sku, got {row!r}")
+        if not isinstance(row.get("status"), str) or not row["status"].strip():
+            raise ValueError(f"row {row.get('sku')!r} must carry a status, got {row!r}")
         return row

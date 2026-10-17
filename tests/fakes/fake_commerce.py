@@ -1,0 +1,163 @@
+"""In-memory fakes for unit tests: commercial ports live in src (ADR-0022)
+so deployed fake mode shares them; persistence fakes stay test-only."""
+import uuid
+
+from src.adapters.outbound.fakes.fake_products import (
+    FakeCatalogPort,
+    FakeInventoryPort,
+)
+
+__all__ = [
+    "FakeCatalogPort",
+    "FakeInventoryPort",
+    "FakeRow",
+    "FakeConversations",
+    "FakeCarts",
+    "FakeItems",
+    "FakeMessages",
+    "FakeUow",
+    "FakeCartRow",
+]
+
+class FakeRow:
+    def __init__(self, **fields):
+        self.id = fields.pop("id", uuid.uuid4())
+        self.version = 0
+        for key, value in fields.items():
+            setattr(self, key, value)
+
+
+class FakeConversations:
+    def __init__(self):
+        self.rows: dict[uuid.UUID, FakeRow] = {}
+        self.touched: list[uuid.UUID] = []
+
+    def add_conversation(self, conversation_id, *, customer_id=None,
+                         anonymous_sid=None, context=None) -> FakeRow:
+        row = FakeRow(
+            id=conversation_id, customer_id=customer_id,
+            anonymous_sid=anonymous_sid, context=dict(context or {}),
+        )
+        self.rows[conversation_id] = row
+        return row
+
+    async def find_owned(self, conversation_id, caller):
+        row = self.rows.get(conversation_id)
+        if row is None:
+            return None
+        if caller.customer_id is not None and row.customer_id != caller.customer_id:
+            return None
+        if caller.customer_id is None and row.anonymous_sid != caller.anonymous_sid:
+            return None
+        return row
+
+    async def obtener_por_id(self, conversation_id):
+        return self.rows.get(conversation_id)
+
+    async def touch(self, conversation_id) -> None:
+        self.touched.append(conversation_id)
+
+
+class FakeCarts:
+    def __init__(self):
+        self.rows: dict[uuid.UUID, FakeRow] = {}
+
+    async def guardar(self, row):
+        row.id = getattr(row, "id", None) or uuid.uuid4()
+        row.version = 0
+        if getattr(row, "status", None) is None:
+            row.status = "ACTIVE"
+        self.rows[row.id] = row
+        return row
+
+    async def obtener_por_id(self, cart_id):
+        return self.rows.get(cart_id)
+
+    async def obtener_abierto_por_cliente(self, customer_id):
+        return next((
+            row for row in self.rows.values()
+            if row.customer_id == customer_id and row.status in ("ACTIVE", "IN_CHECKOUT")
+        ), None)
+
+    async def obtener_abierto_por_conversacion(self, conversation_id):
+        return next((
+            row for row in self.rows.values()
+            if row.conversation_id == conversation_id
+            and row.customer_id is None
+            and row.status in ("ACTIVE", "IN_CHECKOUT")
+        ), None)
+
+    async def cambiar_estado(self, cart_id, status):
+        row = self.rows.get(cart_id)
+        if row is None:
+            return None
+        row.status = status
+        return row
+
+
+class FakeItems:
+    def __init__(self):
+        self.rows: dict[uuid.UUID, FakeRow] = {}
+
+    async def guardar(self, row):
+        row.id = getattr(row, "id", None) or uuid.uuid4()
+        self.rows[row.id] = row
+        return row
+
+    async def obtener_por_id(self, item_id):
+        return self.rows.get(item_id)
+
+    async def obtener_por_cart_y_sku(self, cart_id, sku):
+        return next((
+            row for row in self.rows.values()
+            if row.cart_id == cart_id and row.sku == sku
+        ), None)
+
+    async def listar_por_cart(self, cart_id):
+        return [row for row in self.rows.values() if row.cart_id == cart_id]
+
+    async def eliminar(self, item_id) -> bool:
+        return self.rows.pop(item_id, None) is not None
+
+
+class FakeMessages:
+    def __init__(self):
+        self.rows: list[dict] = []
+
+    async def add(self, conversation_id, role, text, **extra):
+        row = {"conversation_id": conversation_id, "role": role,
+               "text": text, **extra}
+        self.rows.append(row)
+        return row
+
+
+class FakeUow:
+    def __init__(self, fail_commits: int = 0, fail_with=None):
+        self.commits = 0
+        self.rollbacks = 0
+        self._fail_commits = fail_commits
+        self._fail_with = fail_with
+
+    async def commit(self) -> None:
+        if self._fail_commits > 0:
+            self._fail_commits -= 1
+            raise self._fail_with
+        self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
+
+
+class FakeCartRow:
+    """Cart model stand-in honoring the real column contract."""
+
+    def __init__(self, *, customer_id=None, conversation_id=None):
+        self.id = uuid.uuid4()
+        self.customer_id = customer_id
+        self.conversation_id = conversation_id
+        self.status = "ACTIVE"
+        self.coupon_code = None
+        self.shipping_snapshot = None
+        self.totals_snapshot = None
+        self.version = 0
+        self.updated_at = None
