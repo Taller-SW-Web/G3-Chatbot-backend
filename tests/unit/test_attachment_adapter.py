@@ -1,8 +1,8 @@
-"""Tests H2-07: modelo attachment + adapter sin BD (offline).
+"""Test: modelo attachment + adapter sin BD (offline).
 
-message.id aun no esta definido (H2-06): estos tests solo inspeccionan la tabla y no
+message.id aun no esta definido: estos tests solo inspeccionan la tabla y no
 resuelven esa FK (sin create_all ni configuracion de mappers).
-El test de integración contra Supabase se hace en H2-10.
+El test de integración contra Supabase queda para la migración compartida.
 """
 from sqlalchemy import CheckConstraint, UniqueConstraint
 

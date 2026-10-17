@@ -1,4 +1,4 @@
-"""Tests H2-04 (David): modelo return_ref + adapter sin BD (offline).
+"""Tests: modelo return_ref + adapter sin BD (offline).
 
 Trazabilidad:
 - SPEC-21 (solicitud-devolucion-cambio): tipos CAMBIO/DEVOLUCION_DINERO

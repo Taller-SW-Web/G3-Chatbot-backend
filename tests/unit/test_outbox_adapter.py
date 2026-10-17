@@ -1,4 +1,4 @@
-"""Tests H2-03 (Sonny): modelo outbox y adapter sin BD (offline).
+"""Tests: modelo outbox y adapter sin BD (offline).
 
 Patron transaccional ADR-0011: el INSERT comparte transaccion con el
 intento de pago; el worker usa listar_pendientes con SKIP LOCKED.

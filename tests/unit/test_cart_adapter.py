@@ -1,8 +1,8 @@
-"""Tests H2-03 (Sonny): modelos cart + cart_item y adapters sin BD (offline).
+"""Tests: modelos cart + cart_item y adapters sin BD (offline).
 
-Criterio hito-2.md: cada adapter con al menos un test.
+Criterio del proyecto: cada adapter con al menos un test.
 El test de integracion contra Supabase (INSERT real + CHECKs + indices)
-se hace en H2-10. Sigue el patron de test_conversation_adapter.py (H2-07).
+queda para la migración compartida. Sigue el patron de test_conversation_adapter.py.
 """
 import uuid
 from unittest.mock import MagicMock
@@ -60,7 +60,7 @@ def test_cart_pk_y_defaults():
     assert str(cart_table.columns["version"].server_default.arg) == "0"
     assert "now()" in str(cart_table.columns["created_at"].server_default.arg)
     assert "now()" in str(cart_table.columns["updated_at"].server_default.arg)
-    # H2-10 instala el trigger; el modelo solo declara el valor generado.
+    # La migración instala el trigger; el modelo solo declara el valor generado.
     assert cart_table.columns["updated_at"].server_onupdate is not None
 
 
@@ -123,11 +123,12 @@ def test_cart_item_pk_fk_y_checks():
 
 
 def test_adapters_exponen_operaciones():
-    for method in ("guardar", "obtener_por_id", "obtener_abierto_por_cliente",
-                   "obtener_abierto_por_conversacion", "cambiar_estado"):
+    for method in ("crear_para_cliente", "crear_anonimo", "obtener_por_id",
+                   "obtener_abierto_por_cliente", "obtener_abierto_por_conversacion",
+                   "cambiar_estado", "set_totals", "reset_checkout", "touch"):
         assert hasattr(CartPostgresAdapter, method)
-    for method in ("guardar", "obtener_por_id", "obtener_por_cart_y_sku",
-                   "listar_por_cart", "eliminar"):
+    for method in ("agregar", "obtener_por_id", "obtener_por_cart_y_sku",
+                   "listar_por_cart", "set_quantity", "eliminar"):
         assert hasattr(CartItemPostgresAdapter, method)
 
 
@@ -137,10 +138,9 @@ def session():
 
 
 @pytest.mark.asyncio
-async def test_cart_guardar_hace_flush_sin_commit(session):
-    """SPEC-11: la transaccion la controla el caso de uso."""
-    row = Cart(customer_id=uuid.uuid4())
-    assert await CartPostgresAdapter(session).guardar(row) is row
+async def test_cart_crear_hace_flush_sin_commit(session):
+    """SPEC-11: el adapter construye la fila; la transaccion es del caso de uso."""
+    row = await CartPostgresAdapter(session).crear_para_cliente(uuid.uuid4())
     session.add.assert_called_once_with(row)
     session.flush.assert_awaited_once_with()
     session.commit.assert_not_awaited()

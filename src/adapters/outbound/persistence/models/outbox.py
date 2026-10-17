@@ -1,4 +1,4 @@
-"""Modelo outbox (H2-03, SPEC-15, SPEC-16).
+"""Modelo outbox (SPEC-15, SPEC-16).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `outbox`) + ADR-0011.
 - Patron transaccional: la fila se escribe en la misma transaccion que el
@@ -8,7 +8,7 @@ Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `outbox`) + ADR-0011.
   REQUEST_CANCELLATION (anula no pagados) y SEND_EMAIL (confirmacion).
 - Polling del worker: WHERE status = 'PENDING' AND next_attempt_at <= now()
   ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED.
-- H2-10 debe instalar set_updated_at(); server_onupdate declara ese valor
+- La migración debe instalar set_updated_at(); server_onupdate declara ese valor
   generado, no crea el trigger.
 - PG18: id uuid DEFAULT uuidv7().
 """

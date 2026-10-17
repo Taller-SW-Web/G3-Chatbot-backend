@@ -1,4 +1,4 @@
-"""Adapter order_ref (H2-03, SPEC-15).
+"""Adapter order_ref (SPEC-15).
 
 Operaciones minimas derivadas de modelo-datos.md (seccion `order_ref`).
 No hace commit: la transaccion la controla el caso de uso. La creacion del

@@ -1,4 +1,4 @@
-"""Adapter checkout (H2-04 David, SPEC-12, SPEC-14).
+"""Adapter checkout (SPEC-12, SPEC-14).
 
 Operaciones minimas derivadas de modelo-datos.md (seccion `checkout`).
 No hace commit: la transaccion la controla el caso de uso. La creacion
@@ -70,3 +70,27 @@ class CheckoutPostgresAdapter:
         row.updated_at = datetime.now(timezone.utc)
         await self.session.flush()
         return row
+
+    async def latest_document(self, customer_id: uuid.UUID) -> dict[str, str] | None:
+        """`summary.contacto` of the most recent checkout of the customer (SPEC-03 profile).
+
+        Returns `{"tipo", "numero"}`; the full number never leaves the order
+        snapshot (modelo-datos.md §AccountPage, RN-CHK-02).
+        """
+        stmt = (
+            select(Checkout)
+            .where(Checkout.customer_id == customer_id)
+            .order_by(Checkout.created_at.desc())
+            .limit(1)
+        )
+        res = await self.session.execute(stmt)
+        row = res.scalar_one_or_none()
+        if row is None or not isinstance(row.summary, dict):
+            return None
+        contacto = row.summary.get("contacto")
+        if not isinstance(contacto, dict) or not contacto.get("numeroDocumento"):
+            return None
+        return {
+            "tipo": str(contacto.get("tipoDocumento", "")),
+            "numero": str(contacto["numeroDocumento"]),
+        }

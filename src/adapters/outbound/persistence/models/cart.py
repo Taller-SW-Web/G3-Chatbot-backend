@@ -1,4 +1,4 @@
-"""Modelo cart (H2-03, SPEC-11).
+"""Modelo cart (SPEC-11).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `cart`).
 - Cabecera del carrito: anonimo (por conversacion, expira 7d) o cliente
@@ -8,7 +8,7 @@ Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `cart`).
 - shipping_snapshot / totals_snapshot son snapshots jsonb con los nombres
   reales del contrato (idZona, costoEnvio, ...), no se renombran.
 - version es bloqueo optimista para mutaciones concurrentes.
-- H2-10 debe instalar set_updated_at(); server_onupdate declara ese valor
+- La migración debe instalar set_updated_at(); server_onupdate declara ese valor
   generado, no crea el trigger.
 - PG18: id uuid DEFAULT uuidv7().
 """
@@ -55,6 +55,11 @@ class Cart(Base):
         DateTime(timezone=True), nullable=False, server_default=text("now()"),
         server_onupdate=FetchedValue(),
     )
+
+    # Bloqueo optimista (SPEC-11 NFR): los UPDATE llevan WHERE version
+    # y fallan con StaleDataError ante una mutación concurrente; el caso
+    # de uso reintenta una vez. Sin cambio de esquema.
+    __mapper_args__ = {"version_id_col": version}
 
     __table_args__ = (
         CheckConstraint(

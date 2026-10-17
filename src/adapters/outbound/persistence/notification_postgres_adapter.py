@@ -1,4 +1,4 @@
-"""Adapter notification (H2-04 David, SPEC-16).
+"""Adapter notification (SPEC-16).
 
 Registro de confirmaciones y reenvios (maximo 2 por pedido). No hace
 commit: la transaccion la controla el caso de uso. El envio real lo

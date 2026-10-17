@@ -1,4 +1,4 @@
-"""Adapter return_ref (H2-04 David, SPEC-21, SPEC-22).
+"""Adapter return_ref (SPEC-21, SPEC-22).
 
 Referencia local idempotente a la devolucion de Ventas. Traduce el tipo
 en ambos sentidos (EN <-> ES) sin inventar literales. No hace commit.

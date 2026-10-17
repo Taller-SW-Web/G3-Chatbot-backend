@@ -1,4 +1,4 @@
-"""H2-06; persistencia parcial de SPEC-05 (no prueba el motor completo)."""
+"""persistencia parcial de SPEC-05 (no prueba el motor completo)."""
 
 import uuid
 from unittest.mock import AsyncMock, MagicMock

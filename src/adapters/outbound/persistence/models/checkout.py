@@ -1,4 +1,4 @@
-"""Modelo checkout (H2-04 David, SPEC-12, SPEC-14).
+"""Modelo checkout (SPEC-12, SPEC-14).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `checkout`)
 + openspec/specs/checkout-pago + direccion-cotizacion-envio.
@@ -10,7 +10,7 @@ Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `checkout`)
 - payment_attempts es desnormalizacion deliberada de count(payment_attempt)
   para topear 3 intentos incluso concurrente.
 - Sin order_id: la relacion vive en order_ref.checkout_id (UNIQUE).
-- H2-10 debe instalar set_updated_at(); server_onupdate declara ese valor
+- La migración debe instalar set_updated_at(); server_onupdate declara ese valor
   generado, no crea el trigger.
 - PG18: id uuid DEFAULT uuidv7().
 """

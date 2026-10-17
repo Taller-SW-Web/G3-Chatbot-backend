@@ -1,11 +1,11 @@
-"""Modelo cart_item (H2-03, SPEC-10, SPEC-11).
+"""Modelo cart_item (SPEC-10, SPEC-11).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `cart_item`).
 - Linea del carrito. Agregar el mismo SKU suma cantidad, no duplica.
 - product_id es referencia a Productos (text, formato del dueno), sin FK.
 - name / variant_description / image_url son snapshots para mostrar;
   unit_price_ref es el ultimo precio visto y se recalcula en cada lectura.
-- H2-10 debe instalar set_updated_at(); server_onupdate declara ese valor
+- La migración debe instalar set_updated_at(); server_onupdate declara ese valor
   generado, no crea el trigger.
 - PG18: id uuid DEFAULT uuidv7().
 """

@@ -1,0 +1,48 @@
+"""Structured reply blocks (contratos-integracion.md §2.1).
+
+`BlockType` mirrors `Bloque.tipo` exposed to the frontend. Commercial data
+(prices, stock, discounts) always comes from tools, never from LLM text.
+"""
+from enum import Enum
+
+
+class BlockType(str, Enum):
+    TEXTO = "TEXTO"
+    CARRUSEL_PRODUCTOS = "CARRUSEL_PRODUCTOS"
+    DETALLE_PRODUCTO = "DETALLE_PRODUCTO"
+    SELECTOR_VARIANTE = "SELECTOR_VARIANTE"
+    CARRITO = "CARRITO"
+    ACCIONES_RAPIDAS = "ACCIONES_RAPIDAS"
+    FORMULARIO = "FORMULARIO"
+    RESUMEN_CHECKOUT = "RESUMEN_CHECKOUT"
+    CONFIRMACION_PEDIDO = "CONFIRMACION_PEDIDO"
+    LISTA_PEDIDOS = "LISTA_PEDIDOS"
+    ESTADO_PEDIDO = "ESTADO_PEDIDO"
+    LISTA_PROMOCIONES = "LISTA_PROMOCIONES"
+    CONSTANCIA_RECLAMO = "CONSTANCIA_RECLAMO"
+    ESTADO_RECLAMO = "ESTADO_RECLAMO"
+    CONSTANCIA_DEVOLUCION = "CONSTANCIA_DEVOLUCION"
+    ESTADO_DEVOLUCION = "ESTADO_DEVOLUCION"
+    ERROR = "ERROR"
+
+
+class FormKind(str, Enum):
+    REGISTRO = "REGISTRO"
+    LOGIN = "LOGIN"
+    OTP_MFA = "OTP_MFA"
+    OTP_CELULAR = "OTP_CELULAR"
+    DIRECCION = "DIRECCION"
+    PAGO = "PAGO"
+    RECLAMO = "RECLAMO"
+    DEVOLUCION = "DEVOLUCION"
+
+
+class QuickActionId(str, Enum):
+    """Fixed quick actions answerable without the LLM (contratos §2.1)."""
+
+    BUSCAR_POR_CATEGORIA = "BUSCAR_POR_CATEGORIA"
+    VER_OFERTAS = "VER_OFERTAS"
+    VER_CARRITO = "VER_CARRITO"
+    MIS_PEDIDOS = "MIS_PEDIDOS"
+    MIS_RECLAMOS = "MIS_RECLAMOS"
+    MIS_DEVOLUCIONES = "MIS_DEVOLUCIONES"

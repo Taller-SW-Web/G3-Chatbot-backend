@@ -1,4 +1,4 @@
-"""Contrato DDL PostgreSQL de docs/modelo-datos.md (H2-06)."""
+"""Contrato DDL PostgreSQL de docs/modelo-datos.md."""
 
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateIndex, CreateTable

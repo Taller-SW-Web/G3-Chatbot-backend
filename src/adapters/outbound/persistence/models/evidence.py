@@ -1,6 +1,6 @@
-"""Referencia local a evidencia alojada por Ventas (H2-06, SPEC-21).
+"""Referencia local a evidencia alojada por Ventas (SPEC-21).
 
-La URL no se envía al LLM. H2-10 debe instalar set_updated_at();
+La URL no se envía al LLM. La migración debe instalar set_updated_at();
 server_onupdate declara ese valor generado, no crea el trigger.
 """
 

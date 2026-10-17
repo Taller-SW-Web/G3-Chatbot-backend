@@ -1,7 +1,7 @@
-"""Adapter mínimo local_phone_verification (H2-02).
+"""Adapter mínimo local_phone_verification.
 
-Alcance H2-02 mínimo acordado: modelo + adapter con 2 operaciones + 1 test.
-No incluye OTP/SMS/CheckoutGuard (eso es Hito 4 SPEC-04 completo).
+Alcance mínimo acordado: modelo + adapter con 2 operaciones + 1 test.
+No incluye OTP/SMS/CheckoutGuard (queda para SPEC-04 completo).
 
 Guard futuro (SPEC-04 Req.1): SELECT 1 WHERE customer_id=:sub AND phone=:vigente.
 Si 0 filas -> 403 CELULAR_NO_VERIFICADO.

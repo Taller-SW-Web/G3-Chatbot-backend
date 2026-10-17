@@ -1,4 +1,4 @@
-"""Modelo claim_ref (H2-04 David, SPEC-19, SPEC-20).
+"""Modelo claim_ref (SPEC-19, SPEC-20).
 
 Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `claim_ref`).
 - Referencia local al reclamo creado en Ventas. La verdad del reclamo

@@ -1,4 +1,4 @@
-"""Fixtures H2-06: modelos reales; return_ref mínimo existe solo en tests."""
+"""Fixtures: modelos reales; return_ref mínimo existe solo en tests."""
 
 import os
 import uuid
@@ -28,20 +28,20 @@ async def postgres_session(persistence_metadata):
     """PostgreSQL 18 de pruebas explícito; DDL y datos se revierten al terminar.
 
     Nunca usa DATABASE_URL ni carga .env. return_ref mínimo y el trigger
-    aquí permiten verificar H2-06; no sustituyen la migración compartida.
+    aquí permiten verificar la persistencia; no sustituyen la migración compartida.
     """
     url = os.getenv("TEST_DATABASE_URL")
     if not url:
         pytest.skip("Falta TEST_DATABASE_URL: integración PostgreSQL 18 no ejecutada")
     engine = create_async_engine(url)
-    schema = f"h2_06_test_{uuid.uuid4().hex}"
+    schema = f"persistence_test_{uuid.uuid4().hex}"
     try:
         async with engine.connect() as connection:
             transaction = await connection.begin()
             try:
                 version = await connection.scalar(text("SHOW server_version_num"))
                 if int(version) < 180000:
-                    pytest.fail("H2-06 requiere PostgreSQL 18+ con uuidv7() nativo")
+                    pytest.fail("Las pruebas requieren PostgreSQL 18+ con uuidv7() nativo")
                 await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
                 await connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
                 await connection.run_sync(persistence_metadata.create_all)

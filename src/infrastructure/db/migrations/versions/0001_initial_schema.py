@@ -18,8 +18,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ### H2-10 manual: funciones propias (autogenerate no las detecta) ###
-    # uuidv7(): Supabase corre PG17 sin uuidv7() nativo (era PG18 en H2-01).
+    # ### Manual: funciones propias (autogenerate no las detecta) ###
+    # uuidv7(): Supabase corre PG17 sin uuidv7() nativo (el desarrollo local usa PG18).
     # Se crea como funcion SQL propia con pgcrypto para no tocar los 14 modelos.
     op.execute(sa.text("""CREATE OR REPLACE FUNCTION public.uuidv7() RETURNS uuid
 LANGUAGE plpgsql VOLATILE PARALLEL SAFE AS $func$
@@ -315,7 +315,7 @@ $func$;"""))
     sa.UniqueConstraint('order_id', 'resend_number', name='uq_notification_order_resend')
     )
     op.create_index('ix_notification_order_id', 'notification', ['order_id'], unique=False)
-    # ### H2-10 manual: triggers updated_at (autogenerate no los detecta) ###
+    # ### Manual: triggers updated_at (autogenerate no los detecta) ###
     for _table in ('attachment', 'cart', 'cart_item', 'checkout', 'conversation',
                    'evidence', 'notification', 'order_ref', 'outbox'):
         op.execute(sa.text(
@@ -326,7 +326,7 @@ $func$;"""))
 
 
 def downgrade() -> None:
-    # ### H2-10 manual: baja triggers antes de tumbar tablas ###
+    # ### Manual: baja triggers antes de tumbar tablas ###
     for _table in ('attachment', 'cart', 'cart_item', 'checkout', 'conversation',
                    'evidence', 'notification', 'order_ref', 'outbox'):
         op.execute(sa.text(f"DROP TRIGGER IF EXISTS trg_{_table}_updated_at ON {_table};"))
@@ -374,7 +374,7 @@ def downgrade() -> None:
     op.drop_index('ix_conversation_active_last_message', table_name='conversation', postgresql_where=sa.text("status = 'ACTIVE' AND customer_id IS NOT NULL"))
     op.drop_table('conversation')
     op.drop_table('claim_ref')
-    # ### H2-10 manual: baja funciones propias al final ###
+    # ### Manual: baja funciones propias al final ###
     op.execute(sa.text("DROP FUNCTION IF EXISTS public.set_updated_at();"))
     op.execute(sa.text("DROP FUNCTION IF EXISTS public.uuidv7();"))
     # ### end Alembic commands ###

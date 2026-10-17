@@ -1,7 +1,7 @@
-"""Test mínimo H2-02: modelo + adapter sin BD (offline).
+"""Test: modelo + adapter sin BD (offline).
 
-Criterio hito-2.md: cada adapter con al menos un test.
-El test de integración contra Supabase (INSERT real + UNIQUE + CHECK) se hace en H2-10.
+Criterio del proyecto: cada adapter con al menos un test.
+El test de integración contra Supabase (INSERT real + UNIQUE + CHECK) queda para la migración compartida.
 """
 import re
 

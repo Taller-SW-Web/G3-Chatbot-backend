@@ -1,4 +1,4 @@
-"""H2-06; referencias locales de SPEC-21, sin upload a Ventas."""
+"""referencias locales de SPEC-21, sin upload a Ventas."""
 
 import uuid
 from unittest.mock import MagicMock
