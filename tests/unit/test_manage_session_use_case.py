@@ -8,6 +8,7 @@ from src.application.use_cases.manage_session_use_case import (
     ManageSessionUseCase,
     RefreshInvalidError,
     mask_document,
+    mask_email,
     merge_cart_lines,
 )
 from src.ports.outbound.module_errors import ModuleRequestError
@@ -52,6 +53,34 @@ class FakeSecurity:
 
     async def me(self, holder):
         return self.script.get("me", {"id": "cust-001"})
+
+    async def register(self, email, password, phone, *, first_name=None, last_name=None):
+        self.calls.append(("register", email, phone, first_name, last_name))
+        result = self.script.get("register", {"estado": "PENDIENTE_VERIFICACION"})
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    async def password_policy(self):
+        self.calls.append(("password_policy",))
+        result = self.script.get("password_policy", {"minLength": 8})
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    async def verify_email(self, token):
+        self.calls.append(("verify_email", token))
+        result = self.script.get("verify_email", {})
+        if isinstance(result, Exception):
+            raise result
+        return result or {}
+
+    async def resend_verification(self, email):
+        self.calls.append(("resend_verification", email))
+        result = self.script.get("resend_verification", {})
+        if isinstance(result, Exception):
+            raise result
+        return result or {}
 
 
 class FakeValidator:
@@ -180,3 +209,72 @@ def test_merge_cart_lines_caps_quantity_at_ten():
     """SPEC-03 Req. 4 - quantities never exceed the per-line cap."""
     merged = merge_cart_lines([{"sku": "SKU-A", "cantidad": 9}], [{"sku": "SKU-A", "cantidad": 5}])
     assert merged[0]["cantidad"] == 10
+
+
+@pytest.mark.asyncio
+async def test_register_forwards_names_and_returns_masked_email():
+    """SPEC-01 Req. 3 - registration never opens a session and never echoes the raw email."""
+    security = FakeSecurity()
+    sessions = make_sessions(security)
+    answer = await sessions.register(
+        email="maria@correo.com",
+        password="SuperSecreta1",
+        phone="+51987654321",
+        first_name="María",
+        last_name="Quispe",
+    )
+    assert answer == {
+        "estado": "PENDIENTE_VERIFICACION",
+        "correoEnmascarado": "m***a@correo.com",
+    }
+    assert ("register", "maria@correo.com", "+51987654321", "María", "Quispe") in security.calls
+
+
+@pytest.mark.asyncio
+async def test_register_never_writes_the_password_to_the_logs(caplog):
+    """SPEC-01 design - the password is forwarded but never logged or persisted."""
+    sessions = make_sessions(FakeSecurity())
+    with caplog.at_level(logging.DEBUG):
+        await sessions.register(
+            email="a@b.pe", password="NuncaEnLogs1", phone="+51987654321"
+        )
+    assert "NuncaEnLogs1" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_password_policy_is_cached_for_ten_minutes():
+    """SPEC-01 Req. 2 - the policy is fetched once and served from the cache."""
+    now = [1000.0]
+    security = FakeSecurity()
+    sessions = make_sessions(security, clock=lambda: now[0])
+    first = await sessions.password_policy()
+    second = await sessions.password_policy()
+    assert first == second == {"minLength": 8}
+    assert security.calls.count(("password_policy",)) == 1
+    now[0] += 601
+    await sessions.password_policy()
+    assert security.calls.count(("password_policy",)) == 2
+
+
+@pytest.mark.asyncio
+async def test_verify_email_and_resend_delegate_to_security():
+    """SPEC-02 Reqs. 1-2 - the channel only orchestrates the Seguridad call."""
+    security = FakeSecurity()
+    sessions = make_sessions(security)
+    await sessions.verify_email("tok-1")
+    await sessions.resend_verification("a@b.pe")
+    assert ("verify_email", "tok-1") in security.calls
+    assert ("resend_verification", "a@b.pe") in security.calls
+
+
+@pytest.mark.parametrize(
+    ("email", "expected"),
+    [
+        ("maria@correo.com", "m***a@correo.com"),
+        ("ab@correo.com", "**@correo.com"),
+        ("a@correo.com", "*@correo.com"),
+        ("sin-arroba", "***"),
+    ],
+)
+def test_mask_email_keeps_domain_and_hides_the_local_part(email, expected):
+    assert mask_email(email) == expected

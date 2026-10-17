@@ -1,20 +1,29 @@
-"""Customer session endpoints (SPEC-03, contratos-integracion.md 2.2). Thin: no business rules.
+"""Customer session endpoints (SPEC-01..03, contratos-integracion.md 2.2). Thin: no business rules.
 
-Login/MFA open the session, refresh rotates it, logout closes it. The
-refresh token and the MFA challenge token only travel in httpOnly cookies
-(`chat_rt` rotates, `chat_chg` 5 min); the access token goes to the frontend
-body and lives in LocalStorage there. Mutating session calls require the
+Registration and email verification never open a session (SPEC-01/02);
+login/MFA open it, refresh rotates it and logout closes it. The refresh token
+and the MFA challenge token only travel in httpOnly cookies (`chat_rt`
+rotates, `chat_chg` 5 min); the access token goes to the frontend body and
+lives in LocalStorage there. Mutating session calls require the
 `X-Requested-With` header plus an exact `Origin` match against the configured
-allowlist (ADR-0023).
+allowlist (ADR-0023). Public registration endpoints are rate limited per IP
+and per email (SPEC-01/02).
 """
 from collections.abc import Callable, Sequence
 import logging
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.adapters.inbound.http.dependencies.jwt_validator import get_current_customer
+from src.adapters.inbound.http.dependencies.rate_limiter import (
+    REGISTER_DEBOUNCE_PER_EMAIL,
+    REGISTER_PER_IP,
+    RESEND_PER_EMAIL,
+    InMemoryRateLimiter,
+    client_ip,
+)
 from src.adapters.inbound.http.problem import ProblemError
 from src.application.use_cases.manage_session_use_case import (
     InvalidCredentialsError,
@@ -22,7 +31,7 @@ from src.application.use_cases.manage_session_use_case import (
     RefreshInvalidError,
 )
 from src.domain.value_objects.caller_identity import CallerIdentity
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.ports.outbound.token_validator_port import AccountNotAllowedError, InvalidTokenError
 
 logger = logging.getLogger(__name__)
@@ -100,14 +109,73 @@ class OkResponse(BaseModel):
     ok: bool = True
 
 
+class RegistroIn(BaseModel):
+    """SPEC-01 Req. 1: the chatbot collects these fields before the BFF call."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=5, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    password: str = Field(min_length=1, max_length=256)
+    phone: str = Field(pattern=r"^\+?[0-9]{9,15}$")
+    firstName: str = Field(min_length=1, max_length=80)
+    lastName: str = Field(min_length=1, max_length=80)
+    acceptTerms: bool
+
+    @field_validator("acceptTerms")
+    @classmethod
+    def _accept_terms(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("Debes aceptar los términos y condiciones")
+        return value
+
+
+class RegistroOut(BaseModel):
+    """The chat turns this into its confirmation message; the phone is not echoed back."""
+
+    estado: str
+    correoEnmascarado: str
+
+
+class VerificarCorreoIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=8, max_length=512)
+
+
+class ReenviarVerificacionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=5, max_length=254)
+
+
 def create_session_router(
     session_provider: Callable[..., ManageSessionUseCase],
     *,
     cookie_secure: bool,
     allowed_origins: Sequence[str] = (),
+    rate_limiter: InMemoryRateLimiter | None = None,
 ) -> APIRouter:
     """`session_provider` is a FastAPI dependency; infrastructure wires it, tests replace it."""
     router = APIRouter(prefix="/sesion", tags=["sesion"])
+    limiter = rate_limiter or InMemoryRateLimiter()
+
+    def _service_unavailable() -> ProblemError:
+        return ProblemError(
+            503,
+            "SERVICIO_NO_DISPONIBLE",
+            "Service unavailable",
+            "No pudimos completar la operación en este momento. Intenta de nuevo en unos minutos.",
+        )
+
+    def _too_many(code: str, detail: str, retry_after: int) -> ProblemError:
+        return ProblemError(
+            429,
+            code,
+            "Too many requests",
+            detail,
+            headers=[("Retry-After", str(retry_after))],
+            retryAfter=retry_after,
+        )
 
     def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
         response.set_cookie(
@@ -262,5 +330,105 @@ def create_session_router(
             return await sessions.profile(holder_token, str(caller.customer_id))
         except ModuleRequestError as exc:
             raise ProblemError(exc.status, exc.code, "Module request failed") from None
+
+    @router.post("/registro", response_model=RegistroOut, status_code=201)
+    async def register(
+        body: RegistroIn,
+        request: Request,
+        sessions: ManageSessionUseCase = Depends(session_provider),
+    ):
+        """Creates a `PENDIENTE_VERIFICACION` account; it never opens a session (SPEC-01)."""
+        _csrf_check(request, allowed_origins)
+        blocked = await limiter.hit_any(
+            [
+                (REGISTER_DEBOUNCE_PER_EMAIL, body.email.strip().lower()),
+                (REGISTER_PER_IP, client_ip(request)),
+            ]
+        )
+        if blocked is not None:
+            rule, retry_after = blocked
+            if rule is REGISTER_DEBOUNCE_PER_EMAIL:
+                raise _too_many(
+                    "SOLICITUD_EN_CURSO",
+                    "Ya estamos procesando tu registro, espera unos segundos.",
+                    retry_after,
+                )
+            raise _too_many(
+                "DEMASIADAS_SOLICITUDES",
+                "Se crearon demasiadas cuentas desde esta red. Intenta más tarde.",
+                retry_after,
+            )
+        try:
+            return await sessions.register(
+                email=body.email.strip(),
+                password=body.password,
+                phone=body.phone,
+                first_name=body.firstName,
+                last_name=body.lastName,
+            )
+        except ModuleRequestError as exc:
+            if exc.status == 409:
+                # Neutral: it does not confirm that the email is already registered
+                # beyond Seguridad's own availability answer (SPEC-01 Req. 4).
+                raise ProblemError(409, "CORREO_NO_DISPONIBLE", "Email not available",
+                                   "Ese correo no está disponible para registro") from None
+            raise ProblemError(exc.status, exc.code, "Module request failed") from None
+        except ModuleUnavailableError:
+            raise _service_unavailable() from None
+
+    @router.get("/politica-contrasena")
+    async def password_policy(sessions: ManageSessionUseCase = Depends(session_provider)):
+        """Password rules the chat renders before asking for one (SPEC-01 Req. 2)."""
+        try:
+            return await sessions.password_policy()
+        except ModuleRequestError as exc:
+            raise ProblemError(exc.status, exc.code, "Module request failed") from None
+        except ModuleUnavailableError:
+            raise _service_unavailable() from None
+
+    @router.post("/verificar-correo", status_code=204)
+    async def verify_email(
+        body: VerificarCorreoIn,
+        request: Request,
+        sessions: ManageSessionUseCase = Depends(session_provider),
+    ) -> Response:
+        """Consumes the single-use link; expired/used links answer 410 with a code (SPEC-02)."""
+        _csrf_check(request, allowed_origins)
+        try:
+            await sessions.verify_email(body.token)
+        except ModuleRequestError as exc:
+            raise ProblemError(exc.status, exc.code, "Email verification failed") from None
+        except ModuleUnavailableError:
+            raise _service_unavailable() from None
+        return Response(status_code=204)
+
+    @router.post("/verificar-correo/reenviar", response_model=OkResponse, status_code=202)
+    async def resend_verification(
+        body: ReenviarVerificacionIn,
+        request: Request,
+        sessions: ManageSessionUseCase = Depends(session_provider),
+    ):
+        """Always neutral: the same 202 whether or not the account exists (SPEC-02 Req. 2)."""
+        _csrf_check(request, allowed_origins)
+        retry_after = await limiter.hit(RESEND_PER_EMAIL, body.email.strip().lower())
+        if retry_after is not None:
+            raise _too_many(
+                "DEMASIADAS_SOLICITUDES",
+                "Ya enviamos varios enlaces a ese correo. Revisa tu bandeja o intenta más tarde.",
+                retry_after,
+            )
+        try:
+            await sessions.resend_verification(body.email.strip())
+        except ModuleRequestError as exc:
+            if exc.status == 429:
+                raise _too_many(
+                    "DEMASIADAS_SOLICITUDES",
+                    "Ya enviamos varios enlaces a ese correo. Intenta más tarde.",
+                    60,
+                ) from None
+            raise ProblemError(exc.status, exc.code, "Module request failed") from None
+        except ModuleUnavailableError:
+            raise _service_unavailable() from None
+        return OkResponse()
 
     return router

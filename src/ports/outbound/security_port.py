@@ -8,6 +8,30 @@ from typing import Any, Protocol
 
 
 class SecurityPort(Protocol):
+    async def register(
+        self,
+        email: str,
+        password: str,
+        phone: str,
+        *,
+        first_name: str | None = None,
+        last_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Creates a `PENDIENTE_VERIFICACION` account (`canalOrigen=CHATBOT`)."""
+        ...
+
+    async def password_policy(self) -> dict[str, Any]:
+        """Password rules the client must render before submitting (SPEC-01 Req. 2)."""
+        ...
+
+    async def verify_email(self, token: str) -> dict[str, Any]:
+        """Exchanges the single-use email link; 410 codes say expired or already used."""
+        ...
+
+    async def resend_verification(self, email: str) -> dict[str, Any]:
+        """Asks Seguridad for a new link; the answer is neutral (202)."""
+        ...
+
     async def login(self, email: str, password: str) -> dict[str, Any]:
         """Returns tokens or `{mfaRequerido, challengeToken, canal}`."""
         ...

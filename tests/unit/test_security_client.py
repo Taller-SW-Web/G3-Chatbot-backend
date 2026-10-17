@@ -30,7 +30,22 @@ async def test_register_sends_channel_and_returns_pending():
     route = security_mocks.mock_register(BASE_URL)
     result = await make_client().register("a@b.pe", "Passw0rd!", "+51987654321")
     assert result["estado"] == "PENDIENTE_VERIFICACION"
-    assert json.loads(route.calls[0].request.content)["canalOrigen"] == "CHATBOT"
+    payload = json.loads(route.calls[0].request.content)
+    assert payload["canalOrigen"] == "CHATBOT"
+    # Optional names are only sent when the form collected them.
+    assert "nombres" not in payload and "apellidos" not in payload
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_register_forwards_optional_names():
+    route = security_mocks.mock_register(BASE_URL)
+    await make_client().register(
+        "a@b.pe", "Passw0rd!", "+51987654321", first_name="Ana", last_name="Díaz"
+    )
+    payload = json.loads(route.calls[0].request.content)
+    assert payload["nombres"] == "Ana"
+    assert payload["apellidos"] == "Díaz"
 
 
 @respx.mock

@@ -105,12 +105,31 @@ class SecurityClient(SecurityBaseClient):
         return {"client_secret": self.client_secret}
 
     async def register(
-        self, email: str, password: str, phone: str, *, correlation_id: str | None = None
+        self,
+        email: str,
+        password: str,
+        phone: str,
+        *,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        correlation_id: str | None = None,
     ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "email": email,
+            "password": password,
+            "phone": phone,
+            "canalOrigen": "CHATBOT",
+        }
+        # Names are optional in the Seguridad contract: only forward them when the
+        # form collected them, so existing callers keep the exact same payload.
+        if first_name:
+            payload["nombres"] = first_name
+        if last_name:
+            payload["apellidos"] = last_name
         response = await self._request(
             "POST",
             "/auth/registro",
-            json={"email": email, "password": password, "phone": phone, "canalOrigen": "CHATBOT"},
+            json=payload,
             headers=self._mock_headers(),
             correlation_id=correlation_id,
         )

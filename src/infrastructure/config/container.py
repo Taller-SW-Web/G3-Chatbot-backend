@@ -6,6 +6,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.auth.jwks_token_validator import JwksTokenValidator
+from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
 from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
     CartItemPostgresAdapter,
 )
@@ -30,6 +31,12 @@ from src.adapters.outbound.fakes.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
 )
+from src.adapters.outbound.fakes.fake_security import (
+    FakeAccessTokenValidator,
+    FakeSecurityAdapter,
+    FakeServiceTokenProvider,
+)
+from src.adapters.inbound.http.dependencies.rate_limiter import InMemoryRateLimiter
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
 from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
@@ -53,6 +60,14 @@ from src.ports.outbound.tool_executor_port import ToolExecutorPort
 # Categories/brands list cache shared across requests (SPEC-06): created once
 # by the wiring and injected, so use cases never share a module global.
 _CATALOG_OPTION_CACHE = OptionCache()
+
+# Fake Seguridad state is a singleton on purpose: registrations must survive
+# across requests so the demo flow (registro -> verificar -> login) works.
+_FAKE_SECURITY = FakeSecurityAdapter()
+_FAKE_TOKEN_VALIDATOR = FakeAccessTokenValidator(_FAKE_SECURITY)
+_FAKE_SERVICE_TOKEN_PROVIDER = FakeServiceTokenProvider()
+# One limiter per process: see its module docstring for the multi-instance caveat.
+_RATE_LIMITER = InMemoryRateLimiter()
 
 
 def provide_chatbot_service(session: AsyncSession = Depends(get_session)) -> ManageConversationUseCase:
@@ -194,6 +209,40 @@ def provide_security_client(
     )
 
 
+def provide_security_port(settings: Settings | None = None):
+    """Seguridad port honoring `MODULES_MODE` (ADR-0022): in-process fake or HTTP client."""
+    settings = settings or get_settings()
+    if settings.modules_mode == "fake":
+        return _FAKE_SECURITY
+    return provide_security_client(settings)
+
+
+def provide_access_token_validator(settings: Settings | None = None):
+    """Local token validator honoring `MODULES_MODE`: fake claims or JWKS (SPEC-03 Req. 5)."""
+    settings = settings or get_settings()
+    if settings.modules_mode == "fake":
+        return _FAKE_TOKEN_VALIDATOR
+    return JwksTokenValidator(security_base_url=settings.security_base_url)
+
+
+def provide_service_token_provider(settings: Settings | None = None):
+    """Service token provider for privileged calls (A3), fake or client_credentials."""
+    settings = settings or get_settings()
+    if settings.modules_mode == "fake":
+        return _FAKE_SERVICE_TOKEN_PROVIDER
+    return SecurityServiceTokenProvider(
+        base_url=settings.security_base_url,
+        client_id=settings.security_client_id,
+        client_secret=settings.security_client_secret,
+        timeout_seconds=settings.security_timeout_seconds,
+    )
+
+
+def provide_rate_limiter() -> InMemoryRateLimiter:
+    """Process-wide limiter for the public registration endpoints (SPEC-01/02)."""
+    return _RATE_LIMITER
+
+
 def provide_manage_session(session: AsyncSession = Depends(get_session)) -> ManageSessionUseCase:
     """Customer session service (SPEC-03): orchestration over the Seguridad port.
 
@@ -202,8 +251,8 @@ def provide_manage_session(session: AsyncSession = Depends(get_session)) -> Mana
     """
     settings = get_settings()
     return ManageSessionUseCase(
-        security=provide_security_client(settings),
-        validator=JwksTokenValidator(security_base_url=settings.security_base_url),
+        security=provide_security_port(settings),
+        validator=provide_access_token_validator(settings),
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
         checkouts=CheckoutPostgresAdapter(session),
     )
