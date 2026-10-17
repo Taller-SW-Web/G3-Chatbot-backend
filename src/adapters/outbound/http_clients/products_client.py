@@ -23,11 +23,11 @@ from urllib.parse import quote
 
 import httpx
 
-from src.adapters.outbound.http_clients.base_client import (
-    BaseModuleClient,
+from src.adapters.outbound.http_clients.base_client import BaseModuleClient
+from src.ports.outbound.module_errors import (
+    ModuleRequestError,
     ModuleUnavailableError,
 )
-from src.ports.outbound.module_errors import ModuleRequestError
 from src.ports.outbound.product_repository_port import (
     MAX_SKUS_PER_CALL,
     normalize_sku_list,

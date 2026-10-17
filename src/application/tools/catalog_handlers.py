@@ -7,7 +7,7 @@ from the execution context, never from LLM arguments.
 """
 import uuid
 
-from src.adapters.outbound.http_clients.base_client import ModuleUnavailableError
+from src.ports.outbound.module_errors import ModuleUnavailableError
 from src.application.tools.tool_context import (
     caller_from_context,
     conversation_id_from_context,

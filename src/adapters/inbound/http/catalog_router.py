@@ -128,9 +128,11 @@ def create_catalog_router(catalog_provider) -> APIRouter:
 
 
 def _as_catalog_error(exc: Exception) -> CatalogError:
-    from src.adapters.outbound.http_clients.base_client import ModuleUnavailableError
     from src.application.use_cases.manage_catalog_use_case import CatalogError as Error
-    from src.ports.outbound.module_errors import ModuleRequestError
+    from src.ports.outbound.module_errors import (
+        ModuleRequestError,
+        ModuleUnavailableError,
+    )
 
     if isinstance(exc, Error):
         return exc
