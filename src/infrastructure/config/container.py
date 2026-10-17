@@ -34,12 +34,19 @@ from src.adapters.outbound.http_clients.security_client import SecurityClient
 from src.application.tools.cart_handlers import build_cart_handlers
 from src.application.tools.catalog_handlers import build_catalog_handlers
 from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
-from src.application.use_cases.manage_catalog_use_case import ManageCatalogUseCase
+from src.application.use_cases.manage_catalog_use_case import (
+    ManageCatalogUseCase,
+    OptionCache,
+)
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
 from src.ports.outbound.llm_provider_port import LLMProvider
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
+
+# Categories/brands list cache shared across requests (SPEC-06): created once
+# by the wiring and injected, so use cases never share a module global.
+_CATALOG_OPTION_CACHE = OptionCache()
 
 
 def provide_chatbot_service(session: AsyncSession = Depends(get_session)) -> ManageConversationUseCase:
@@ -104,6 +111,7 @@ def provide_catalog_service(
         provide_product_inventory(settings),
         ConversationPostgresAdapter(session),
         SqlAlchemyUnitOfWork(session),
+        option_cache=_CATALOG_OPTION_CACHE,
     )
 
 

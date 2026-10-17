@@ -5,12 +5,12 @@ conversation working memory (`ultimoCarrusel`, `filtrosVigentes`) and
 returns plain data; handlers wrap it into `ToolResult` blocks. Never
 imports FastAPI, httpx or SQLAlchemy.
 """
+import asyncio
 import time
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from src.adapters.outbound.http_clients.base_client import ModuleUnavailableError
 from src.application.catalog.product_lookup import (
     MEMORY_CAROUSEL_KEY,
     MEMORY_FILTERS_KEY,
@@ -25,10 +25,39 @@ from src.domain.services.product_normalizer import ProductNormalizer
 from src.domain.services.similar_products import SimilarProducts
 from src.domain.services.stock_validator import StockValidator
 from src.domain.services.variant_resolver import VariantResolver
+from src.ports.outbound.module_errors import (
+    ModuleRequestError,
+    ModuleUnavailableError,
+)
 
 LIST_TTL_SECONDS = 600.0
 
-_OPTION_CACHE: dict[str, tuple[float, list]] = {}
+
+class OptionCache:
+    """In-process categories/brands cache (SPEC-06).
+
+    Injectable so tests and `MODULES_MODE` runs never share stale lists: each
+    use case gets its own cache unless the wiring passes a shared instance.
+    """
+
+    def __init__(self, ttl_seconds: float = LIST_TTL_SECONDS):
+        self._ttl_seconds = ttl_seconds
+        self._entries: dict[str, tuple[float, list]] = {}
+
+    def get(self, key: str) -> list | None:
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        cached_at, values = entry
+        if time.monotonic() - cached_at >= self._ttl_seconds:
+            return None
+        return values
+
+    def put(self, key: str, values: list) -> None:
+        self._entries[key] = (time.monotonic(), values)
+
+    def clear(self) -> None:
+        self._entries.clear()
 
 
 class CatalogError(Exception):
@@ -46,12 +75,14 @@ class ManageCatalogUseCase:
         conversations,
         uow,
         normalizer: ProductNormalizer | None = None,
+        option_cache: OptionCache | None = None,
     ):
         self._catalog = catalog
         self._inventory = inventory
         self._conversations = conversations
         self._uow = uow
         self._normalizer = normalizer
+        self._option_cache = option_cache if option_cache is not None else OptionCache()
         self._variants = VariantResolver()
         self._stock = StockValidator()
         self._similar = SimilarProducts()
@@ -195,7 +226,7 @@ class ManageCatalogUseCase:
                 "texto": "Hay pocas unidades. Si te interesa, agrégalo pronto.",
                 "bloques": [],
             }
-        similar = await self._find_similar(data)
+        similar = await self._find_similar(data, await self._reference_price(data))
         return {
             "code": "OK",
             "texto": "Ese SKU está agotado. Te muestro alternativas similares.",
@@ -236,33 +267,53 @@ class ManageCatalogUseCase:
             raise
 
     async def _cached_list(self, key: str, loader) -> list:
-        now = time.monotonic()
-        cached = _OPTION_CACHE.get(key)
-        if cached is not None and now - cached[0] < LIST_TTL_SECONDS:
-            return cached[1]
+        cached = self._option_cache.get(key)
+        if cached is not None:
+            return cached
         values = await loader()
-        _OPTION_CACHE[key] = (now, values)
+        self._option_cache.put(key, values)
         return values
 
     async def _summarize(
         self, items: list[dict], prefetched: dict[str, dict] | None = None
     ) -> list[dict]:
+        """Summaries for up to 10 carousel items, batching the fan-out.
+
+        Details are fetched concurrently and prices/availability are asked in
+        two bulk calls for every SKU, instead of two calls per product.
+        """
         prefetched = prefetched or {}
-        summaries: list[dict] = []
+        resolved: list[tuple[int, dict]] = []
+        missing: list[tuple[int, str]] = []
         for position, item in enumerate(items, start=1):
             product_id = str(item.get("product_id", ""))
             data = prefetched.get(product_id)
             if data is None:
-                try:
-                    data = await self._catalog.get_product_detail(product_id)
-                except Exception:
+                missing.append((position, product_id))
+            else:
+                resolved.append((position, data))
+        if missing:
+            fetched = await asyncio.gather(
+                *(self._catalog.get_product_detail(pid) for _, pid in missing),
+                return_exceptions=True,
+            )
+            for (position, _), data in zip(missing, fetched):
+                if isinstance(data, BaseException):
                     continue
-            variants = data.get("variants") or []
-            skus = [str(v.get("sku")) for v in variants if v.get("sku")]
-            prices = await self._prices_by_sku(skus) if skus else {}
-            statuses = await self._status_by_sku(skus) if skus else {}
-            summaries.append(self._summary(data, position, prices, statuses))
-        return summaries
+                resolved.append((position, data))
+        resolved.sort(key=lambda entry: entry[0])
+        skus = [
+            str(variant.get("sku"))
+            for _, data in resolved
+            for variant in (data.get("variants") or [])
+            if variant.get("sku")
+        ]
+        prices = await self._prices_by_sku(skus) if skus else {}
+        statuses = await self._status_by_sku(skus) if skus else {}
+        return [
+            self._summary(data, position, prices, statuses)
+            for position, data in resolved
+        ]
 
     async def _prices_by_sku(self, skus: list[str]) -> dict[str, dict]:
         try:
@@ -278,18 +329,34 @@ class ManageCatalogUseCase:
             return {}
         return {str(row.get("sku")): str(row.get("status", "")) for row in rows}
 
-    def _summary(
-        self, data: dict, position: int, prices: dict, statuses: dict
-    ) -> dict[str, Any]:
-        variants = data.get("variants") or []
+    @staticmethod
+    def _price_from_variants(variants: list, prices: dict) -> Decimal:
+        """Lowest offer/regular price across variants (0 when unknown).
+
+        Prices may be absent or `null` (Productos 0.5.0): those variants are
+        skipped instead of breaking the conversion.
+        """
         amounts: list[Decimal] = []
         for variant in variants:
             row = prices.get(str(variant.get("sku")))
             if not row:
                 continue
-            offer = row.get("precio_oferta")
-            amounts.append(Decimal(str(offer if offer is not None else row.get("precio_regular", 0))))
-        price = min(amounts) if amounts else Decimal("0")
+            amount = row.get("precio_oferta")
+            if amount is None:
+                amount = row.get("precio_regular")
+            if amount is None:
+                continue
+            try:
+                amounts.append(Decimal(str(amount)))
+            except (InvalidOperation, ValueError):
+                continue
+        return min(amounts) if amounts else Decimal("0")
+
+    def _summary(
+        self, data: dict, position: int, prices: dict, statuses: dict
+    ) -> dict[str, Any]:
+        variants = data.get("variants") or []
+        price = self._price_from_variants(variants, prices)
         name = str(data.get("name", ""))
         description = data.get("description") or f"{name} {data.get('brand_id', '')}".strip()
         images = data.get("images") or []
@@ -326,33 +393,48 @@ class ManageCatalogUseCase:
             return "POCAS_UNIDADES"
         return "INDETERMINADO"
 
-    async def _find_similar(self, data: dict) -> list[dict]:
+    async def _reference_price(self, data: dict) -> Decimal:
+        """Price of the current product, from its SKU prices (detail carries none)."""
+        variants = data.get("variants") or []
+        skus = [str(v.get("sku")) for v in variants if v.get("sku")]
+        prices = await self._prices_by_sku(skus) if skus else {}
+        return self._price_from_variants(variants, prices)
+
+    async def _find_similar(self, data: dict, reference: Decimal) -> list[dict]:
+        """Same-category alternatives within ±20% of `reference`, with stock.
+
+        Search rows carry no price (Productos 0.5.0), so candidates go through
+        `_summarize` to get their real price and availability badge.
+        """
+        category_id = data.get("category_id")
         try:
-            page = await self._catalog.search_products(
-                category_id=data.get("category_id"), size=10
-            )
+            page = await self._catalog.search_products(category_id=category_id, size=10)
         except Exception:
             return []
-        amounts = [
-            Decimal(str(item.get("precio_oferta") or item.get("precio_regular") or 0))
-            for item in [data]
-        ]
-        reference = amounts[0] if amounts else Decimal("0")
         candidates = page.get("items", [])
-        stocked: set[str] | None = None
-        try:
-            skus = [str(item.get("sku_base") or "") for item in candidates]
-            rows = await self._inventory.get_availability([s for s in skus if s])
-            if rows:
-                stocked = {
-                    str(row.get("sku")) for row in rows
-                    if row.get("status") in ("DISPONIBLE", "STOCK_BAJO")
+        if not candidates:
+            return []
+        summaries = await self._summarize(candidates)
+        by_id = {summary["product_id"]: summary for summary in summaries}
+        enriched: list[dict] = []
+        stocked: set[str] = set()
+        for candidate in candidates:
+            product_id = str(candidate.get("product_id", ""))
+            summary = by_id.get(product_id)
+            if summary is None:
+                continue
+            enriched.append(
+                {
+                    **candidate,
+                    "precio_oferta": summary["price"],
+                    "precio_regular": None,
                 }
-        except Exception:
-            stocked = None
+            )
+            if summary["availability"] in ("DISPONIBLE", "POCAS_UNIDADES"):
+                stocked.add(product_id)
         picks = self._similar.find(
-            data.get("category_id"), reference, candidates,
-            available_skus=stocked,
+            category_id, reference, enriched,
+            available_skus=stocked or None,
             exclude={str(data.get("product_id"))},
         )
         return [
@@ -379,8 +461,6 @@ class ManageCatalogUseCase:
 
     @staticmethod
     def _map_module_error(exc: Exception, *, inactive: bool = False) -> CatalogError:
-        from src.ports.outbound.module_errors import ModuleRequestError
-
         if isinstance(exc, ModuleRequestError) and exc.status == 404 and inactive:
             return CatalogError("PRODUCTO_NO_DISPONIBLE", exc.code)
         if isinstance(exc, ModuleRequestError):

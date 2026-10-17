@@ -24,10 +24,10 @@ CONVERSATION_ID = uuid.uuid4()
 CUSTOMER_ID = uuid.uuid4()
 
 
-def make_catalog(statuses=None, products=None):
+def make_catalog(statuses=None, products=None, catalog=None, inventory=None):
     return ManageCatalogUseCase(
-        FakeCatalogPort(products=products),
-        FakeInventoryPort(statuses or {}),
+        catalog or FakeCatalogPort(products=products),
+        inventory or FakeInventoryPort(statuses or {}),
         FakeConversations(),
         FakeUow(),
     )
@@ -138,3 +138,74 @@ async def test_availability_missing_size_asks_for_it():
         AvailabilityArguments(product_id="prod-001"), customer_context()
     )
     assert result["bloques"][0]["tipo"] == "SELECTOR_VARIANTE"
+
+
+class CountingCatalog(FakeCatalogPort):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.price_calls = 0
+
+    async def get_prices(self, skus, **kwargs):
+        self.price_calls += 1
+        return await super().get_prices(skus, **kwargs)
+
+
+class CountingInventory(FakeInventoryPort):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.availability_calls = 0
+
+    async def get_availability(self, skus, **kwargs):
+        self.availability_calls += 1
+        return await super().get_availability(skus, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_search_batches_prices_and_availability_in_bulk():
+    catalog_port = CountingCatalog()
+    inventory_port = CountingInventory()
+    catalog = owned_catalog(make_catalog(catalog=catalog_port, inventory=inventory_port))
+
+    result = await catalog.search(SearchArguments(tamanio=10), customer_context())
+
+    assert result["bloques"][0]["tipo"] == "CARRUSEL_PRODUCTOS"
+    assert len(result["bloques"][0]["datos"]["productos"]) > 1
+    assert catalog_port.price_calls == 1
+    assert inventory_port.availability_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_out_of_stock_suggests_similar_with_real_reference_price():
+    products = [
+        {"product_id": "prod-a", "name": "Runner A", "category_id": "cat-zapatillas",
+         "sku_base": "A-BASE", "precio_regular": 100.0, "precio_oferta": 100.0},
+        {"product_id": "prod-b", "name": "Runner B", "category_id": "cat-zapatillas",
+         "sku_base": "B-BASE", "precio_regular": 105.0, "precio_oferta": 105.0},
+    ]
+    details = {
+        "prod-a": {"product_id": "prod-a", "name": "Runner A",
+                   "category_id": "cat-zapatillas", "tiene_variantes": True,
+                   "variants": [{"sku": "A-BASE-42", "talla": "42", "color": "negro",
+                                 "precio_regular": 100.0, "precio_oferta": 100.0}]},
+    }
+    catalog = owned_catalog(make_catalog(
+        catalog=FakeCatalogPort(products=products, details=details),
+        inventory=FakeInventoryPort({"A-BASE-42": "AGOTADO"}),
+    ))
+
+    result = await catalog.availability(
+        AvailabilityArguments(product_id="prod-a", talla="42", color="negro"),
+        customer_context(),
+    )
+
+    productos = result["bloques"][0]["datos"]["productos"]
+    assert [p["product_id"] for p in productos] == ["prod-b"]
+
+
+@pytest.mark.asyncio
+async def test_option_cache_is_not_shared_between_use_cases():
+    first = owned_catalog(make_catalog())
+    await first.search(SearchArguments(q="Nike"), customer_context())
+
+    assert first._option_cache.get("categories") is not None
+    assert make_catalog()._option_cache.get("categories") is None

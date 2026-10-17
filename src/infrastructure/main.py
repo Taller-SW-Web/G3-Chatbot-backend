@@ -1,4 +1,6 @@
 """FastAPI application factory. Run: uvicorn src.infrastructure.main:app"""
+import logging
+
 from fastapi import FastAPI
 
 from src.adapters.inbound.http.cart_router import create_cart_router
@@ -16,10 +18,17 @@ from src.infrastructure.config.settings import get_settings
 
 API_PREFIX = "/api/v1"
 
+logger = logging.getLogger(__name__)
+
 
 def create_app(turn_scope: TurnScope | None = None) -> FastAPI:
     """`turn_scope` lets tests inject a fake use case behind the send endpoint."""
     settings = get_settings()
+    if settings.modules_mode == "fake":
+        logger.warning(
+            "MODULES_MODE=fake: using in-process module fakes; "
+            "do not deploy this configuration to production."
+        )
     app = FastAPI(title="G3 Chatbot backend")
     register_problem_handlers(app)
     app.include_router(health_router)
