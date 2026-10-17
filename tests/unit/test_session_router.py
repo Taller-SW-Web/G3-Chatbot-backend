@@ -24,8 +24,8 @@ class FakeSessions:
         self.script = script or {}
         self.calls = []
 
-    async def login(self, email, password):
-        self.calls.append(("login", email))
+    async def login(self, email, password, *, canal=None):
+        self.calls.append(("login", email, canal))
         result = self.script.get("login")
         if isinstance(result, Exception):
             raise result
@@ -106,6 +106,26 @@ def test_login_with_mfa_sets_challenge_cookie_and_asks_for_code():
     assert "chat_chg=chg-1" in res.headers.get("set-cookie", "")
 
 
+def test_login_forwards_requested_channel_and_defaults_to_email():
+    """SPEC-03 Req. 2: the MFA channel chosen at login reaches Seguridad (default EMAIL)."""
+    mfa = {"mfaRequerido": True, "challengeToken": "chg-1", "canal": "SMS"}
+    sessions = FakeSessions({"login": mfa})
+    client = make_client(sessions)
+    creds = {"email": "a@b.pe", "password": "secret123"}
+    assert client.post(BASE + "/login", json={**creds, "canal": "SMS"}, headers=CSRF).status_code == 200
+    assert client.post(BASE + "/login", json=creds, headers=CSRF).status_code == 200
+    assert sessions.calls == [("login", "a@b.pe", "SMS"), ("login", "a@b.pe", "EMAIL")]
+
+
+def test_login_rejects_unknown_channel():
+    sessions = FakeSessions({"login": {}})
+    res = make_client(sessions).post(
+        BASE + "/login", json={"email": "a@b.pe", "password": "x", "canal": "FAX"}, headers=CSRF
+    )
+    assert res.status_code == 400
+    assert sessions.calls == []
+
+
 def test_login_with_wrong_password_returns_generic_invalid_credentials():
     """SPEC-03 Req. 1 - Scenario: Credenciales invalidas o cuenta no disponible."""
     sessions = FakeSessions({"login": InvalidCredentialsError()})
@@ -165,6 +185,19 @@ def test_verify_mfa_code_opens_session_and_clears_challenge_cookie():
     res = client.post(BASE + "/mfa/verificar", json={"code": "123456"}, headers=CSRF)
     assert res.status_code == 200
     assert res.json()["accessToken"] == "acc"
+
+
+def test_verify_mfa_account_not_allowed_clears_challenge_and_refresh_cookies():
+    """The 403 problem must carry the Set-Cookie deletions (the injected Response is discarded)."""
+    sessions = FakeSessions({"verify_mfa": AccountNotAllowedError()})
+    client = make_client(sessions)
+    client.cookies.set("chat_chg", "chg-1")
+    res = client.post(BASE + "/mfa/verificar", json={"code": "123456"}, headers=CSRF)
+    assert res.status_code == 403
+    assert res.json()["code"] == "CUENTA_NO_PERMITIDA"
+    cookies = res.headers.get_list("set-cookie")
+    assert any(c.startswith("chat_chg=") and "Max-Age=0" in c for c in cookies)
+    assert any(c.startswith("chat_rt=") and "Max-Age=0" in c for c in cookies)
 
 
 def test_verify_mfa_with_wrong_code_reports_invalid_code_and_attempts_left():

@@ -12,13 +12,16 @@ class ProblemResponse(JSONResponse):
 
 class ProblemError(Exception):
     def __init__(self, status: int, code: str, title: str, detail: str | None = None,
-                 extra: dict | None = None, **fields):
+                 extra: dict | None = None,
+                 headers: list[tuple[str, str]] | None = None, **fields):
         self.status = status
         self.code = code
         self.title = title
         self.detail = detail
         # Extra body fields: either an `extra` dict or keyword fields (both accepted).
         self.extra = {**(extra or {}), **fields}
+        # Response headers (e.g. Set-Cookie) to send with the problem body.
+        self.headers = headers or []
 
 
 def not_found(detail: str = "The resource does not exist or is not available to you.") -> ProblemError:
@@ -36,10 +39,13 @@ def _body(status: int, code: str, title: str, detail: str | None, **extra) -> di
 def register_problem_handlers(app: FastAPI) -> None:
     @app.exception_handler(ProblemError)
     async def _problem(_: Request, exc: ProblemError) -> ProblemResponse:
-        return ProblemResponse(
+        problem = ProblemResponse(
             _body(exc.status, exc.code, exc.title, exc.detail, **exc.extra),
             status_code=exc.status,
         )
+        for name, value in exc.headers:
+            problem.headers.append(name, value)
+        return problem
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> ProblemResponse:

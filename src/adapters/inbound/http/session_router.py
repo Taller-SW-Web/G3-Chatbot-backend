@@ -70,6 +70,7 @@ class LoginIn(BaseModel):
 
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=256)
+    canal: str = Field(default="EMAIL", pattern=r"^(EMAIL|SMS)$")
 
 
 class VerifyMfaIn(BaseModel):
@@ -133,7 +134,7 @@ def create_session_router(
     ):
         _csrf_check(request, allowed_origins)
         try:
-            answer = await sessions.login(body.email, body.password)
+            answer = await sessions.login(body.email, body.password, canal=body.canal)
         except InvalidCredentialsError:
             raise ProblemError(401, "CREDENCIALES_INVALIDAS", "Invalid credentials",
                                "Correo o contraseña incorrectos") from None
@@ -192,8 +193,18 @@ def create_session_router(
             raise ProblemError(401, "CODIGO_INVALIDO", "Invalid code",
                                "Código incorrecto", **extra) from None
         except AccountNotAllowedError:
-            response.delete_cookie(CHALLENGE_COOKIE, path=SESSION_COOKIE_PATH)
-            raise _account_not_allowed() from None
+            # The injected `response` is discarded when a problem is raised, so the
+            # cookie deletions travel on the problem itself.
+            error = _account_not_allowed()
+            cleared = Response()
+            cleared.delete_cookie(CHALLENGE_COOKIE, path=SESSION_COOKIE_PATH)
+            cleared.delete_cookie(REFRESH_COOKIE, path=SESSION_COOKIE_PATH)
+            error.headers = [
+                (name.decode("latin-1"), value.decode("latin-1"))
+                for name, value in cleared.raw_headers
+                if name == b"set-cookie"
+            ]
+            raise error from None
         except InvalidTokenError:
             raise ProblemError(401, "TOKEN_INVALIDO", "Invalid token",
                                "Seguridad devolvió un token inválido") from None
