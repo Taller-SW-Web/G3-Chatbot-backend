@@ -18,7 +18,11 @@ def create_app(turn_scope: TurnScope | None = None) -> FastAPI:
     register_problem_handlers(app)
     app.include_router(health_router)
     app.include_router(
-        create_session_router(provide_manage_session, cookie_secure=settings.cookie_secure),
+        create_session_router(
+            provide_manage_session,
+            cookie_secure=settings.cookie_secure,
+            allowed_origins=settings.allowed_origins,
+        ),
         prefix=API_PREFIX,
     )
     app.include_router(

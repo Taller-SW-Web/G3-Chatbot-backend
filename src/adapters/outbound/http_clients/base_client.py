@@ -9,14 +9,9 @@ import uuid
 
 import httpx
 
+from src.ports.outbound.module_errors import ModuleUnavailableError
 
-class ModuleUnavailableError(Exception):
-    """Timeout/connection/transport error/5xx talking to a module. Mapped to 503 + module name."""
-
-    def __init__(self, module: str, detail: str = ""):
-        self.module = module
-        self.detail = detail
-        super().__init__(f"{module} unavailable: {detail}" if detail else f"{module} unavailable")
+__all__ = ["BaseModuleClient", "ModuleUnavailableError"]
 
 
 class BaseModuleClient:

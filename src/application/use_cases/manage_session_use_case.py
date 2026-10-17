@@ -1,24 +1,28 @@
 """Customer session operations of SPEC-03: login, MFA, refresh, logout, profile (ADR-0018).
 
-Thin orchestration over the Seguridad client: this use case never stores
-tokens itself. Cookies are set by the HTTP edge; the refresh token only
-travels in the `chat_rt` httpOnly cookie. Cart fusion is a pure function
-so cart owners can reuse it when linking the anonymous cart on login
+Thin orchestration over the Seguridad port (`SecurityPort`) and the local
+access-token validator (`AccessTokenValidatorPort`): this use case never
+stores tokens itself. Cookies are set by the HTTP edge; the refresh token
+only travels in the `chat_rt` httpOnly cookie. Cart fusion is a pure function
+so the cart flow can reuse it when linking the anonymous cart on login
 (SPEC-03 Req. 4).
 """
-from dataclasses import dataclass
+import logging
+import uuid
 
-from src.adapters.outbound.http_clients.security_client import SecurityClient
+from src.ports.outbound.checkout_document_port import CheckoutDocumentPort
 from src.ports.outbound.module_errors import ModuleRequestError
+from src.ports.outbound.phone_verification_port import PhoneVerificationPort
+from src.ports.outbound.security_port import SecurityPort
+from src.ports.outbound.token_validator_port import (
+    AccessTokenValidatorPort,
+    AccountNotAllowedError,
+    InvalidTokenError,
+)
+
+logger = logging.getLogger(__name__)
 
 MAX_QTY_PER_LINE = 10
-
-
-@dataclass(frozen=True)
-class SessionTokens:
-    access_token: str
-    expires_in: int
-    user: dict
 
 
 def merge_cart_lines(anonymous_lines: list[dict], customer_lines: list[dict]) -> list[dict]:
@@ -38,8 +42,19 @@ def merge_cart_lines(anonymous_lines: list[dict], customer_lines: list[dict]) ->
     return list(merged.values())
 
 
+def mask_document(document: dict) -> dict:
+    """Masks the document number, keeping only its last four digits (modelo-datos.md §AccountPage)."""
+    numero = str(document.get("numero", ""))
+    masked = "*" * max(len(numero) - 4, 0) + numero[-4:] if numero else ""
+    return {"tipo": document.get("tipo"), "numeroEnmascarado": masked}
+
+
 class InvalidCredentialsError(Exception):
-    pass
+    """Wrong password, blocked account or wrong OTP. May carry the remaining OTP attempts."""
+
+    def __init__(self, intentos_restantes: int | None = None):
+        self.intentos_restantes = intentos_restantes
+        super().__init__("invalid credentials")
 
 
 class RefreshInvalidError(Exception):
@@ -47,28 +62,68 @@ class RefreshInvalidError(Exception):
 
 
 class ManageSessionUseCase:
-    def __init__(self, security: SecurityClient):
+    def __init__(
+        self,
+        security: SecurityPort,
+        validator: AccessTokenValidatorPort,
+        *,
+        phone_verifications: PhoneVerificationPort | None = None,
+        checkouts: CheckoutDocumentPort | None = None,
+    ):
         self._security = security
+        self._validator = validator
+        self._phone_verifications = phone_verifications
+        self._checkouts = checkouts
 
-    async def login(self, email: str, password: str) -> dict:
-        """Returns the Seguridad answer: tokens or `{mfaRequerido, challengeToken, canal}`."""
+    async def login(self, email: str, password: str, *, canal: str | None = None) -> dict:
+        """Returns the Seguridad answer: opened tokens or `{mfaRequerido, challengeToken, canal}`.
+
+        When MFA is required, the OTP is requested here (SPEC-03 Req. 2); the
+        `/mfa/solicitar` endpoint stays for resend / channel switch.
+        """
         try:
-            return await self._security.login(email, password)
+            answer = await self._security.login(email, password)
         except ModuleRequestError as exc:
             if exc.status == 401:
                 raise InvalidCredentialsError() from None
             raise
+        if answer.get("mfaRequerido"):
+            challenge = answer.get("challengeToken")
+            if challenge:
+                await self._security.request_mfa(challenge, canal or answer.get("canal"))
+            return answer
+        return await self._validated_session(answer)
 
-    async def request_mfa_code(self, challenge_token: str) -> dict:
-        return await self._security.request_mfa(challenge_token)
+    async def request_mfa_code(self, challenge_token: str, canal: str | None = None) -> dict:
+        return await self._security.request_mfa(challenge_token, canal)
 
     async def verify_mfa_code(self, challenge_token: str, code: str) -> dict:
         try:
-            return await self._security.verify_mfa(challenge_token, code)
+            answer = await self._security.verify_mfa(challenge_token, code)
         except ModuleRequestError as exc:
+            if exc.code == "OTP_INTENTOS_AGOTADOS":
+                # Not an "invalid code": Seguridad owns the status, the edge mirrors it.
+                raise
             if exc.status == 401:
-                raise InvalidCredentialsError() from None
+                raise InvalidCredentialsError(exc.intentos_restantes) from None
             raise
+        return await self._validated_session(answer)
+
+    async def _validated_session(self, answer: dict) -> dict:
+        """Validates the emitted access token before opening the session (SPEC-03 Req. 1).
+
+        A token without the `CLIENTE` role (or an invalid token) discards the
+        session in Seguridad and aborts, so no cookie/token reaches the client.
+        """
+        token = answer.get("accessToken")
+        try:
+            if not token:
+                raise InvalidTokenError("Seguridad returned no access token.")
+            await self._validator.validate_customer(token)
+        except (AccountNotAllowedError, InvalidTokenError):
+            await self.logout(answer.get("refreshToken"))
+            raise
+        return answer
 
     async def refresh(self, refresh_token: str) -> dict:
         try:
@@ -85,14 +140,18 @@ class ManageSessionUseCase:
         try:
             await self._security.logout(refresh_token)
         except Exception:
-            return
+            logger.warning("Seguridad logout failed; clearing the local session anyway")
 
-    async def profile(self, holder_token: str) -> dict:
-        return await self._security.me(holder_token)
-
-    def build_opened_session(self, answer: dict) -> SessionTokens:
-        return SessionTokens(
-            access_token=str(answer.get("accessToken", "")),
-            expires_in=int(answer.get("expiresIn", 900)),
-            user=dict(answer.get("usuario", {})),
-        )
+    async def profile(self, holder_token: str, customer_id: str) -> dict:
+        """`GET /auth/me` plus `celularVerificado` and the masked `ultimoDocumento`."""
+        profile = dict(await self._security.me(holder_token))
+        phone = profile.get("celular") or profile.get("telefono")
+        verified = False
+        if phone and self._phone_verifications is not None:
+            verified = await self._phone_verifications.existe(uuid.UUID(str(customer_id)), phone)
+        profile["celularVerificado"] = verified
+        document = None
+        if self._checkouts is not None:
+            document = await self._checkouts.latest_document(uuid.UUID(str(customer_id)))
+        profile["ultimoDocumento"] = mask_document(document) if document else None
+        return profile

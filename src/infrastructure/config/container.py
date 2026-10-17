@@ -5,10 +5,15 @@ from contextlib import asynccontextmanager
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.adapters.outbound.auth.jwks_token_validator import JwksTokenValidator
 from src.adapters.outbound.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
 from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
+from src.adapters.outbound.persistence.local_phone_verification_postgres_adapter import (
+    LocalPhoneVerificationPostgresAdapter,
+)
 from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
@@ -120,9 +125,19 @@ def provide_security_client(
     )
 
 
-def provide_manage_session() -> ManageSessionUseCase:
-    """Customer session service (SPEC-03): orchestration over the Seguridad client."""
-    return ManageSessionUseCase(security=provide_security_client())
+def provide_manage_session(session: AsyncSession = Depends(get_session)) -> ManageSessionUseCase:
+    """Customer session service (SPEC-03): orchestration over the Seguridad port.
+
+    The local token validator enforces the `CLIENTE` role before a session is
+    opened; the persistence ports feed `celularVerificado` / `ultimoDocumento`.
+    """
+    settings = get_settings()
+    return ManageSessionUseCase(
+        security=provide_security_client(settings),
+        validator=JwksTokenValidator(security_base_url=settings.security_base_url),
+        phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
+        checkouts=CheckoutPostgresAdapter(session),
+    )
 
 
 def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUseCase:

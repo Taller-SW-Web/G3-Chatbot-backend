@@ -29,6 +29,8 @@ def _number(name: str, default: str, cast, *, minimum: float):
 class Settings:
     # `Secure` flag of the chat_sid cookie. Default on; set COOKIE_SECURE=false for plain-HTTP local dev.
     cookie_secure: bool = True
+    # Exact origins allowed to call the mutating session endpoints (CSRF check, ADR-0023).
+    allowed_origins: tuple[str, ...] = ("http://localhost:3000",)
     # LLM (ADR-0005). The key may be empty: the provider fails lazily, with LLMUnavailableError, when used.
     llm_provider: str = "openai"
     llm_model: str = "gpt-6-luna"
@@ -56,10 +58,16 @@ class Settings:
     dispatch_timeout_seconds: float = 4.0
 
 
+def _origins(name: str, default: str) -> tuple[str, ...]:
+    raw = os.getenv(name, default)
+    return tuple(origin.strip().rstrip("/").lower() for origin in raw.split(",") if origin.strip())
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings(
         cookie_secure=os.getenv("COOKIE_SECURE", "true").strip().lower() != "false",
+        allowed_origins=_origins("ALLOWED_ORIGINS", "http://localhost:3000"),
         llm_provider=os.getenv("LLM_PROVIDER", "openai").strip().lower(),
         llm_model=os.getenv("LLM_MODEL", "gpt-6-luna").strip(),
         llm_temperature=_number("LLM_TEMPERATURE", "0.6", float, minimum=0),

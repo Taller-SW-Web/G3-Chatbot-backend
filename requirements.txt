@@ -11,6 +11,7 @@ psycopg2-binary>=2.9,<3.0  # Alembic runs sync (env.py); async paths use asyncpg
 asyncpg>=0.29,<1.0
 httpx>=0.27,<1.0
 PyJWT>=2.8,<3.0
+cryptography>=42,<46  # RS256 signing/verification for the JWKS validator.
 APScheduler>=3.10,<4.0
 pytest>=8.0,<9.0
 pytest-asyncio>=0.23,<1.0

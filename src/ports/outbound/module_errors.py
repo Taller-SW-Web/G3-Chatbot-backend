@@ -1,6 +1,15 @@
 """Errors shared by every outbound module port (ADR-0017)."""
 
 
+class ModuleUnavailableError(Exception):
+    """Timeout/connection/transport error/5xx talking to a module. Mapped to 503 + module name."""
+
+    def __init__(self, module: str, detail: str = ""):
+        self.module = module
+        self.detail = detail
+        super().__init__(f"{module} unavailable: {detail}" if detail else f"{module} unavailable")
+
+
 class ModuleRequestError(Exception):
     """A 4xx answer from a module: the request was rejected, not a data row.
 
@@ -9,10 +18,19 @@ class ModuleRequestError(Exception):
     results (SPEC-09, SPEC-10). Only 2xx bodies are returned as data.
     """
 
-    def __init__(self, module: str, status: int, code: str, detail: str = ""):
+    def __init__(
+        self,
+        module: str,
+        status: int,
+        code: str,
+        detail: str = "",
+        *,
+        intentos_restantes: int | None = None,
+    ):
         self.module = module
         self.status = status
         self.code = code
         self.detail = detail
+        self.intentos_restantes = intentos_restantes
         message = f"{module} request failed: HTTP {status} {code}"
         super().__init__(f"{message}: {detail}" if detail else message)
