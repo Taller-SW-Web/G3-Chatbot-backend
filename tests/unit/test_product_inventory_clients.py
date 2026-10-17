@@ -222,7 +222,7 @@ async def test_single_and_bulk_prices():
     assert price["currency"] == "PEN"
     prices = await catalog.get_prices(["NIK-REV7-42-NEG", "NIK-POLO-UNICO"])
     assert len(prices) == 2
-    assert dict(route_bulk.calls[0].request.url.params)["channel_id"] == "CHATBOT"
+    assert dict(route_bulk.calls[0].request.url.params)["canal"] == "CHATBOT"
 
 
 @respx.mock
@@ -273,23 +273,24 @@ async def test_availability_single_bulk_call_with_live_rows():
         ["NIK-REV7-42-NEG", "NIK-REV7-42-BLA", "ADI-PRED-40-BLA"]
     )
     assert len(route.calls) == 1
-    assert dict(route.calls[0].request.url.params)["skus"] == (
+    params = dict(route.calls[0].request.url.params)
+    assert params["skus"] == (
         "NIK-REV7-42-NEG,NIK-REV7-42-BLA,ADI-PRED-40-BLA"
     )
+    assert params["canal"] == "CHATBOT"
     by_sku = {row["sku"]: row for row in rows}
-    assert by_sku["NIK-REV7-42-NEG"]["available"] == 12
-    assert by_sku["NIK-REV7-42-NEG"]["status"] == "IN_STOCK"
-    assert by_sku["NIK-REV7-42-BLA"]["status"] == "LOW_STOCK"
-    assert by_sku["ADI-PRED-40-BLA"]["available"] == 0
+    assert by_sku["NIK-REV7-42-NEG"]["status"] == "DISPONIBLE"
+    assert by_sku["NIK-REV7-42-BLA"]["status"] == "STOCK_BAJO"
+    assert by_sku["ADI-PRED-40-BLA"]["status"] == "AGOTADO"
 
 
 @pytest.mark.asyncio
-async def test_availability_rejects_empty_and_over_20_skus():
+async def test_availability_rejects_empty_and_over_100_skus():
     inventory = make_inventory()
     with pytest.raises(ValueError):
         await inventory.get_availability([])
     with pytest.raises(ValueError):
-        await inventory.get_availability([f"SKU-{n}" for n in range(21)])
+        await inventory.get_availability([f"SKU-{n}" for n in range(101)])
     with pytest.raises(ValueError):
         await inventory.get_availability(["  "])
     with pytest.raises(ValueError):
@@ -309,7 +310,7 @@ async def test_availability_dedupes_before_the_limit():
 @respx.mock
 @pytest.mark.asyncio
 async def test_availability_409_raises_with_contract_code():
-    respx.get(f"{BASE_URL}/inventario/disponibilidad").mock(
+    respx.get(f"{BASE_URL}/inventario/disponibilidad/comercial").mock(
         return_value=httpx.Response(409, json={"code": "PRODUCTO_NO_DISPONIBLE"})
     )
     with pytest.raises(ModuleRequestError) as error:
@@ -319,14 +320,43 @@ async def test_availability_409_raises_with_contract_code():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_availability_rejects_negative_stock():
-    respx.get(f"{BASE_URL}/inventario/disponibilidad").mock(
-        return_value=httpx.Response(
-            200, json=[{"sku": "SKU-X", "available": -3, "status": "IN_STOCK"}]
-        )
+async def test_availability_rejects_malformed_rows():
+    respx.get(f"{BASE_URL}/inventario/disponibilidad/comercial").mock(
+        return_value=httpx.Response(200, json=[{"sku": "  ", "status": "DISPONIBLE"}])
     )
     with pytest.raises(ValueError):
         await make_inventory().get_availability(["SKU-X"])
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_verify_quantities_posts_real_keys():
+    route = product_mocks.mock_availability_verify(BASE_URL)
+    import json
+
+    verdicts = await make_inventory().verify_quantities(
+        [{"sku": "NIK-REV7-42-NEG", "quantity": 2}]
+    )
+    by_sku = {verdict["sku"]: verdict for verdict in verdicts}
+    assert by_sku["NIK-REV7-42-NEG"]["veredicto"] == "SUFICIENTE"
+    assert by_sku["NIK-REV7-42-BLA"]["veredicto"] == "INSUFICIENTE"
+    assert by_sku["AND-POLO-M-NEG"]["veredicto"] == "INDETERMINADO"
+    body = json.loads(route.calls[0].request.content)
+    assert body["channel_id"] == "CHATBOT"
+    assert body["lines"] == [{"sku": "NIK-REV7-42-NEG", "quantity": 2}]
+
+
+@pytest.mark.asyncio
+async def test_verify_quantities_rejects_bad_lines():
+    inventory = make_inventory()
+    with pytest.raises(ValueError):
+        await inventory.verify_quantities([])
+    with pytest.raises(ValueError):
+        await inventory.verify_quantities([{"sku": "A", "quantity": 0}])
+    with pytest.raises(ValueError):
+        await inventory.verify_quantities([{"sku": "A,B", "quantity": 1}])
+    with pytest.raises(ValueError):
+        await inventory.verify_quantities([{"sku": "A"}])
 
 
 @respx.mock
@@ -335,8 +365,19 @@ async def test_sku_availability_found_and_missing():
     product_mocks.mock_availability(BASE_URL)
     inventory = make_inventory()
     row = await inventory.get_sku_availability("NIK-REV7-42-NEG")
-    assert row is not None and row["available"] == 12
+    assert row is not None and row["status"] == "DISPONIBLE"
     assert await inventory.get_sku_availability("SKU-UNKNOWN") is None
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_promotions_list_resolves_names():
+    product_mocks.mock_promotions_list(BASE_URL)
+    promotions = await make_catalog().list_promotions()
+    assert promotions[0] == {
+        "promotion_id": "promo-10", "name": "Cyber 10%",
+        "channel_id": "CHATBOT",
+    }
 
 
 @respx.mock
@@ -393,7 +434,7 @@ async def test_non_json_4xx_keeps_status_and_falls_back_to_a_code(status, code):
 @respx.mock
 @pytest.mark.asyncio
 async def test_non_json_4xx_on_inventory_keeps_status():
-    respx.get(f"{BASE_URL}/inventario/disponibilidad").mock(
+    respx.get(f"{BASE_URL}/inventario/disponibilidad/comercial").mock(
         return_value=httpx.Response(404, text="<html>not found</html>")
     )
     with pytest.raises(ModuleRequestError) as error:
@@ -440,13 +481,13 @@ async def test_transport_errors_become_module_unavailable(exc):
     assert error.value.module == "productos"
 
 
-def test_max_skus_per_call_is_defined_once():
-    from src.adapters.outbound.http_clients import inventory_client, products_client
+def test_sku_caps_are_defined_once():
+    from src.adapters.outbound.http_clients import products_client
     from src.ports.outbound import product_repository_port
 
     assert (
-        inventory_client.MAX_SKUS_PER_CALL
-        is products_client.MAX_SKUS_PER_CALL
+        products_client.MAX_SKUS_PER_CALL
         is product_repository_port.MAX_SKUS_PER_CALL
     )
     assert product_repository_port.MAX_SKUS_PER_CALL == 20
+    assert product_repository_port.MAX_COMERCIAL_SKUS == 100

@@ -56,6 +56,11 @@ class Cart(Base):
         server_onupdate=FetchedValue(),
     )
 
+    # Bloqueo optimista (SPEC-11 NFR): los UPDATE llevan WHERE version
+    # y fallan con StaleDataError ante una mutación concurrente; el caso
+    # de uso reintenta una vez. Sin cambio de esquema.
+    __mapper_args__ = {"version_id_col": version}
+
     __table_args__ = (
         CheckConstraint(
             "status IN ('ACTIVE','IN_CHECKOUT','CONVERTED','ABANDONED','MERGED')",

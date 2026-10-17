@@ -14,7 +14,7 @@ from src.application.dto.conversation_events import (
 )
 from src.application.use_cases.interpret_and_respond_use_case import (
     CONTEXT_MESSAGES,
-    DEGRADED_TEXT,
+    DEGRADED_NO_ACTIONS_TEXT,
     MAX_ITERATIONS,
     InterpretAndRespondUseCase,
     InvalidMessageError,
@@ -287,12 +287,13 @@ async def test_provider_failure_keeps_the_customer_message_and_replies_degraded(
     """SPEC-05 Req. 10 · Scenario: El LLM no responde."""
     uc, conv, messages, uow, _, _ = build([error])
     events = await run(uc, conv, "zapatillas")
-    assert kinds(events) == [MessageAcceptedEvent, DegradedEvent, BlockEvent, FinalEvent]
+    assert kinds(events) == [MessageAcceptedEvent, DegradedEvent, TokenEvent, FinalEvent]
     assert events[1] == DegradedEvent(reason)
-    assert events[2].block["tipo"] == "ACCIONES_RAPIDAS"
-    assert events[2].block["acciones"] == []  # this fake executor registers no runnable tools
-    assert events[-1].message.text == DEGRADED_TEXT
-    assert [r["text"] for r in messages.rows] == ["zapatillas", DEGRADED_TEXT]
+    # The fallback text is streamed after `degradado`, so the live message equals the stored one.
+    assert events[2] == TokenEvent(DEGRADED_NO_ACTIONS_TEXT)
+    assert not any(isinstance(event, BlockEvent) for event in events)
+    assert events[-1].message.text == DEGRADED_NO_ACTIONS_TEXT
+    assert [r["text"] for r in messages.rows] == ["zapatillas", DEGRADED_NO_ACTIONS_TEXT]
     assert uow.rollbacks == 0 and uow.commits == 2
 
 
@@ -307,6 +308,15 @@ def test_degraded_menu_contains_only_quick_actions_with_registered_handlers():
     ]
 
 
+def test_degraded_menu_is_omitted_when_no_quick_action_has_a_handler():
+    text, blocks, search_query = InterpretAndRespondUseCase._degraded_reply(
+        "unavailable", available_tools=set(),
+    )
+    assert "aún no están disponibles" in text
+    assert blocks == []
+    assert search_query is None
+
+
 @pytest.mark.asyncio
 async def test_failure_mid_stream_replaces_the_partial_text_with_the_fallback():
     class Breaking(FakeLLMProvider):
@@ -317,8 +327,9 @@ async def test_failure_mid_stream_replaces_the_partial_text_with_the_fallback():
     uc, conv, messages, _, _, _ = build([])
     uc._llm = Breaking([])
     events = await run(uc, conv)
-    assert kinds(events)[:3] == [MessageAcceptedEvent, TokenEvent, DegradedEvent]
-    assert messages.by_role(MessageRole.ASSISTANT)[0]["text"] == DEGRADED_TEXT
+    assert kinds(events)[:4] == [MessageAcceptedEvent, TokenEvent, DegradedEvent, TokenEvent]
+    assert events[3] == TokenEvent(DEGRADED_NO_ACTIONS_TEXT)
+    assert messages.by_role(MessageRole.ASSISTANT)[0]["text"] == DEGRADED_NO_ACTIONS_TEXT
 
 
 @pytest.mark.asyncio
@@ -340,7 +351,8 @@ async def test_a_stalled_provider_is_cut_by_the_overall_deadline():
 async def test_empty_model_answer_degrades():
     uc, conv, _, _, _, _ = build([[Completed("stop")]])
     events = await run(uc, conv)
-    assert DegradedEvent("unavailable") in events and events[-1].message.text == DEGRADED_TEXT
+    assert DegradedEvent("unavailable") in events
+    assert events[-1].message.text == DEGRADED_NO_ACTIONS_TEXT
 
 
 @pytest.mark.asyncio

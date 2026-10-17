@@ -5,6 +5,10 @@ from contextlib import asynccontextmanager
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
+    CartItemPostgresAdapter,
+)
+from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
 from src.adapters.outbound.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
@@ -19,6 +23,10 @@ from src.application.use_cases.dispatch_direct_action_use_case import DispatchDi
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
+from src.adapters.outbound.fakes.fake_products import (
+    FakeCatalogPort,
+    FakeInventoryPort,
+)
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
 from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
@@ -26,11 +34,22 @@ from src.adapters.outbound.http_clients.inventory_client import (
 )
 from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.http_clients.security_client import SecurityClient
+from src.application.tools.cart_handlers import build_cart_handlers
+from src.application.tools.catalog_handlers import build_catalog_handlers
+from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
+from src.application.use_cases.manage_catalog_use_case import (
+    ManageCatalogUseCase,
+    OptionCache,
+)
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
 from src.ports.outbound.llm_provider_port import LLMProvider
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
+
+# Categories/brands list cache shared across requests (SPEC-06): created once
+# by the wiring and injected, so use cases never share a module global.
+_CATALOG_OPTION_CACHE = OptionCache()
 
 
 def provide_chatbot_service(session: AsyncSession = Depends(get_session)) -> ManageConversationUseCase:
@@ -59,18 +78,68 @@ def provide_llm_provider(settings: Settings | None = None) -> LLMProvider:
     raise ValueError(f"Unknown LLM_PROVIDER {settings.llm_provider!r} (supported: openai)")
 
 
-def provide_tool_executor() -> ToolExecutorPort:
-    """Registry with only the tools that have a handler; commercial handlers are added as modules land."""
-    return RegistryToolAdapter(provide_tool_registry())
+def provide_tool_executor(session: AsyncSession) -> ToolExecutorPort:
+    """Tool registry with handlers bound to this request's database session."""
+    return RegistryToolAdapter(provide_tool_registry(session))
 
 
-def provide_tool_registry() -> ToolRegistry:
-    """Build the canonical registry shared by LLM and direct-UI dispatch paths."""
-    return build_tool_registry({})
+def provide_tool_registry(session: AsyncSession) -> ToolRegistry:
+    """Build the canonical registry for both LLM and direct-UI action paths."""
+    catalog = provide_catalog_service(session)
+    cart = provide_cart_service(session)
+    handlers = {}
+    handlers.update(build_catalog_handlers(catalog))
+    handlers.update(build_cart_handlers(cart))
+    return build_tool_registry(handlers)
 
 
-def provide_action_dispatcher() -> ActionDispatcher:
-    return ActionDispatcher(provide_tool_registry())
+def provide_action_dispatcher(session: AsyncSession) -> ActionDispatcher:
+    return ActionDispatcher(provide_tool_registry(session))
+
+
+def provide_product_catalog(settings: Settings | None = None):
+    """Catalog port honoring `MODULES_MODE` (ADR-0022): in-process fakes
+    for deployed environments without real modules, HTTP otherwise."""
+    settings = settings or get_settings()
+    if settings.modules_mode == "fake":
+        return FakeCatalogPort()
+    return provide_products_client(settings)
+
+
+def provide_product_inventory(settings: Settings | None = None):
+    """Inventory port honoring `MODULES_MODE` (ADR-0022)."""
+    settings = settings or get_settings()
+    if settings.modules_mode == "fake":
+        return FakeInventoryPort()
+    return provide_inventory_client(settings)
+
+
+def provide_catalog_service(
+    session: AsyncSession = Depends(get_session),
+) -> ManageCatalogUseCase:
+    settings = get_settings()
+    return ManageCatalogUseCase(
+        provide_product_catalog(settings),
+        provide_product_inventory(settings),
+        ConversationPostgresAdapter(session),
+        SqlAlchemyUnitOfWork(session),
+        option_cache=_CATALOG_OPTION_CACHE,
+    )
+
+
+def provide_cart_service(
+    session: AsyncSession = Depends(get_session),
+) -> ManageCartUseCase:
+    settings = get_settings()
+    return ManageCartUseCase(
+        CartPostgresAdapter(session),
+        CartItemPostgresAdapter(session),
+        provide_product_catalog(settings),
+        provide_product_inventory(settings),
+        ConversationPostgresAdapter(session),
+        MessagePostgresAdapter(session),
+        SqlAlchemyUnitOfWork(session),
+    )
 
 
 def sanitize_sensitive_text(text: str) -> str:
@@ -138,7 +207,7 @@ def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUse
         messages=MessagePostgresAdapter(session),
         uow=SqlAlchemyUnitOfWork(session),
         llm=provide_llm_provider(settings),
-        tools=provide_tool_executor(),
+        tools=provide_tool_executor(session),
         assistant_name=settings.assistant_name,
         llm_timeout_seconds=settings.llm_timeout_seconds,
         sanitize_text=sanitize_sensitive_text,
@@ -168,6 +237,6 @@ async def provide_action_scope() -> AsyncIterator[DispatchDirectActionUseCase]:
             conversations=ConversationPostgresAdapter(session),
             messages=MessagePostgresAdapter(session),
             uow=SqlAlchemyUnitOfWork(session),
-            dispatcher=provide_action_dispatcher(),
+            dispatcher=provide_action_dispatcher(session),
             sanitize_text=sanitize_sensitive_text,
         )

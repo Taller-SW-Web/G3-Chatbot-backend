@@ -71,6 +71,9 @@ TOOL_RESULT_MAX_CHARS = 6000  # provisional cap on what one tool result adds to 
 
 # Spec text of the degraded reply and its quick actions (SPEC-05 Req. 10).
 DEGRADED_TEXT = "Estoy teniendo problemas para entenderte, pero puedes usar estas opciones"
+DEGRADED_NO_ACTIONS_TEXT = (
+    "Estoy teniendo problemas para entenderte y las acciones rápidas aún no están disponibles."
+)
 QUICK_ACTIONS = (  # (stable action id, label), matching QuickActionId and ActionDispatcher
     ("BUSCAR_POR_CATEGORIA", "Buscar por categoría"),
     ("VER_OFERTAS", "Ofertas"),
@@ -277,6 +280,9 @@ class InterpretAndRespondUseCase:
                             yield BlockEvent(dict(search_block))
                     else:
                         reply = self._degraded_mode.responder("").texto
+                # The client drops the tokens it had before `degradado`; the fallback text is streamed after
+                # it so the live message matches the stored reply.
+                yield TokenEvent(reply)
                 for block in fallback_blocks:
                     yield BlockEvent(block)
                 # Blocks of tools that already ran were streamed, so they stay in the stored reply too.
@@ -388,6 +394,8 @@ class InterpretAndRespondUseCase:
                 for action_id, label in actions
                 if QUICK_ACTION_TO_TOOL.get(action_id) in available_tools
             )
+        if not actions:
+            return DEGRADED_NO_ACTIONS_TEXT, [], search_query
         block = {
             "id": str(uuid.uuid4()),
             "tipo": "ACCIONES_RAPIDAS",
