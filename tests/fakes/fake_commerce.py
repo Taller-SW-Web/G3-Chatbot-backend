@@ -5,6 +5,8 @@ so deployed fake mode shares them; persistence fakes stay test-only.
 contracts (the use case never builds rows) and can be told to fail like the
 driver would (`StaleCartError`, `CartConflictError`).
 """
+from __future__ import annotations
+
 import uuid
 from datetime import datetime, timezone
 
