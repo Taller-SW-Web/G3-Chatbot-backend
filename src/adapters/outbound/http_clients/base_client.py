@@ -11,6 +11,8 @@ import httpx
 
 from src.ports.outbound.module_errors import ModuleUnavailableError
 
+__all__ = ["BaseModuleClient", "ModuleUnavailableError"]
+
 
 class BaseModuleClient:
     module: str = "module"

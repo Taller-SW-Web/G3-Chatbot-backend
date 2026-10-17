@@ -47,9 +47,15 @@ def parse_security_body(module: str, status_code: int, body: Any) -> Any:
         return body
     if 400 <= status_code < 500:
         code = FALLBACK_ERROR_CODES.get(status_code, f"HTTP_{status_code}")
+        intentos_restantes = None
         if isinstance(body, dict):
             code = str(body.get("code", body.get("codigo", code)))
-        raise ModuleRequestError(module, status_code, code)
+            raw = body.get("intentosRestantes")
+            if isinstance(raw, int):
+                intentos_restantes = raw
+        raise ModuleRequestError(
+            module, status_code, code, intentos_restantes=intentos_restantes
+        )
     raise ModuleUnavailableError(module, f"unexpected HTTP {status_code}")
 
 
@@ -161,11 +167,16 @@ class SecurityClient(SecurityBaseClient):
                 ) from None
             raise
 
-    async def request_mfa(self, challenge_token: str, *, correlation_id: str | None = None) -> dict[str, Any]:
+    async def request_mfa(
+        self, challenge_token: str, canal: str | None = None, *, correlation_id: str | None = None
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"challengeToken": challenge_token}
+        if canal:
+            payload["canal"] = canal
         response = await self._request(
             "POST",
             "/auth/otp/solicitar",
-            json={"challengeToken": challenge_token},
+            json=payload,
             headers=self._mock_headers(),
             correlation_id=correlation_id,
         )

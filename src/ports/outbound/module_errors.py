@@ -23,10 +23,19 @@ class ModuleRequestError(Exception):
     results (SPEC-09, SPEC-10). Only 2xx bodies are returned as data.
     """
 
-    def __init__(self, module: str, status: int, code: str, detail: str = ""):
+    def __init__(
+        self,
+        module: str,
+        status: int,
+        code: str,
+        detail: str = "",
+        *,
+        intentos_restantes: int | None = None,
+    ):
         self.module = module
         self.status = status
         self.code = code
         self.detail = detail
+        self.intentos_restantes = intentos_restantes
         message = f"{module} request failed: HTTP {status} {code}"
         super().__init__(f"{message}: {detail}" if detail else message)
