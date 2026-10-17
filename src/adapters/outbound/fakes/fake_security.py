@@ -99,10 +99,14 @@ class FakeSecurityAdapter:
 
     async def login(self, email: str, password: str) -> dict[str, Any]:
         customer = self._customers.get(_fold(email))
-        if customer is None or customer.get("password") != password:
+        # Like the real module: wrong password, unverified, blocked or inactive
+        # accounts all answer the same 401 (the cause is never revealed).
+        if (
+            customer is None
+            or customer.get("password") != password
+            or customer.get("estado") != "ACTIVO"
+        ):
             raise ModuleRequestError(self.module, 401, "CREDENCIALES_INVALIDAS")
-        if customer.get("estado") != "ACTIVO":
-            raise ModuleRequestError(self.module, 403, "CUENTA_NO_VERIFICADA")
         return self._open_session(customer)
 
     async def request_mfa(self, challenge_token: str, canal: str | None = None) -> dict[str, Any]:

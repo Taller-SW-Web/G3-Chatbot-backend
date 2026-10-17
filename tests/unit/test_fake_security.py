@@ -19,7 +19,8 @@ async def test_register_verify_and_login_flow():
     assert created["estado"] == "PENDIENTE_VERIFICACION"
     with pytest.raises(ModuleRequestError) as blocked:
         await security.login("nueva@correo.com", "Segura1234")
-    assert blocked.value.code == "CUENTA_NO_VERIFICADA"
+    assert blocked.value.status == 401
+    assert blocked.value.code == "CREDENCIALES_INVALIDAS"
 
     token = security.verification_token("nueva@correo.com")
     assert token is not None
