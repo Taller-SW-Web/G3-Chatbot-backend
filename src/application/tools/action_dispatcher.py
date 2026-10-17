@@ -9,6 +9,7 @@ from src.application.tools.tool_registry import ExecutionContext, ToolRegistry, 
 QUICK_ACTIONS = {
     "SOLICITAR_REGISTRO": "solicitar_registro",
     "BUSCAR_PRODUCTOS": "buscar_productos",
+    "BUSCAR_POR_CATEGORIA": "buscar_productos",
     "BUSCAR_PAGINA": "buscar_productos",
     "VER_DETALLE_PRODUCTO": "ver_detalle_producto",
     "CONSULTAR_DISPONIBILIDAD": "consultar_disponibilidad",
@@ -25,7 +26,15 @@ class ActionDispatcher:
         self, registry: ToolRegistry, acciones: Mapping[str, str] | None = None,
     ) -> None:
         self._registry = registry
-        self._acciones = dict(QUICK_ACTIONS if acciones is None else acciones)
+        configured = QUICK_ACTIONS if acciones is None else acciones
+        registered = {tool["nombre"] for tool in registry.catalogo()}
+        # Expose only actions that can execute through this exact registry. This
+        # keeps degraded-menu IDs from advertising tools not wired in this app.
+        self._acciones = {
+            action_id: tool_name
+            for action_id, tool_name in configured.items()
+            if tool_name in registered
+        }
 
     async def despachar(
         self, accion: Mapping[str, Any], contexto: ExecutionContext,

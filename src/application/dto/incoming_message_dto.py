@@ -6,18 +6,22 @@ Unknown fields are rejected with 400 before the stream opens.
 """
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MAX_TEXT_LENGTH = 1000
 MAX_ATTACHMENTS = 3
 
 
 class ToolAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tipo: str = Field(min_length=1, max_length=64)
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class SendMessageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     texto: str | None = Field(default=None, min_length=1, max_length=MAX_TEXT_LENGTH)
     adjuntoIds: list[str] | None = Field(default=None, max_length=MAX_ATTACHMENTS)
     accion: ToolAction | None = None

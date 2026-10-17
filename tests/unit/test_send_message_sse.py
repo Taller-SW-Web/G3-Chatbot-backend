@@ -79,11 +79,29 @@ class FakeTurnService:
             self.streams_closed += 1
 
 
-def make_client(service, *, cookie=SID):
-    client = TestClient(create_app(turn_scope=service.scope))
+def make_client(service, *, cookie=SID, action_scope=None):
+    client = TestClient(create_app(turn_scope=service.scope, action_scope=action_scope))
     if cookie:
         client.cookies.set("chat_sid", cookie)
     return client
+
+
+class FakeDirectActionService:
+    def __init__(self):
+        self.actions = []
+
+    @asynccontextmanager
+    async def scope(self):
+        yield self
+
+    async def execute(self, caller, conversation_id, action):
+        self.actions.append((caller, conversation_id, action))
+        from src.application.use_cases.dispatch_direct_action_use_case import DirectActionResult
+
+        assistant = message(MessageRole.ASSISTANT, "", ASSISTANT_ID)
+        return DirectActionResult(
+            "OK", assistant, "", ({"tipo": "FORMULARIO", "formulario": "REGISTRO"},), {},
+        )
 
 
 def parse_sse(body: str) -> list[tuple[str, dict]]:
@@ -113,6 +131,38 @@ def test_full_turn_is_streamed_as_sse_frames_ending_with_fin():
     assert "¿en qué" in res.content.decode("utf-8")  # ensure_ascii=False
     assert service.sent == [(OWNER, CID, "hola")]
     assert service.streams_closed == 1 and service.opened == service.closed == 1
+
+
+def test_direct_ui_action_returns_rest_result_without_starting_sse_or_llm():
+    turn_service = FakeTurnService()
+    action_service = FakeDirectActionService()
+    res = make_client(turn_service, action_scope=action_service.scope).post(
+        URL,
+        json={"accion": {"tipo": "SOLICITAR_REGISTRO", "payload": {}}},
+    )
+
+    assert res.status_code == 200
+    assert res.json() == {
+        "code": "OK",
+        "mensajeId": str(ASSISTANT_ID),
+        "texto": "",
+        "bloques": [{"tipo": "FORMULARIO", "formulario": "REGISTRO"}],
+        "datos": {},
+    }
+    assert action_service.actions == [
+        (OWNER, CID, {"tipo": "SOLICITAR_REGISTRO", "payload": {}}),
+    ]
+    assert turn_service.sent == [] and turn_service.opened == 0
+
+
+def test_direct_action_cannot_be_combined_with_chat_text():
+    res = make_client(FakeTurnService()).post(
+        URL,
+        json={"texto": "hola", "accion": {"tipo": "SOLICITAR_REGISTRO", "payload": {}}},
+    )
+
+    assert res.status_code == 400
+    assert res.json()["code"] == "VALIDACION"
 
 
 def test_a_turn_with_a_tool_block_streams_the_block_before_fin():

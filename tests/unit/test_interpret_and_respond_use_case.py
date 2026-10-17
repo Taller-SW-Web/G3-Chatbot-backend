@@ -14,7 +14,7 @@ from src.application.dto.conversation_events import (
 )
 from src.application.use_cases.interpret_and_respond_use_case import (
     CONTEXT_MESSAGES,
-    DEGRADED_TEXT,
+    DEGRADED_NO_ACTIONS_TEXT,
     MAX_ITERATIONS,
     InterpretAndRespondUseCase,
     InvalidMessageError,
@@ -176,6 +176,51 @@ async def test_tool_call_then_final_answer():
 
 
 @pytest.mark.asyncio
+async def test_final_output_only_keeps_amounts_authorized_by_successful_tools():
+    tools = FakeToolExecutor({
+        "ver_carrito": ToolResult("OK", {"currency": "PEN", "total": "199.90"}),
+    })
+    uc, conv, _, _, _, _ = build(
+        [tool_turn("c1", "ver_carrito", {}), reply("Total S/ 199.90; envío S/ 25.00")],
+        tools=tools,
+    )
+
+    events = await run(uc, conv)
+
+    assert events[-1].message.text == "Total S/ 199.90; envío [importe no verificado]"
+
+
+@pytest.mark.asyncio
+async def test_failed_tool_result_does_not_authorize_commercial_amounts():
+    tools = FakeToolExecutor({
+        "ver_carrito": ToolResult("SERVICIO_NO_DISPONIBLE", {"currency": "PEN", "total": "199.90"}),
+    })
+    uc, conv, _, _, _, _ = build(
+        [tool_turn("c1", "ver_carrito", {}), reply("Total S/ 199.90")],
+        tools=tools,
+    )
+
+    events = await run(uc, conv)
+
+    assert events[-1].message.text == "Total [importe no verificado]"
+
+
+@pytest.mark.asyncio
+async def test_degraded_mode_runs_only_registered_read_only_keyword_search():
+    result_block = {"id": "p1", "tipo": "CARRUSEL_PRODUCTOS", "datos": {"productos": []}}
+    tools = FakeToolExecutor({
+        "buscar_productos": ToolResult("OK", {}, blocks=(result_block,)),
+    })
+    uc, conv, _, _, _, _ = build([LLMUnavailableError("offline")], tools=tools)
+
+    events = await run(uc, conv, "busco zapatillas")
+
+    assert tools.executed[0][0:2] == ("buscar_productos", {"q": "zapatillas"})
+    assert any(isinstance(event, DegradedEvent) for event in events)
+    assert any(isinstance(event, BlockEvent) and event.block == result_block for event in events)
+
+
+@pytest.mark.asyncio
 async def test_tool_error_is_fed_back_to_the_model():
     """SPEC-05 Req. 6 · Scenario: Herramienta protegida sin sesión."""
     tools = FakeToolExecutor({"listar_pedidos": ToolResult("REQUIERE_SESION", is_error=True)})
@@ -242,14 +287,34 @@ async def test_provider_failure_keeps_the_customer_message_and_replies_degraded(
     """SPEC-05 Req. 10 · Scenario: El LLM no responde."""
     uc, conv, messages, uow, _, _ = build([error])
     events = await run(uc, conv, "zapatillas")
-    assert kinds(events) == [MessageAcceptedEvent, DegradedEvent, TokenEvent, BlockEvent, FinalEvent]
+    assert kinds(events) == [MessageAcceptedEvent, DegradedEvent, TokenEvent, FinalEvent]
     assert events[1] == DegradedEvent(reason)
     # The fallback text is streamed after `degradado`, so the live message equals the stored one.
-    assert events[2] == TokenEvent(DEGRADED_TEXT)
-    assert events[3].block["tipo"] == "ACCIONES_RAPIDAS" and len(events[3].block["acciones"]) == 6
-    assert events[-1].message.text == DEGRADED_TEXT
-    assert [r["text"] for r in messages.rows] == ["zapatillas", DEGRADED_TEXT]
+    assert events[2] == TokenEvent(DEGRADED_NO_ACTIONS_TEXT)
+    assert not any(isinstance(event, BlockEvent) for event in events)
+    assert events[-1].message.text == DEGRADED_NO_ACTIONS_TEXT
+    assert [r["text"] for r in messages.rows] == ["zapatillas", DEGRADED_NO_ACTIONS_TEXT]
     assert uow.rollbacks == 0 and uow.commits == 2
+
+
+def test_degraded_menu_contains_only_quick_actions_with_registered_handlers():
+    _, blocks, search_query = InterpretAndRespondUseCase._degraded_reply(
+        "unavailable",
+        available_tools={"buscar_productos", "ver_carrito"},
+    )
+    assert search_query is None
+    assert [a["id"] for a in blocks[0]["acciones"]] == [
+        "BUSCAR_POR_CATEGORIA", "VER_CARRITO",
+    ]
+
+
+def test_degraded_menu_is_omitted_when_no_quick_action_has_a_handler():
+    text, blocks, search_query = InterpretAndRespondUseCase._degraded_reply(
+        "unavailable", available_tools=set(),
+    )
+    assert "aún no están disponibles" in text
+    assert blocks == []
+    assert search_query is None
 
 
 @pytest.mark.asyncio
@@ -263,8 +328,8 @@ async def test_failure_mid_stream_replaces_the_partial_text_with_the_fallback():
     uc._llm = Breaking([])
     events = await run(uc, conv)
     assert kinds(events)[:4] == [MessageAcceptedEvent, TokenEvent, DegradedEvent, TokenEvent]
-    assert events[3] == TokenEvent(DEGRADED_TEXT)
-    assert messages.by_role(MessageRole.ASSISTANT)[0]["text"] == DEGRADED_TEXT
+    assert events[3] == TokenEvent(DEGRADED_NO_ACTIONS_TEXT)
+    assert messages.by_role(MessageRole.ASSISTANT)[0]["text"] == DEGRADED_NO_ACTIONS_TEXT
 
 
 @pytest.mark.asyncio
@@ -286,7 +351,8 @@ async def test_a_stalled_provider_is_cut_by_the_overall_deadline():
 async def test_empty_model_answer_degrades():
     uc, conv, _, _, _, _ = build([[Completed("stop")]])
     events = await run(uc, conv)
-    assert DegradedEvent("unavailable") in events and events[-1].message.text == DEGRADED_TEXT
+    assert DegradedEvent("unavailable") in events
+    assert events[-1].message.text == DEGRADED_NO_ACTIONS_TEXT
 
 
 @pytest.mark.asyncio
