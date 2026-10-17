@@ -51,6 +51,31 @@ def _normalize_origin(value: str) -> str:
     return f"{parts.scheme.lower()}://{parts.netloc.lower()}"
 
 
+DEFAULT_POLICY_MESSAGE = "La contraseña no cumple la política de seguridad"
+
+# Seguridad's register field names -> the BFF request names. Seguridad's
+# payload is email/password/phone/nombres/apellidos (security_client.register);
+# unknown names pass through unchanged.
+SECURITY_FIELD_TO_BFF = {"nombres": "firstName", "apellidos": "lastName"}
+
+
+def _scrub(text: str, password: str) -> str:
+    """Never echo the submitted password back to the client."""
+    if password and password in text:
+        return text.replace(password, "***")
+    return text
+
+
+def _register_field_errors(errors: list[dict[str, str]], password: str) -> list[dict[str, str]]:
+    return [
+        {
+            "campo": SECURITY_FIELD_TO_BFF.get(row["campo"], row["campo"]),
+            "mensaje": _scrub(row["mensaje"], password),
+        }
+        for row in errors
+    ]
+
+
 def _csrf_check(request: Request, allowed_origins: Sequence[str]) -> None:
     if not request.headers.get("x-requested-with"):
         raise ProblemError(403, "PETICION_INVALIDA", "Invalid request",
@@ -372,6 +397,17 @@ def create_session_router(
                 # beyond Seguridad's own availability answer (SPEC-01 Req. 4).
                 raise ProblemError(409, "CORREO_NO_DISPONIBLE", "Email not available",
                                    "Ese correo no está disponible para registro") from None
+            if exc.status == 400 and exc.code == "VALIDACION" and exc.errors:
+                raise ProblemError(
+                    400, "VALIDACION", "Validation failed",
+                    errores=_register_field_errors(exc.errors, body.password),
+                ) from None
+            if exc.status == 422 and exc.code == "POLITICA_INCUMPLIDA":
+                detail = _scrub(exc.detail, body.password) or DEFAULT_POLICY_MESSAGE
+                raise ProblemError(
+                    422, "POLITICA_INCUMPLIDA", "Password policy not met", detail,
+                    errores=[{"campo": "password", "mensaje": detail}],
+                ) from None
             raise ProblemError(exc.status, exc.code, "Module request failed") from None
         except ModuleUnavailableError:
             raise _service_unavailable() from None

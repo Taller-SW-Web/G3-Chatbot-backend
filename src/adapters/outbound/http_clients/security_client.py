@@ -34,6 +34,28 @@ FALLBACK_ERROR_CODES = {
 }
 
 
+MAX_DETAIL_CHARS = 300
+MAX_FIELD_ERRORS = 20
+
+
+def _clip(value: Any, limit: int = MAX_DETAIL_CHARS) -> str:
+    return str(value).strip()[:limit]
+
+
+def _field_errors(raw: Any) -> list[dict[str, str]]:
+    """Keep only well-formed `{campo, mensaje}` rows, bounded in count and length."""
+    if not isinstance(raw, list):
+        return []
+    rows: list[dict[str, str]] = []
+    for item in raw[:MAX_FIELD_ERRORS]:
+        if not isinstance(item, dict):
+            continue
+        campo, mensaje = item.get("campo"), item.get("mensaje")
+        if isinstance(campo, str) and isinstance(mensaje, str) and campo.strip() and mensaje.strip():
+            rows.append({"campo": _clip(campo, 60), "mensaje": _clip(mensaje)})
+    return rows
+
+
 def parse_security_body(module: str, status_code: int, body: Any) -> Any:
     """Single checkpoint: return 2xx bodies, raise on 4xx, reject the rest.
 
@@ -48,13 +70,24 @@ def parse_security_body(module: str, status_code: int, body: Any) -> Any:
     if 400 <= status_code < 500:
         code = FALLBACK_ERROR_CODES.get(status_code, f"HTTP_{status_code}")
         intentos_restantes = None
+        detail = ""
+        errors: list[dict[str, str]] = []
         if isinstance(body, dict):
+            raw_detail = body.get("detail", body.get("message"))
+            if isinstance(raw_detail, str):
+                detail = _clip(raw_detail)
+            errors = _field_errors(body.get("errores"))
             code = str(body.get("code", body.get("codigo", code)))
             raw = body.get("intentosRestantes")
             if isinstance(raw, int):
                 intentos_restantes = raw
         raise ModuleRequestError(
-            module, status_code, code, intentos_restantes=intentos_restantes
+            module,
+            status_code,
+            code,
+            detail,
+            intentos_restantes=intentos_restantes,
+            errors=errors,
         )
     raise ModuleUnavailableError(module, f"unexpected HTTP {status_code}")
 

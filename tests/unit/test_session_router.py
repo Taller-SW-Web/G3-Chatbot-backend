@@ -384,6 +384,48 @@ def test_register_with_taken_email_returns_correo_no_disponible():
     assert res.json()["code"] == "CORREO_NO_DISPONIBLE"
 
 
+def test_register_validation_error_maps_security_fields_to_bff_names():
+    """SPEC-01 Req. 4 - 400 VALIDACION keeps errores[{campo, mensaje}] with BFF field names."""
+    errors = [
+        {"campo": "nombres", "mensaje": "Requerido"},
+        {"campo": "phone", "mensaje": "Formato inválido"},
+        {"campo": "otro", "mensaje": f"{REGISTRO['password']} no sirve"},
+    ]
+    sessions = FakeSessions({"register": ModuleRequestError(
+        "security", 400, "VALIDACION", errors=errors)})
+    res = make_client(sessions).post(BASE + "/registro", json=REGISTRO, headers=CSRF)
+    assert res.status_code == 400
+    body = res.json()
+    assert body["code"] == "VALIDACION"
+    assert [e["campo"] for e in body["errores"]] == ["firstName", "phone", "otro"]
+    assert body["errores"][2]["mensaje"] == "*** no sirve"
+
+
+def test_register_policy_error_goes_to_the_password_field():
+    """SPEC-01 Req. 4 - 422 POLITICA_INCUMPLIDA carries the detail on `password`."""
+    sessions = FakeSessions({"register": ModuleRequestError(
+        "security", 422, "POLITICA_INCUMPLIDA", "Debe incluir un símbolo")})
+    res = make_client(sessions).post(BASE + "/registro", json=REGISTRO, headers=CSRF)
+    assert res.status_code == 422
+    body = res.json()
+    assert body["code"] == "POLITICA_INCUMPLIDA"
+    assert body["detail"] == "Debe incluir un símbolo"
+    assert body["errores"] == [{"campo": "password", "mensaje": "Debe incluir un símbolo"}]
+
+
+def test_register_policy_error_without_detail_uses_neutral_default_and_hides_password():
+    sessions = FakeSessions({"register": ModuleRequestError("security", 422, "POLITICA_INCUMPLIDA")})
+    res = make_client(sessions).post(BASE + "/registro", json=REGISTRO, headers=CSRF)
+    body = res.json()
+    assert body["errores"] == [
+        {"campo": "password", "mensaje": "La contraseña no cumple la política de seguridad"}
+    ]
+    sessions = FakeSessions({"register": ModuleRequestError(
+        "security", 422, "POLITICA_INCUMPLIDA", f"Invalida: {REGISTRO['password']}")})
+    res = make_client(sessions).post(BASE + "/registro", json=REGISTRO, headers=CSRF)
+    assert REGISTRO["password"] not in res.text
+
+
 def test_register_when_security_is_down_returns_503_servicio_no_disponible():
     """SPEC-01 - a degraded Seguridad answers 503 with the contract code."""
     sessions = FakeSessions({"register": ModuleUnavailableError("security", "HTTP 503")})

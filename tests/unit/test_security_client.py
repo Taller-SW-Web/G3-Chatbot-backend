@@ -264,3 +264,34 @@ def test_missing_client_secret_fails_loudly(monkeypatch, value):
             provide_security_client()
     finally:
         get_settings.cache_clear()
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_register_validation_keeps_bounded_field_errors():
+    respx.post(f"{BASE_URL}/auth/registro").respond(
+        400,
+        json={
+            "code": "VALIDACION",
+            "errores": [
+                {"campo": "phone", "mensaje": "Formato inválido"},
+                {"campo": "x", "mensaje": 5},
+                "junk",
+            ],
+        },
+    )
+    with pytest.raises(ModuleRequestError) as exc:
+        await make_client().register("a@b.pe", "Passw0rd!", "1")
+    assert exc.value.errors == [{"campo": "phone", "mensaje": "Formato inválido"}]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_register_policy_keeps_bounded_detail():
+    respx.post(f"{BASE_URL}/auth/registro").respond(
+        422, json={"code": "POLITICA_INCUMPLIDA", "detail": "x" * 1000}
+    )
+    with pytest.raises(ModuleRequestError) as exc:
+        await make_client().register("a@b.pe", "weak", "+51987654321")
+    assert exc.value.status == 422
+    assert exc.value.detail == "x" * 300
