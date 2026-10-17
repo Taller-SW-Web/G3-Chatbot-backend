@@ -15,9 +15,6 @@ MAX_SKUS_PER_CALL = 20
 # shared 20-SKU cap above.
 MAX_COMMERCIAL_SKUS = 100
 
-# Deprecated Spanish-spelling alias (kept for backward compat, remove in Hito 4).
-MAX_COMERCIAL_SKUS = MAX_COMMERCIAL_SKUS
-
 
 def normalize_sku_list(skus: list[str], *, limit: int = MAX_SKUS_PER_CALL) -> list[str]:
     """Clean shared SKU input: strip, drop blanks/duplicates, enforce the cap.

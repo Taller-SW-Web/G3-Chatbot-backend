@@ -5,17 +5,16 @@ single ACTIVE cart per customer), live stock checks, live totals and
 TOOL audit rows. Applying coupons (SPEC-13) and quoting shipping
 (SPEC-12) are out of scope: the stored coupon is only revalidated
 through the promotions evaluation, and shipping stays empty until
-checkout quotes it. Never imports FastAPI, httpx or SQLAlchemy.
+checkout quotes it. Never imports FastAPI, httpx or SQLAlchemy: the
+repositories (`CartRepository`, `CartItemRepository`) build the rows and
+translate driver errors into `StaleCartError`/`CartConflictError`.
 """
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy.orm.exc import StaleDataError
-
-from src.adapters.outbound.persistence.models.cart import Cart
-from src.adapters.outbound.persistence.models.cart_item import CartItem
 from src.application.catalog.product_lookup import (
     read_memory,
     resolve_product_id,
@@ -25,6 +24,12 @@ from src.domain.services.cart_line_resolver import CartLineResolver
 from src.domain.services.stock_validator import StockValidator
 from src.domain.services.totals_calculator import PricedLine, TotalsCalculator
 from src.domain.services.variant_resolver import VariantResolver
+from src.ports.outbound.cart_repository_port import (
+    CartConflictError,
+    StaleCartError,
+)
+
+logger = logging.getLogger(__name__)
 
 MAX_PER_LINE = 10
 MAX_LINES = 20
@@ -97,9 +102,7 @@ class ManageCartUseCase:
         async def _clear(cart):
             for row in await self._items.listar_por_cart(cart.id):
                 await self._items.eliminar(row.id)
-            cart.coupon_code = None
-            cart.shipping_snapshot = None
-            cart.totals_snapshot = None
+            await self._carts.reset_checkout(cart.id)
             return "Vaciamos tu carrito."
         return await self._mutate(caller, conversation_id, tool, _clear)
 
@@ -159,18 +162,26 @@ class ManageCartUseCase:
                 if conversation_id is not None:
                     await self._audit(conversation_id, tool, view["code"], texto)
                 await self._uow.commit()
-                view["texto"] = texto
+                view["texto"] = self._with_summary(texto, view)
                 return view
-            except StaleDataError:
+            except StaleCartError:
                 await self._uow.rollback()
                 if attempts >= 2:
                     raise CartError("CONFLICTO", "concurrent modification, retry")
+            except CartConflictError as exc:
+                await self._uow.rollback()
+                raise CartError("CONFLICTO", "cart was modified concurrently") from exc
             except CartError as exc:
                 await self._uow.rollback()
                 if exc.code == "VARIANTE_REQUERIDA":
+                    # The REST layer turns this into 409 problem+json; the
+                    # tool layer keeps the SELECTOR_VARIANTE block for the UI.
                     return {
                         "code": "OK",
                         "texto": exc.detail,
+                        "requiere_variante": True,
+                        "faltantes": list(exc.data.get("faltantes", [])),
+                        "product_id": exc.data.get("product_id"),
                         "bloques": [{
                             "id": uuid.uuid4().hex,
                             "tipo": "SELECTOR_VARIANTE",
@@ -180,7 +191,17 @@ class ManageCartUseCase:
                 raise
             except Exception as exc:
                 await self._uow.rollback()
+                logger.exception("cart mutation %s failed", tool)
                 raise self._map_module_error(exc) from exc
+
+    @staticmethod
+    def _with_summary(texto: str, view: dict) -> str:
+        bloques = view.get("bloques") or []
+        if not bloques or bloques[0].get("tipo") != "CARRITO":
+            return texto
+        datos = bloques[0].get("datos", {})
+        lineas = datos.get("lineas", [])
+        return f"{texto} Tu carrito: {len(lineas)} productos · S/ {datos.get('total', 0):.2f}"
 
     async def _add_line(self, cart, conversation_id, sku, producto_ref,
                         product_id, size, color, quantity) -> str:
@@ -218,20 +239,22 @@ class ManageCartUseCase:
         await self._check_can_sell(sku_value, current + quantity)
         price = await self._live_price(sku_value)
         if existing is None:
-            await self._items.guardar(CartItem(
+            await self._items.agregar(
                 cart_id=cart.id,
-                product_id=str(detail.get("product_id", "")),
+                product_id=str(detail.get("product_id") or ""),
                 sku=sku_value,
-                name=str(detail.get("name", sku_value)),
+                name=str(detail.get("name") or sku_value),
                 variant_description=self._variant_label(variant),
                 image_url=(detail.get("images") or [None])[0],
                 quantity=quantity,
                 unit_price_ref=float(price),
-            ))
+            )
         else:
-            existing.quantity = current + quantity
-            existing.unit_price_ref = float(price)
-        return f"Agregué {detail.get('name', sku_value)}.{self._variant_suffix(variant)}"
+            await self._items.set_quantity(
+                existing.id, quantity=current + quantity, unit_price_ref=float(price)
+            )
+        prefijo = f"Agregué {detail.get('name') or sku_value} (S/ {float(price):.2f})."
+        return f"{prefijo}{self._variant_suffix(variant)}"
 
     async def _set_quantity(self, cart, item_id, item_ref, name, quantity) -> str:
         row = await self._resolve_line(cart, item_id, item_ref, name)
@@ -241,8 +264,9 @@ class ManageCartUseCase:
         if not 1 <= quantity <= MAX_PER_LINE:
             raise CartError("LIMITE_CANTIDAD", "El máximo por producto es 10 unidades")
         await self._check_can_sell(row.sku, quantity)
-        row.quantity = quantity
-        row.unit_price_ref = float(await self._live_price(row.sku))
+        await self._items.set_quantity(
+            row.id, quantity=quantity, unit_price_ref=float(await self._live_price(row.sku))
+        )
         return f"Cambié {row.name} a {quantity}."
 
     async def _drop_line(self, cart, item_id, item_ref, name) -> str:
@@ -276,15 +300,17 @@ class ManageCartUseCase:
         totals = self._totals.calculate(
             priced, evaluation=evaluation, promotion_names=names
         )
-        cart.totals_snapshot = {
+        await self._carts.set_totals(cart.id, {
             "subtotal": str(totals.subtotal),
             "descuentos": [
                 {"name": d["name"], "amount": str(d["amount"])} for d in totals.discounts
             ],
             "total": str(totals.total),
-        }
-        if touch and conversation_id is not None:
-            await self._touch(conversation_id)
+        })
+        if touch:
+            await self._carts.touch(cart.id)
+            if conversation_id is not None:
+                await self._touch(conversation_id)
         lines_out = [
             {
                 "item_id": str(row.id),
@@ -333,22 +359,26 @@ class ManageCartUseCase:
     async def _open_cart(self, caller, conversation_id, *, create: bool):
         if caller is None:
             raise CartError("REQUIERE_SESION", "cart needs a customer or a conversation")
+        # A conversation id is only trusted after proving ownership, for any
+        # caller: an authenticated customer must not read or write someone
+        # else's conversation memory (ultimoCarrusel), audit rows or touch().
+        if conversation_id is not None:
+            owned = await self._conversations.find_owned(conversation_id, caller)
+            if owned is None:
+                raise CartError("RECURSO_NO_ENCONTRADO", "conversation not found")
         if caller.customer_id is not None:
             cart = await self._carts.obtener_abierto_por_cliente(caller.customer_id)
             if cart is None and create:
-                cart = await self._carts.guardar(Cart(customer_id=caller.customer_id))
+                cart = await self._carts.crear_para_cliente(caller.customer_id)
             return cart
         if conversation_id is None:
             raise CartError("RECURSO_NO_ENCONTRADO", "anonymous cart needs a conversation")
-        owned = await self._conversations.find_owned(conversation_id, caller)
-        if owned is None:
-            raise CartError("RECURSO_NO_ENCONTRADO", "conversation not found")
         cart = await self._carts.obtener_abierto_por_conversacion(conversation_id)
         if cart is not None and self._expired(cart):
             await self._carts.cambiar_estado(cart.id, "ABANDONED")
             cart = None
         if cart is None and create:
-            cart = await self._carts.guardar(Cart(conversation_id=conversation_id))
+            cart = await self._carts.crear_anonimo(conversation_id)
         return cart
 
     @staticmethod
@@ -383,7 +413,7 @@ class ManageCartUseCase:
     async def _resolve_sku(self, cart, conversation_id, sku, producto_ref,
                            product_id, size, color):
         if sku:
-            return await self._sku_context(sku, size, color)
+            return await self._sku_context(sku, size, color, product_id)
         memory = await self._memory(conversation_id)
         resolved_id = resolve_product_id(
             memory, producto_ref=producto_ref, product_id=product_id
@@ -401,12 +431,25 @@ class ManageCartUseCase:
             return None, detail, {"faltantes": list(match.missing)}
         return None, detail, None
 
-    async def _sku_context(self, sku, size, color):
-        return sku, {"name": sku, "images": []}, {"sku": sku, "talla": size, "color": color}
+    async def _sku_context(self, sku, size, color, product_id=None):
+        """Detail for an explicit SKU.
+
+        The card/detail flow sends `product_id` with the SKU, so the line
+        keeps the real name, image and product id. Productos exposes no
+        by-SKU detail endpoint (A16), so a bare `{sku}` falls back to the
+        SKU as the display name.
+        """
+        detail: dict[str, Any] | None = None
+        if product_id:
+            try:
+                detail = await self._catalog.get_product_detail(product_id)
+            except Exception as exc:
+                raise self._map_module_error(exc, inactive=True) from exc
+        return sku, (detail or {"name": sku, "images": [], "product_id": ""}), {
+            "sku": sku, "talla": size, "color": color,
+        }
 
     async def _memory(self, conversation_id) -> dict:
-        from src.application.catalog.product_lookup import read_memory
-
         row = await self._conversations.obtener_por_id(conversation_id)
         return read_memory(row) if row else {}
 
@@ -425,25 +468,23 @@ class ManageCartUseCase:
             raise CartError(quantity.code, f"sku {sku} lacks stock for {total}")
 
     async def _live_price(self, sku: str) -> Decimal:
+        # SPEC-11 Req. 3: the subtotal is the *regular* price x quantity;
+        # promotions add the discount through the single evaluation.
         try:
             row = await self._catalog.get_price(sku)
         except Exception as exc:
             raise self._map_module_error(exc, inactive=True) from exc
-        offer = row.get("precio_oferta")
-        return Decimal(str(offer if offer is not None else row.get("precio_regular", 0)))
+        return Decimal(str(row.get("precio_regular", 0)))
 
     async def _prices_map(self, skus: list[str]) -> dict[str, Decimal]:
         try:
             rows = await self._catalog.get_prices(skus)
         except Exception as exc:
             raise self._map_module_error(exc) from exc
-        out: dict[str, Decimal] = {}
-        for row in rows:
-            offer = row.get("precio_oferta")
-            out[str(row.get("sku"))] = Decimal(
-                str(offer if offer is not None else row.get("precio_regular", 0))
-            )
-        return out
+        return {
+            str(row.get("sku")): Decimal(str(row.get("precio_regular", 0)))
+            for row in rows
+        }
 
     async def _evaluate(self, cart, rows) -> tuple[dict | None, bool]:
         try:
@@ -476,7 +517,7 @@ class ManageCartUseCase:
         try:
             await self._conversations.touch(conversation_id)
         except Exception:
-            pass
+            logger.warning("could not touch conversation %s", conversation_id)
 
     @staticmethod
     def _variant_label(variant: dict | None) -> str | None:

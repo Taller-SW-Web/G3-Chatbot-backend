@@ -117,3 +117,24 @@ def test_cart_patch_and_remove_item():
     removed = client.delete(f"/api/v1/carrito/items/{item_id}")
     assert removed.status_code == 200
     assert client.get("/api/v1/carrito").json()["lineas"] == []
+
+
+def test_cart_rejects_unknown_conversation():
+    """An unowned/unknown conversation id is a 404, never a silent cart."""
+    client, _ = make_app()
+    response = client.get("/api/v1/carrito",
+                          params={"conversacionId": str(uuid.uuid4())})
+    assert response.status_code == 404
+    assert response.json()["code"] == "RECURSO_NO_ENCONTRADO"
+
+
+def test_add_without_variant_returns_409_problem():
+    """POST needs talla/color: problem+json with `faltantes`, not a fake cart."""
+    client, _ = make_app()
+    response = client.post("/api/v1/carrito/items",
+                           json={"product_id": "prod-001", "cantidad": 1})
+    assert response.status_code == 409
+    body = response.json()
+    assert body["code"] == "VARIANTE_REQUERIDA"
+    assert set(body["faltantes"]) == {"talla", "color"}
+    assert body["product_id"] == "prod-001"

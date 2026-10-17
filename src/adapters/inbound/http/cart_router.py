@@ -27,9 +27,13 @@ ERROR_STATUS = {
     "SKU_AGOTADO": 409,
     "CARRITO_DESACTUALIZADO": 409,
     "CONFLICTO": 409,
+    "VARIANTE_REQUERIDA": 409,
     "LIMITE_CANTIDAD": 422,
     "LINEA_AMBIGUA": 422,
     "VALIDACION": 400,
+    # Productos could not decide (`INDETERMINADO`): never treat it as stock,
+    # so the caller gets 503 and can retry instead of a wrong cart change.
+    "INDETERMINADO": 503,
     "SERVICIO_NO_DISPONIBLE": 503,
 }
 
@@ -107,6 +111,16 @@ def create_cart_router(cart_provider) -> APIRouter:
             )
         except CartError as exc:
             raise _problem(exc)
+        if result.get("requiere_variante"):
+            # The line needs talla/color: a problem+json, not a fake cart body.
+            raise ProblemError(
+                409, "VARIANTE_REQUERIDA", "Variant required",
+                result.get("texto") or None,
+                extra={
+                    "product_id": result.get("product_id"),
+                    "faltantes": result.get("faltantes", []),
+                },
+            )
         return {"mensaje": result["texto"], "carrito": result["bloques"][0]["datos"]}
 
     @router.patch("/items/{item_id}")

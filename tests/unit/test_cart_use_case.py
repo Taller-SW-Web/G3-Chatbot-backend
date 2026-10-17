@@ -2,16 +2,14 @@
 import uuid
 
 import pytest
-from sqlalchemy.orm.exc import StaleDataError
 
-from src.adapters.outbound.persistence.models.cart_item import CartItem
 from src.application.use_cases.manage_cart_use_case import (
     CartError,
     ManageCartUseCase,
 )
 from src.domain.value_objects.caller_identity import CallerIdentity
+from src.ports.outbound.cart_repository_port import StaleCartError
 from tests.fakes.fake_commerce import (
-    FakeCartRow,
     FakeCarts,
     FakeCatalogPort,
     FakeConversations,
@@ -124,12 +122,12 @@ async def test_update_to_zero_removes_line():
 async def test_ambiguous_name_reports_options():
     cart_uc, conversations = make_cart_use_case()
     owned(cart_uc, conversations)
-    cart = await cart_uc._carts.guardar(FakeCartRow(customer_id=CUSTOMER_ID))
+    cart = await cart_uc._carts.crear_para_cliente(CUSTOMER_ID)
     for name in ("Zapatillas Nike", "Zapatillas Adidas"):
-        await cart_uc._items.guardar(CartItem(
+        await cart_uc._items.agregar(
             cart_id=cart.id, product_id="prod-x", sku=f"SKU-{name}",
             name=name, quantity=1, unit_price_ref=10.0,
-        ))
+        )
     with pytest.raises(CartError) as error:
         await cart_uc.remove_item(
             make_caller(), CONVERSATION_ID, name="zapatillas")
@@ -139,7 +137,7 @@ async def test_ambiguous_name_reports_options():
 
 @pytest.mark.asyncio
 async def test_concurrent_modification_retries_once():
-    uow = FakeUow(fail_commits=1, fail_with=StaleDataError("stale"))
+    uow = FakeUow(fail_commits=1, fail_with=StaleCartError("stale"))
     cart_uc, conversations = make_cart_use_case(
         {"NIK-REV7-42-NEG": "DISPONIBLE"}, uow=uow)
     owned(cart_uc, conversations)
@@ -159,3 +157,46 @@ async def test_anonymous_cart_is_per_conversation():
     caller = make_caller(customer=False)
     await cart_uc.add(caller, first, sku="NIK-REV7-42-NEG", quantity=1)
     assert (await cart_uc.view(caller, second))["bloques"] == []
+
+
+@pytest.mark.asyncio
+async def test_customer_cannot_touch_a_foreign_conversation():
+    """A customer must not reach another user's conversation memory/audit."""
+    cart_uc, conversations = make_cart_use_case(
+        {"NIK-REV7-42-NEG": "DISPONIBLE"})
+    conversations.add_conversation(
+        CONVERSATION_ID, customer_id=uuid.uuid4(), context={})
+    with pytest.raises(CartError) as error:
+        await cart_uc.add(make_caller(), CONVERSATION_ID,
+                          sku="NIK-REV7-42-NEG", quantity=1)
+    assert error.value.code == "RECURSO_NO_ENCONTRADO"
+    assert cart_uc._messages.rows == []
+
+
+@pytest.mark.asyncio
+async def test_add_requires_variant_when_attributes_are_missing():
+    """POST without talla/color on a variant product asks for the selector."""
+    cart_uc, conversations = make_cart_use_case(
+        {"NIK-REV7-42-NEG": "DISPONIBLE"})
+    owned(cart_uc, conversations)
+    result = await cart_uc.add(
+        make_caller(), CONVERSATION_ID, product_id="prod-001", quantity=1)
+    assert result["requiere_variante"] is True
+    assert result["product_id"] == "prod-001"
+    assert set(result["faltantes"]) == {"talla", "color"}
+    assert result["bloques"][0]["tipo"] == "SELECTOR_VARIANTE"
+
+
+@pytest.mark.asyncio
+async def test_first_concurrent_add_maps_unique_clash_to_conflict():
+    """Two carts opened at once clash on the unique key -> CONFLICTO, not 503."""
+    from src.ports.outbound.cart_repository_port import CartConflictError
+
+    cart_uc, conversations = make_cart_use_case(
+        {"NIK-REV7-42-NEG": "DISPONIBLE"})
+    owned(cart_uc, conversations)
+    cart_uc._items = FakeItems(fail_flush_with=CartConflictError("dup"))
+    with pytest.raises(CartError) as error:
+        await cart_uc.add(make_caller(), CONVERSATION_ID,
+                          sku="NIK-REV7-42-NEG", quantity=1)
+    assert error.value.code == "CONFLICTO"

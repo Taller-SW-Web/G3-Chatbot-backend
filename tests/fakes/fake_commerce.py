@@ -1,10 +1,20 @@
 """In-memory fakes for unit tests: commercial ports live in src (ADR-0022)
-so deployed fake mode shares them; persistence fakes stay test-only."""
+so deployed fake mode shares them; persistence fakes stay test-only.
+
+`FakeCarts`/`FakeItems` implement the `CartRepository`/`CartItemRepository`
+contracts (the use case never builds rows) and can be told to fail like the
+driver would (`StaleCartError`, `CartConflictError`).
+"""
 import uuid
+from datetime import datetime, timezone
 
 from src.adapters.outbound.fakes.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
+)
+from src.ports.outbound.cart_repository_port import (
+    CartConflictError,
+    StaleCartError,
 )
 
 __all__ = [
@@ -17,7 +27,10 @@ __all__ = [
     "FakeMessages",
     "FakeUow",
     "FakeCartRow",
+    "StaleCartError",
+    "CartConflictError",
 ]
+
 
 class FakeRow:
     def __init__(self, **fields):
@@ -59,16 +72,26 @@ class FakeConversations:
 
 
 class FakeCarts:
-    def __init__(self):
+    def __init__(self, *, fail_flush_with=None):
         self.rows: dict[uuid.UUID, FakeRow] = {}
+        self._fail_flush_with = fail_flush_with
 
-    async def guardar(self, row):
-        row.id = getattr(row, "id", None) or uuid.uuid4()
-        row.version = 0
-        if getattr(row, "status", None) is None:
-            row.status = "ACTIVE"
+    def _check_flush(self):
+        if self._fail_flush_with is not None:
+            exc, self._fail_flush_with = self._fail_flush_with, None
+            raise exc
+
+    def _crear(self, *, customer_id=None, conversation_id=None) -> FakeCartRow:
+        row = FakeCartRow(customer_id=customer_id, conversation_id=conversation_id)
         self.rows[row.id] = row
+        self._check_flush()
         return row
+
+    async def crear_para_cliente(self, customer_id):
+        return self._crear(customer_id=customer_id)
+
+    async def crear_anonimo(self, conversation_id):
+        return self._crear(conversation_id=conversation_id)
 
     async def obtener_por_id(self, cart_id):
         return self.rows.get(cart_id)
@@ -94,15 +117,34 @@ class FakeCarts:
         row.status = status
         return row
 
+    async def set_totals(self, cart_id, snapshot):
+        row = self.rows.get(cart_id)
+        if row is not None:
+            row.totals_snapshot = snapshot
+        self._check_flush()
+
+    async def reset_checkout(self, cart_id):
+        row = self.rows.get(cart_id)
+        if row is not None:
+            row.coupon_code = None
+            row.shipping_snapshot = None
+            row.totals_snapshot = None
+
+    async def touch(self, cart_id):
+        row = self.rows.get(cart_id)
+        if row is not None:
+            row.updated_at = datetime.now(timezone.utc)
+
 
 class FakeItems:
-    def __init__(self):
+    def __init__(self, *, fail_flush_with=None):
         self.rows: dict[uuid.UUID, FakeRow] = {}
+        self._fail_flush_with = fail_flush_with
 
-    async def guardar(self, row):
-        row.id = getattr(row, "id", None) or uuid.uuid4()
-        self.rows[row.id] = row
-        return row
+    def _check_flush(self):
+        if self._fail_flush_with is not None:
+            exc, self._fail_flush_with = self._fail_flush_with, None
+            raise exc
 
     async def obtener_por_id(self, item_id):
         return self.rows.get(item_id)
@@ -115,6 +157,25 @@ class FakeItems:
 
     async def listar_por_cart(self, cart_id):
         return [row for row in self.rows.values() if row.cart_id == cart_id]
+
+    async def agregar(self, *, cart_id, product_id, sku, name,
+                      variant_description=None, image_url=None,
+                      quantity, unit_price_ref):
+        row = FakeRow(
+            cart_id=cart_id, product_id=product_id, sku=sku, name=name,
+            variant_description=variant_description, image_url=image_url,
+            quantity=quantity, unit_price_ref=unit_price_ref,
+        )
+        self.rows[row.id] = row
+        self._check_flush()
+        return row
+
+    async def set_quantity(self, item_id, *, quantity, unit_price_ref):
+        row = self.rows.get(item_id)
+        if row is not None:
+            row.quantity = quantity
+            row.unit_price_ref = unit_price_ref
+        self._check_flush()
 
     async def eliminar(self, item_id) -> bool:
         return self.rows.pop(item_id, None) is not None
