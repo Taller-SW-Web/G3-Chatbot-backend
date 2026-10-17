@@ -22,7 +22,10 @@ from src.adapters.outbound.persistence.local_phone_verification_postgres_adapter
 from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
+from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.catalog_tools import build_tool_registry
+from src.application.tools.tool_registry import ToolRegistry
+from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
@@ -97,13 +100,22 @@ def provide_llm_provider(settings: Settings | None = None) -> LLMProvider:
 
 
 def provide_tool_executor(session: AsyncSession) -> ToolExecutorPort:
-    """Registry with handlers bound to session-scoped commercial use cases."""
+    """Tool registry with handlers bound to this request's database session."""
+    return RegistryToolAdapter(provide_tool_registry(session))
+
+
+def provide_tool_registry(session: AsyncSession) -> ToolRegistry:
+    """Build the canonical registry for both LLM and direct-UI action paths."""
     catalog = provide_catalog_service(session)
     cart = provide_cart_service(session)
     handlers = {}
     handlers.update(build_catalog_handlers(catalog))
     handlers.update(build_cart_handlers(cart))
-    return RegistryToolAdapter(build_tool_registry(handlers))
+    return build_tool_registry(handlers)
+
+
+def provide_action_dispatcher(session: AsyncSession) -> ActionDispatcher:
+    return ActionDispatcher(provide_tool_registry(session))
 
 
 def provide_product_catalog(settings: Settings | None = None):
@@ -284,3 +296,17 @@ async def provide_turn_scope() -> AsyncIterator[InterpretAndRespondUseCase]:
     connection.get_engine()
     async with connection.AsyncSessionLocal() as session:
         yield build_interpret_and_respond(session)
+
+
+@asynccontextmanager
+async def provide_action_scope() -> AsyncIterator[DispatchDirectActionUseCase]:
+    """One database session for a direct UI action; no LLM or SSE is opened."""
+    connection.get_engine()
+    async with connection.AsyncSessionLocal() as session:
+        yield DispatchDirectActionUseCase(
+            conversations=ConversationPostgresAdapter(session),
+            messages=MessagePostgresAdapter(session),
+            uow=SqlAlchemyUnitOfWork(session),
+            dispatcher=provide_action_dispatcher(session),
+            sanitize_text=sanitize_sensitive_text,
+        )

@@ -20,12 +20,12 @@ class DegradedResponse:
 
 
 _MENU = (
-    QuickAction("Buscar por categoría", "BUSCAR_PRODUCTOS"),
-    QuickAction("Ofertas", "CONSULTAR_PROMOCIONES"),
+    QuickAction("Buscar por categoría", "BUSCAR_POR_CATEGORIA"),
+    QuickAction("Ofertas", "VER_OFERTAS"),
     QuickAction("Carrito", "VER_CARRITO"),
-    QuickAction("Mis pedidos", "LISTAR_PEDIDOS"),
-    QuickAction("Mis reclamos", "LISTAR_RECLAMOS"),
-    QuickAction("Mis devoluciones", "LISTAR_DEVOLUCIONES"),
+    QuickAction("Mis pedidos", "MIS_PEDIDOS"),
+    QuickAction("Mis reclamos", "MIS_RECLAMOS"),
+    QuickAction("Mis devoluciones", "MIS_DEVOLUCIONES"),
 )
 _CATEGORIES = frozenset({
     "zapatillas", "chimpunes", "tachos", "polos", "polo", "camisetas",

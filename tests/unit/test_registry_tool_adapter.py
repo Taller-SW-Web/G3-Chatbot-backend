@@ -10,6 +10,7 @@ from src.application.tools.catalog_tools import build_tool_registry
 from src.application.tools.tool_registry import (
     ExecutionContext, ToolDefinition, ToolRegistry, ToolResult as RegistryResult,
 )
+from src.infrastructure.config import container
 from src.infrastructure.config.container import provide_tool_executor
 from src.ports.outbound.tool_executor_port import ToolExecutionContext, ToolExecutorPort
 
@@ -48,6 +49,42 @@ def test_default_wiring_exposes_registration_plus_commercial_tools():
         "quitar_del_carrito",
         "vaciar_carrito",
     ]
+
+
+@pytest.mark.asyncio
+async def test_direct_action_dispatcher_uses_session_scoped_commercial_handlers(monkeypatch):
+    session = object()
+    catalog = object()
+    cart = object()
+    catalog_handler = AsyncMock(return_value=RegistryResult("OK"))
+    cart_handler = AsyncMock(return_value=RegistryResult("OK", {"texto": "Carrito"}))
+
+    def catalog_service(actual_session):
+        assert actual_session is session
+        return catalog
+
+    def cart_service(actual_session):
+        assert actual_session is session
+        return cart
+
+    monkeypatch.setattr(container, "provide_catalog_service", catalog_service)
+    monkeypatch.setattr(container, "provide_cart_service", cart_service)
+    monkeypatch.setattr(container, "build_catalog_handlers", lambda service: {
+        "buscar_productos": catalog_handler,
+    })
+    monkeypatch.setattr(container, "build_cart_handlers", lambda service: {
+        "ver_carrito": cart_handler,
+    })
+
+    dispatcher = container.provide_action_dispatcher(session)
+    result = await dispatcher.despachar(
+        {"tipo": "VER_CARRITO", "payload": {}},
+        ExecutionContext(str(CONVERSATION), str(CUSTOMER), None),
+    )
+
+    assert result.code == "OK"
+    cart_handler.assert_awaited_once()
+    catalog_handler.assert_not_awaited()
 
 
 @pytest.mark.asyncio

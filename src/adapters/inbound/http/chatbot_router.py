@@ -6,7 +6,7 @@ from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from src.adapters.inbound.http.dependencies.caller_identity import (
     CHAT_SID_COOKIE,
@@ -21,6 +21,8 @@ from src.adapters.inbound.http.schemas.conversation_schemas import (
     MessageOut,
 )
 from src.adapters.inbound.http.sse import TurnStreamingResponse
+from src.application.dto.incoming_message_dto import ToolAction
+from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.application.use_cases.interpret_and_respond_use_case import (
     InterpretAndRespondUseCase,
     InvalidMessageError,
@@ -36,14 +38,21 @@ CHAT_SID_MAX_AGE_SECONDS = 7 * 24 * 3600
 
 # Opens one database session and yields the use case bound to it; the session closes on exit.
 TurnScope = Callable[[], AbstractAsyncContextManager[InterpretAndRespondUseCase]]
+ActionScope = Callable[[], AbstractAsyncContextManager[DispatchDirectActionUseCase]]
 
 
 class SendMessageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     texto: str | None = None
-    accion: Any = None  # direct actions are not implemented yet
-    adjuntoIds: Any = None  # image attachments (SPEC-23) are not implemented yet
+    accion: ToolAction | None = None
+    adjuntoIds: Any = None
+
+    @model_validator(mode="after")
+    def _reject_action_with_text(self) -> "SendMessageIn":
+        if self.accion is not None and (self.texto is not None or self.adjuntoIds is not None):
+            raise ValueError("body cannot combine accion with texto or adjuntoIds")
+        return self
 
 
 def create_chatbot_router(
@@ -51,9 +60,10 @@ def create_chatbot_router(
     *,
     cookie_secure: bool,
     turn_scope: TurnScope | None = None,
+    action_scope: ActionScope | None = None,
 ) -> APIRouter:
     """`service_provider` is a FastAPI dependency; infrastructure wires it, tests replace it.
-    `turn_scope` opens the session of one assistant turn; without it the send endpoint is not registered."""
+    `turn_scope` opens a session for SSE turns; `action_scope` opens one for direct UI actions."""
     router = APIRouter(prefix="/chat/conversaciones", tags=["conversaciones"])
 
     @router.post("", status_code=201, response_model=ConversationCreatedOut)
@@ -116,10 +126,38 @@ def create_chatbot_router(
         ):
             """Phase 1 (validation, ownership, persisting the message) finishes before the response starts, so
             its errors are ordinary problem+json. The turn then streams as Server-Sent Events (see sse.py)."""
-            if body.accion is not None or body.adjuntoIds is not None:
+            if body.accion is not None:
+                if action_scope is None:
+                    raise ProblemError(
+                        501, "FUNCIONALIDAD_NO_DISPONIBLE", "Not implemented",
+                        "Direct actions are not available yet.",
+                    )
+                action_resources = AsyncExitStack()
+                try:
+                    action_use_case = await action_resources.enter_async_context(action_scope())
+                    result = await action_use_case.execute(
+                        caller,
+                        conversation_id,
+                        body.accion.model_dump(),
+                    )
+                except ConversationNotFoundError:
+                    await action_resources.aclose()
+                    raise not_found() from None
+                except BaseException:
+                    await action_resources.aclose()
+                    raise
+                await action_resources.aclose()
+                return {
+                    "code": result.code,
+                    "mensajeId": str(result.message.id),
+                    "texto": result.text,
+                    "bloques": list(result.blocks),
+                    "datos": result.data,
+                }
+            if body.adjuntoIds is not None:
                 raise ProblemError(
                     501, "FUNCIONALIDAD_NO_DISPONIBLE", "Not implemented",
-                    "Actions and attachments are not available yet; send only `texto`.",
+                    "Attachments are not available yet; send only `texto`.",
                 )
             resources = AsyncExitStack()
             try:
