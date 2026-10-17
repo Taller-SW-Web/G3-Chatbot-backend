@@ -17,7 +17,7 @@ import httpx
 
 from src.adapters.outbound.http_clients.products_client import ProductsBaseClient
 from src.ports.outbound.product_repository_port import (
-    MAX_COMERCIAL_SKUS,
+    MAX_COMMERCIAL_SKUS,
     normalize_sku_list,
 )
 
@@ -40,7 +40,7 @@ class InventoryClient(ProductsBaseClient):
         channel: str = "CHATBOT",
         correlation_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        clean = normalize_sku_list(skus, limit=MAX_COMERCIAL_SKUS)
+        clean = normalize_sku_list(skus, limit=MAX_COMMERCIAL_SKUS)
         response = await self._request(
             "GET",
             "/inventario/disponibilidad/comercial",

@@ -490,4 +490,4 @@ def test_sku_caps_are_defined_once():
         is product_repository_port.MAX_SKUS_PER_CALL
     )
     assert product_repository_port.MAX_SKUS_PER_CALL == 20
-    assert product_repository_port.MAX_COMERCIAL_SKUS == 100
+    assert product_repository_port.MAX_COMMERCIAL_SKUS == 100
