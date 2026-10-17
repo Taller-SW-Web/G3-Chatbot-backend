@@ -11,12 +11,14 @@ class ProblemResponse(JSONResponse):
 
 
 class ProblemError(Exception):
-    def __init__(self, status: int, code: str, title: str, detail: str | None = None, **extra):
+    def __init__(self, status: int, code: str, title: str, detail: str | None = None,
+                 extra: dict | None = None, **fields):
         self.status = status
         self.code = code
         self.title = title
         self.detail = detail
-        self.extra = extra
+        # Extra body fields: either an `extra` dict or keyword fields (both accepted).
+        self.extra = {**(extra or {}), **fields}
 
 
 def not_found(detail: str = "The resource does not exist or is not available to you.") -> ProblemError:

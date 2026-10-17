@@ -35,9 +35,19 @@ def test_definitions_map_the_catalog_to_llm_tool_definitions():
     assert definitions["ver_carrito"].parameters["additionalProperties"] is False
 
 
-def test_default_wiring_exposes_only_the_registration_tool():
-    executor: ToolExecutorPort = provide_tool_executor()
-    assert [d.name for d in executor.definitions()] == ["solicitar_registro"]
+def test_default_wiring_exposes_registration_plus_commercial_tools():
+    executor: ToolExecutorPort = provide_tool_executor(object())
+    assert [d.name for d in executor.definitions()] == [
+        "solicitar_registro",
+        "buscar_productos",
+        "ver_detalle_producto",
+        "consultar_disponibilidad",
+        "agregar_al_carrito",
+        "ver_carrito",
+        "cambiar_cantidad",
+        "quitar_del_carrito",
+        "vaciar_carrito",
+    ]
 
 
 @pytest.mark.asyncio

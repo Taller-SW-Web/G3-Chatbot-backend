@@ -13,6 +13,25 @@ class Conversation:
 
 
 @dataclass(frozen=True)
+class HighlightSegment:
+    """Piece of a search result; `match` marks the words that matched the query."""
+
+    text: str
+    match: bool
+
+
+@dataclass(frozen=True)
+class SearchHighlight:
+    """Search result highlighting (SPEC-05 Req. 1 · Buscar chats).
+
+    `snippet` is a fragment of the most recent matching customer/assistant message,
+    or None when only the title matched."""
+
+    title: tuple[HighlightSegment, ...]
+    snippet: tuple[HighlightSegment, ...] | None
+
+
+@dataclass(frozen=True)
 class ConversationSummary:
     """Sidebar row: a conversation that already has a title, plus its last-message preview."""
 
@@ -20,3 +39,4 @@ class ConversationSummary:
     title: str
     preview: str
     last_message_at: datetime
+    highlight: SearchHighlight | None = None  # only set by search

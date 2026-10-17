@@ -2,7 +2,12 @@
 
 
 class ModuleUnavailableError(Exception):
-    """Timeout/connection/transport error/5xx talking to a module. Mapped to 503 + module name."""
+    """Timeout/connection/transport error/5xx talking to a module.
+
+    Raised by the module clients and mapped by the application to
+    `SERVICIO_NO_DISPONIBLE` (503 + module name). Lives in the port layer so
+    use cases and handlers depend on the contract, never on an adapter.
+    """
 
     def __init__(self, module: str, detail: str = ""):
         self.module = module

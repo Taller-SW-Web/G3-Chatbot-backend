@@ -11,7 +11,10 @@ from pathlib import Path
 import httpx
 import respx
 
-FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "products"
+FIXTURES = (
+    Path(__file__).resolve().parent.parent.parent
+    / "src" / "adapters" / "outbound" / "fakes" / "seeds"
+)
 
 
 def load_fixture(name: str):
@@ -93,14 +96,29 @@ def mock_prices_bulk(base_url: str = "http://mock:4011"):
 
 
 def mock_availability(base_url: str = "http://mock:4011"):
-    return respx.get(f"{base_url}/inventario/disponibilidad").mock(
+    """Commercial projection (`status` per SKU, no quantities)."""
+    return respx.get(f"{base_url}/inventario/disponibilidad/comercial").mock(
         return_value=httpx.Response(200, json=load_fixture("availability.json"))
+    )
+
+
+def mock_availability_verify(base_url: str = "http://mock:4011"):
+    return respx.post(
+        f"{base_url}/inventario/disponibilidad/comercial/verificar"
+    ).mock(
+        return_value=httpx.Response(200, json=load_fixture("availability_verify.json"))
     )
 
 
 def mock_promotions_evaluate(base_url: str = "http://mock:4011"):
     return respx.post(f"{base_url}/promociones/evaluar").mock(
         return_value=httpx.Response(200, json=load_fixture("promotions_evaluate.json"))
+    )
+
+
+def mock_promotions_list(base_url: str = "http://mock:4011"):
+    return respx.get(f"{base_url}/promociones").mock(
+        return_value=httpx.Response(200, json=load_fixture("promotions.json"))
     )
 
 

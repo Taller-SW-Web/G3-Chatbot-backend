@@ -4,7 +4,7 @@ Frames are `event: <name>\\ndata: <json>\\n\\n`, UTF-8:
     aceptado {"mensajeId"}   customer message persisted
     token    {"texto"}       text fragment
     bloque   {"bloque"}      structured block ready
-    degradado {"motivo"}     the client discards the tokens received so far
+    degradado {"motivo"}     the client discards the tokens received so far; the fallback text follows as `token`
     fin      {"mensajeId"}   assistant message id; always last on a completed turn
     error    {"code"}        unexpected failure mid-stream; the stream ends right after
 """

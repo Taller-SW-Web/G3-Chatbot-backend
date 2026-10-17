@@ -232,6 +232,9 @@ class InterpretAndRespondUseCase:
                 reply, fallback_blocks = self._degraded_reply(degraded)
                 logger.warning("conversation %s turn degraded: %s", conversation.id, degraded)
                 yield DegradedEvent(degraded)
+                # The client drops the tokens it had before `degradado`; the fallback text is streamed after
+                # it so the live message matches the stored reply.
+                yield TokenEvent(reply)
                 for block in fallback_blocks:
                     yield BlockEvent(block)
                 # Blocks of tools that already ran were streamed, so they stay in the stored reply too.
