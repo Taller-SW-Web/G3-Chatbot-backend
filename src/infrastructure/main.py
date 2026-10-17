@@ -15,6 +15,7 @@ from src.infrastructure.config.container import (
     provide_catalog_service,
     provide_chatbot_service,
     provide_manage_session,
+    provide_rate_limiter,
     provide_turn_scope,
 )
 from src.infrastructure.config.settings import get_settings
@@ -43,6 +44,7 @@ def create_app(
             provide_manage_session,
             cookie_secure=settings.cookie_secure,
             allowed_origins=settings.allowed_origins,
+            rate_limiter=provide_rate_limiter(),
         ),
         prefix=API_PREFIX,
     )

@@ -8,6 +8,7 @@ so the cart flow can reuse it when linking the anonymous cart on login
 (SPEC-03 Req. 4).
 """
 import logging
+import time
 import uuid
 
 from src.ports.outbound.checkout_document_port import CheckoutDocumentPort
@@ -23,6 +24,19 @@ from src.ports.outbound.token_validator_port import (
 logger = logging.getLogger(__name__)
 
 MAX_QTY_PER_LINE = 10
+PASSWORD_POLICY_TTL_SECONDS = 10 * 60
+
+
+def mask_email(email: str) -> str:
+    """Masks the local part, keeping the first and last character (`m****a@correo.com`)."""
+    local, _, domain = email.strip().partition("@")
+    if not domain or not local:
+        return "***"
+    if len(local) <= 2:
+        masked = "*" * len(local)
+    else:
+        masked = local[0] + "*" * (len(local) - 2) + local[-1]
+    return f"{masked}@{domain}"
 
 
 def merge_cart_lines(anonymous_lines: list[dict], customer_lines: list[dict]) -> list[dict]:
@@ -69,11 +83,62 @@ class ManageSessionUseCase:
         *,
         phone_verifications: PhoneVerificationPort | None = None,
         checkouts: CheckoutDocumentPort | None = None,
+        clock=time.monotonic,
     ):
         self._security = security
         self._validator = validator
         self._phone_verifications = phone_verifications
         self._checkouts = checkouts
+        self._clock = clock
+        self._password_policy: dict | None = None
+        self._password_policy_at = 0.0
+
+    async def register(
+        self,
+        *,
+        email: str,
+        password: str,
+        phone: str,
+        first_name: str | None = None,
+        last_name: str | None = None,
+    ) -> dict:
+        """Creates the account in Seguridad and never opens a session (SPEC-01 Req. 3).
+
+        The password is forwarded only; it is never logged, stored or sent to
+        the LLM. The masked email is what the chat shows back.
+        """
+        answer = await self._security.register(
+            email,
+            password,
+            phone,
+            first_name=first_name,
+            last_name=last_name,
+        )
+        return {
+            "estado": str(answer.get("estado", "PENDIENTE_VERIFICACION")),
+            "correoEnmascarado": mask_email(email),
+        }
+
+    async def password_policy(self) -> dict:
+        """Password rules cached for 10 minutes (SPEC-01 Req. 2 / design)."""
+        now = self._clock()
+        if (
+            self._password_policy is not None
+            and now - self._password_policy_at < PASSWORD_POLICY_TTL_SECONDS
+        ):
+            return self._password_policy
+        policy = dict(await self._security.password_policy())
+        self._password_policy = policy
+        self._password_policy_at = now
+        return policy
+
+    async def verify_email(self, token: str) -> dict:
+        """Exchanges the single-use link; 410 codes come from Seguridad (SPEC-02 Req. 1)."""
+        return await self._security.verify_email(token)
+
+    async def resend_verification(self, email: str) -> dict:
+        """Neutral re-send: the answer never reveals whether the account exists (SPEC-02 Req. 2)."""
+        return await self._security.resend_verification(email)
 
     async def login(self, email: str, password: str, *, canal: str | None = None) -> dict:
         """Returns the Seguridad answer: opened tokens or `{mfaRequerido, challengeToken, canal}`.

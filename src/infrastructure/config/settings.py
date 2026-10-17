@@ -58,6 +58,8 @@ class Settings:
     # Seguridad client secret (ADR-0017/A3). No code default: SecurityClient
     # refuses to start without it (set SECURITY_CLIENT_SECRET, see .env.template).
     security_client_secret: str = ""
+    # OAuth client id this integration authenticates as for service tokens (A3).
+    security_client_id: str = "modulo-chatbot"
     # In-process module fakes for deployed environments without real
     # modules (ADR-0022). Environment wiring belongs to the deploy track.
     modules_mode: str = "http"
@@ -90,6 +92,7 @@ def get_settings() -> Settings:
         modules_mode=_modules_mode(),
         security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),
         security_client_secret=os.getenv("SECURITY_CLIENT_SECRET", "").strip(),
+        security_client_id=os.getenv("SECURITY_CLIENT_ID", "modulo-chatbot").strip() or "modulo-chatbot",
         products_base_url=os.getenv("PRODUCTS_BASE_URL", "http://localhost:4011").strip().rstrip("/"),
         sales_base_url=os.getenv("SALES_BASE_URL", "http://localhost:4012").strip().rstrip("/"),
         dispatch_base_url=os.getenv("DISPATCH_BASE_URL", "http://localhost:4013").strip().rstrip("/"),

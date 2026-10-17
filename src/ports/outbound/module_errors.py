@@ -31,11 +31,14 @@ class ModuleRequestError(Exception):
         detail: str = "",
         *,
         intentos_restantes: int | None = None,
+        errors: list[dict[str, str]] | None = None,
     ):
         self.module = module
         self.status = status
         self.code = code
         self.detail = detail
         self.intentos_restantes = intentos_restantes
+        # Sanitized `errores[{campo, mensaje}]` of a 400 VALIDACION, when present.
+        self.errors = errors or []
         message = f"{module} request failed: HTTP {status} {code}"
         super().__init__(f"{message}: {detail}" if detail else message)
