@@ -14,7 +14,6 @@ from typing import Any
 from src.application.catalog.product_lookup import (
     MEMORY_CAROUSEL_KEY,
     MEMORY_FILTERS_KEY,
-    read_memory,
     resolve_product_id,
 )
 from src.application.tools.tool_context import (
@@ -95,8 +94,8 @@ class ManageCatalogUseCase:
     # -- public orchestration -------------------------------------------------
 
     async def search(self, args, context) -> dict[str, Any]:
-        row = await self._owned_conversation(context)
-        memory = read_memory(row)
+        conversation_id = await self._owned_conversation(context)
+        memory = await self._read_memory(conversation_id)
         categories = await self._cached_list("categories", self._catalog.list_categories)
         brands = await self._cached_list("brands", self._catalog.list_brands)
         normalizer = self._normalizer or ProductNormalizer(
@@ -137,7 +136,7 @@ class ManageCatalogUseCase:
             "category_id": filters.category_id,
             "brand_id": filters.brand_id,
         }
-        await self._save_memory(row, memory)
+        await self._save_memory(conversation_id, memory)
         total = page.get("total", len(summaries))
         return {
             "code": "OK",
@@ -151,8 +150,8 @@ class ManageCatalogUseCase:
         }
 
     async def detail(self, args, context) -> dict[str, Any]:
-        row = await self._owned_conversation(context)
-        memory = read_memory(row)
+        conversation_id = await self._owned_conversation(context)
+        memory = await self._read_memory(conversation_id)
         product_id = resolve_product_id(
             memory, producto_ref=args.productoRef, product_id=args.product_id
         )
@@ -178,8 +177,8 @@ class ManageCatalogUseCase:
         }
 
     async def availability(self, args, context) -> dict[str, Any]:
-        row = await self._owned_conversation(context)
-        memory = read_memory(row)
+        conversation_id = await self._owned_conversation(context)
+        memory = await self._read_memory(conversation_id)
         product_id = resolve_product_id(
             memory, producto_ref=args.productoRef, product_id=args.product_id
         )
@@ -240,7 +239,7 @@ class ManageCatalogUseCase:
     # -- internals ------------------------------------------------------------
 
     async def _owned_conversation(self, context):
-        """Owned conversation row, or None for memory-less direct reads.
+        """Id of the owned conversation, or None for memory-less direct reads.
 
         REST calls without a chat context skip the carousel memory (ordinals
         stay unavailable) but can still search by explicit ids.
@@ -251,16 +250,20 @@ class ManageCatalogUseCase:
         caller = caller_from_context(context)
         if caller is None:
             raise CatalogError("RECURSO_NO_ENCONTRADO", "missing caller")
-        row = await self._conversations.find_owned(conversation_id, caller)
-        if row is None:
+        if await self._conversations.find_owned(conversation_id, caller) is None:
             raise CatalogError("RECURSO_NO_ENCONTRADO", "conversation not found")
-        return row
+        return conversation_id
 
-    async def _save_memory(self, row, memory: dict) -> None:
-        if row is None:
+    async def _read_memory(self, conversation_id) -> dict:
+        if conversation_id is None:
+            return {}
+        return await self._conversations.get_context(conversation_id)
+
+    async def _save_memory(self, conversation_id, memory: dict) -> None:
+        if conversation_id is None:
             return
         try:
-            row.context = dict(memory)
+            await self._conversations.save_context(conversation_id, memory)
             await self._uow.commit()
         except BaseException:
             await self._uow.rollback()

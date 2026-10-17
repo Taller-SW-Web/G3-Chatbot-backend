@@ -16,7 +16,6 @@ from decimal import Decimal
 from typing import Any
 
 from src.application.catalog.product_lookup import (
-    read_memory,
     resolve_product_id,
 )
 from src.domain.entities.message import MessageRole
@@ -450,8 +449,9 @@ class ManageCartUseCase:
         }
 
     async def _memory(self, conversation_id) -> dict:
-        row = await self._conversations.obtener_por_id(conversation_id)
-        return read_memory(row) if row else {}
+        if conversation_id is None:
+            return {}
+        return await self._conversations.get_context(conversation_id)
 
     async def _check_can_sell(self, sku: str, total: int) -> None:
         rows = await self._inventory.get_availability([sku])
