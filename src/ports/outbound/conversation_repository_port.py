@@ -34,6 +34,16 @@ class ConversationRepositoryPort(Protocol):
         """Set the title only while it is still empty. True when this call set it."""
         ...
 
+    async def get_context(self, conversation_id: uuid.UUID) -> dict:
+        """Working memory of the conversation (carousel, filters). Empty when unset or missing.
+
+        Callers prove ownership with `find_owned` first; this read is not owner-scoped."""
+        ...
+
+    async def save_context(self, conversation_id: uuid.UUID, context: dict) -> None:
+        """Replace the working memory. Does not commit; the use case commits through its unit of work."""
+        ...
+
     async def touch(self, conversation_id: uuid.UUID) -> None:
         """Move `last_message_at` to now (sidebar ordering)."""
         ...

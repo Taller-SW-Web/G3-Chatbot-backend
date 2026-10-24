@@ -1,6 +1,7 @@
 """Message writes and agent-loop persistence against PostgreSQL 18 (needs TEST_DATABASE_URL)."""
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
@@ -66,6 +67,27 @@ async def test_add_persists_customer_assistant_and_tool_rows(postgres_session):
         conversations, messages, SqlAlchemyUnitOfWork(postgres_session)
     ).get_history(ANA, cid)
     assert [m.role for m in history] == [MessageRole.CUSTOMER, MessageRole.ASSISTANT]
+
+
+async def test_blocks_with_decimal_prices_are_stored_like_the_sse_frame(postgres_session):
+    """Catalog blocks carry Decimal prices; JSONB stores them as strings, as `sse.frame` sends them."""
+    conversations, messages = ConversationPostgresAdapter(postgres_session), MessagePostgresAdapter(postgres_session)
+    cid = (await conversations.create(ANA)).id
+    block = {"blocks": [{
+        "tipo": "CARRUSEL_PRODUCTOS",
+        "datos": {"productos": [{"price": Decimal("279.90"), "price_text": "S/ 279.90"}]},
+    }]}
+
+    await messages.add(cid, MessageRole.ASSISTANT, "Encontré uno", blocks=block)
+    await postgres_session.flush()
+
+    from sqlalchemy import select
+
+    from src.adapters.outbound.persistence.models import Message
+    stored = (await postgres_session.execute(
+        select(Message.blocks).where(Message.conversation_id == cid)
+    )).scalar_one()
+    assert stored["blocks"][0]["datos"]["productos"][0]["price"] == "279.90"
 
 
 async def test_rows_added_in_one_transaction_keep_insertion_order(postgres_session):
