@@ -6,10 +6,10 @@ El test de integración contra Supabase (INSERT real + CHECKs + índices) queda 
 from sqlalchemy import CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 
-from src.adapters.outbound.persistence.models import Base, Conversation
 from src.adapters.outbound.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
+from src.adapters.outbound.persistence.models import Base, Conversation
 
 table = Base.metadata.tables["conversation"]
 

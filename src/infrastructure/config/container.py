@@ -5,31 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.adapters.inbound.http.dependencies.rate_limiter import InMemoryRateLimiter
 from src.adapters.outbound.auth.jwks_token_validator import JwksTokenValidator
 from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
-from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
-    CartItemPostgresAdapter,
-)
-from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
-from src.adapters.outbound.persistence.conversation_postgres_adapter import (
-    ConversationPostgresAdapter,
-)
-from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
-from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
-from src.adapters.outbound.persistence.local_phone_verification_postgres_adapter import (
-    LocalPhoneVerificationPostgresAdapter,
-)
-from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
-from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
-from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
-from src.application.tools.action_dispatcher import ActionDispatcher
-from src.application.tools.catalog_tools import build_tool_registry
-from src.application.tools.tool_registry import ToolRegistry
-from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
-from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
-from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
-from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
-from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.adapters.outbound.fakes.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
@@ -39,7 +17,6 @@ from src.adapters.outbound.fakes.fake_security import (
     FakeSecurityAdapter,
     FakeServiceTokenProvider,
 )
-from src.adapters.inbound.http.dependencies.rate_limiter import InMemoryRateLimiter
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
 from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
@@ -47,13 +24,36 @@ from src.adapters.outbound.http_clients.inventory_client import (
 )
 from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.http_clients.security_client import SecurityClient
+from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
+from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
+    CartItemPostgresAdapter,
+)
+from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
+from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
+from src.adapters.outbound.persistence.conversation_postgres_adapter import (
+    ConversationPostgresAdapter,
+)
+from src.adapters.outbound.persistence.local_phone_verification_postgres_adapter import (
+    LocalPhoneVerificationPostgresAdapter,
+)
+from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
+from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.cart_handlers import build_cart_handlers
 from src.application.tools.catalog_handlers import build_catalog_handlers
+from src.application.tools.catalog_tools import build_tool_registry
+from src.application.tools.tool_registry import ToolRegistry
+from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
+from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
 from src.application.use_cases.manage_catalog_use_case import (
     ManageCatalogUseCase,
     OptionCache,
 )
+from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
+from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
+from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session

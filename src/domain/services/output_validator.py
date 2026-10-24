@@ -5,7 +5,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 
-
 _INTEGER = r"(?:[0-9]{1,3}(?:[., ][0-9]{3})+|[0-9]+)"
 _NUMBER_BODY = rf"[-+]?{_INTEGER}(?:[.,][0-9]+)?(?!\d|[.,]\d)"
 _NUMBER = rf"(?<![\d.,]){_NUMBER_BODY}"

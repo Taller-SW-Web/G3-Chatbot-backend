@@ -11,9 +11,12 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.application.tools.tool_registry import (
-    ExecutionContext, ToolDefinition, ToolHandler, ToolRegistry, ToolResult,
+    ExecutionContext,
+    ToolDefinition,
+    ToolHandler,
+    ToolRegistry,
+    ToolResult,
 )
-
 
 Text = Annotated[str, Field(min_length=1, max_length=1000)]
 PositiveInt = Annotated[int, Field(strict=True, ge=1)]

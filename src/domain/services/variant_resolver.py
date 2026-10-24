@@ -3,7 +3,7 @@
 Maps spoken attributes ("42", "negra") to a product variant SKU, or
 reports what is missing / which close combinations exist. Pure.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)

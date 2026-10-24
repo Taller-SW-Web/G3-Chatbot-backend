@@ -1,0 +1,14 @@
+target-version = "py312"
+line-length = 120
+# Merged migrations are never edited, not even for style.
+extend-exclude = [".venv", "src/infrastructure/db/migrations/versions"]
+
+[lint]
+# Correctness (pyflakes), pycodestyle errors and warnings, and import order.
+select = ["E", "F", "W", "I"]
+# Line length is not enforced yet: wrapping the existing long lines would touch most files.
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# Models are imported in groups so Alembic autogenerate sees every table.
+"src/adapters/outbound/persistence/models/__init__.py" = ["E402", "I001"]
