@@ -8,6 +8,7 @@ driver would (`StaleCartError`, `CartConflictError`).
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from src.adapters.outbound.fakes.fake_products import (
@@ -42,6 +43,11 @@ class FakeRow:
             setattr(self, key, value)
 
 
+@dataclass(frozen=True)
+class FakeConversationEntity:
+    id: uuid.UUID
+
+
 class FakeConversations:
     def __init__(self):
         self.rows: dict[uuid.UUID, FakeRow] = {}
@@ -64,10 +70,15 @@ class FakeConversations:
             return None
         if caller.customer_id is None and row.anonymous_sid != caller.anonymous_sid:
             return None
-        return row
+        # Immutable like the production entity: it carries no `context` (memory goes through the port).
+        return FakeConversationEntity(id=row.id)
 
-    async def obtener_por_id(self, conversation_id):
-        return self.rows.get(conversation_id)
+    async def get_context(self, conversation_id) -> dict:
+        row = self.rows.get(conversation_id)
+        return dict(row.context) if row is not None else {}
+
+    async def save_context(self, conversation_id, context) -> None:
+        self.rows[conversation_id].context = dict(context)
 
     async def touch(self, conversation_id) -> None:
         self.touched.append(conversation_id)

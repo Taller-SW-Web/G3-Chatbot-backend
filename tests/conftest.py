@@ -6,9 +6,10 @@ import uuid
 import pytest
 import pytest_asyncio
 from sqlalchemy import Column, MetaData, Table, Text, text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.persistence.models import Attachment, Conversation, Evidence, Message
+from src.infrastructure.db.connection import create_engine
 
 
 @pytest.fixture
@@ -33,7 +34,7 @@ async def postgres_session(persistence_metadata):
     url = os.getenv("TEST_DATABASE_URL")
     if not url:
         pytest.skip("Falta TEST_DATABASE_URL: integración PostgreSQL 18 no ejecutada")
-    engine = create_async_engine(url)
+    engine = create_engine(url)
     schema = f"persistence_test_{uuid.uuid4().hex}"
     try:
         async with engine.connect() as connection:

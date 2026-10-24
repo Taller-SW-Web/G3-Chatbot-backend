@@ -210,6 +210,15 @@ class ConversationPostgresAdapter:
         row = res.scalar_one_or_none()
         return _to_entity(row) if row is not None else None
 
+    async def get_context(self, conversation_id: uuid.UUID) -> dict:
+        stmt = select(Conversation.context).where(Conversation.id == conversation_id)
+        context = (await self.session.execute(stmt)).scalar_one_or_none()
+        return dict(context) if isinstance(context, dict) else {}
+
+    async def save_context(self, conversation_id: uuid.UUID, context: dict) -> None:
+        stmt = update(Conversation).where(Conversation.id == conversation_id).values(context=dict(context))
+        await self.session.execute(stmt)
+
     async def assign_title_if_missing(self, conversation_id: uuid.UUID, title: str) -> bool:
         stmt = (
             update(Conversation)

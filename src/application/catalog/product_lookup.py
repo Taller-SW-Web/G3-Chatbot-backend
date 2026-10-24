@@ -4,17 +4,10 @@ Resolves carousel ordinals against the conversation working memory and
 variant attributes against a product detail. Used by the catalog and
 cart use cases so both resolve the same SKU for the same words.
 """
-from typing import Any
-
 from src.domain.services.variant_resolver import VariantResolver, VariantMatch
 
 MEMORY_CAROUSEL_KEY = "ultimoCarrusel"
 MEMORY_FILTERS_KEY = "filtrosVigentes"
-
-
-def read_memory(conversation_row: Any) -> dict:
-    context = getattr(conversation_row, "context", None)
-    return dict(context) if isinstance(context, dict) else {}
 
 
 def resolve_product_id(
