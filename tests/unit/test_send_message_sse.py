@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import ClientDisconnect
 
 from src.adapters.inbound.http.dependencies.caller_identity import hash_chat_sid
+from src.adapters.inbound.http.dependencies.jwt_validator import get_access_token_validator
 from src.application.dto.conversation_events import (
     BlockEvent,
     DegradedEvent,
@@ -22,6 +23,7 @@ from src.domain.entities.message import Message, MessageRole
 from src.domain.value_objects.caller_identity import CallerIdentity
 from src.infrastructure.main import create_app
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
+from src.ports.outbound.token_validator_port import InvalidTokenError
 
 NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 CID = uuid.uuid4()
@@ -79,8 +81,15 @@ class FakeTurnService:
             self.streams_closed += 1
 
 
+class RejectingValidator:
+    async def validate_customer(self, token):
+        raise InvalidTokenError("bad token")
+
+
 def make_client(service, *, cookie=SID, action_scope=None):
-    client = TestClient(create_app(turn_scope=service.scope, action_scope=action_scope))
+    app = create_app(turn_scope=service.scope, action_scope=action_scope)
+    app.dependency_overrides[get_access_token_validator] = RejectingValidator
+    client = TestClient(app)
     if cookie:
         client.cookies.set("chat_sid", cookie)
     return client
@@ -214,10 +223,10 @@ def test_someone_elses_cookie_and_missing_identity_are_404():
         assert res.status_code == 404 and res.json()["code"] == "RECURSO_NO_ENCONTRADO"
 
 
-def test_authorization_header_is_501_before_anything_runs():
+def test_invalid_bearer_is_401_before_anything_runs():
     service = FakeTurnService()
     res = make_client(service).post(URL, json={"texto": "hola"}, headers={"Authorization": "Bearer abc"})
-    assert res.status_code == 501 and res.json()["code"] == "AUTENTICACION_NO_DISPONIBLE"
+    assert res.status_code == 401 and res.json()["code"] == "TOKEN_INVALIDO"
     assert service.opened == 0
 
 

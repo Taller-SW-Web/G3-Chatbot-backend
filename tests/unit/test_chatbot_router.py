@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from src.adapters.inbound.http.chatbot_router import create_chatbot_router
 from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
+from src.adapters.inbound.http.dependencies.jwt_validator import get_access_token_validator
 from src.adapters.inbound.http.health_router import router as health_router
 from src.adapters.inbound.http.problem import register_problem_handlers
 from src.domain.entities.conversation import (
@@ -21,6 +22,7 @@ from src.domain.entities.message import Message, MessageRole
 from src.domain.value_objects.caller_identity import CallerIdentity
 from src.infrastructure.main import create_app
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
+from src.ports.outbound.token_validator_port import InvalidTokenError
 
 NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 CID = uuid.uuid4()
@@ -70,13 +72,26 @@ def service():
     return FakeService()
 
 
+class StubValidator:
+    """Accepts only `good-token`, whose subject is `SUBJECT`."""
+
+    async def validate_customer(self, token):
+        if token != "good-token":
+            raise InvalidTokenError("bad token")
+        return {"sub": str(SUBJECT)}
+
+
+SUBJECT = uuid.uuid4()
+
+
 def make_client(service, *, cookie_secure=True, identity=None):
-    """`identity=None` uses the real cookie-based dependency."""
+    """`identity=None` uses the real bearer/cookie dependency with a stub token validator."""
     app = FastAPI()
     register_problem_handlers(app)
     app.include_router(
         create_chatbot_router(lambda: service, cookie_secure=cookie_secure), prefix="/api/v1"
     )
+    app.dependency_overrides[get_access_token_validator] = StubValidator
     if identity is not None:
         app.dependency_overrides[get_caller_identity] = lambda: identity
     return TestClient(app)
@@ -169,14 +184,37 @@ def test_retomar_sin_cookie_es_404(service):
 
 
 @pytest.mark.parametrize("method,path", [("post", ""), ("get", ""), ("get", f"/{CID}/mensajes")])
-def test_authorization_header_responde_501_sin_confiar_en_el_token(service, method, path):
-    """Provisional: JWT validation is pending (see caller_identity); never trust an unverified token."""
+@pytest.mark.parametrize("header", ["Bearer bad-token", "Bearer ", "Basic abc", "good-token"])
+def test_bearer_invalido_responde_401_sin_ejecutar_el_caso_de_uso(service, method, path, header):
+    """SPEC-03 Req. 5: an invalid or malformed token is refused and never reaches the use case."""
     client = make_client(service)
-    res = getattr(client, method)(BASE + path, headers={"Authorization": "Bearer x.y.z"})
-    assert res.status_code == 501
+    client.cookies.set("chat_sid", "abc")
+    res = getattr(client, method)(BASE + path, headers={"Authorization": header})
+    assert res.status_code == 401
     assert res.headers["content-type"].startswith("application/problem+json")
-    assert res.json()["code"] == "AUTENTICACION_NO_DISPONIBLE"
+    assert res.json()["code"] == "TOKEN_INVALIDO"
     assert service.created_for is None and service.list_call is None
+
+
+def test_bearer_valido_crea_conversacion_para_el_cliente_autenticado(service):
+    """SPEC-05 Req. 1: the customer id comes from the token subject."""
+    res = make_client(service).post(BASE, headers={"Authorization": "Bearer good-token"})
+    assert res.status_code == 201
+    assert service.created_for == CallerIdentity(customer_id=SUBJECT)
+    assert "set-cookie" not in res.headers
+
+
+def test_bearer_valido_lista_conversaciones_del_cliente_autenticado(service):
+    res = make_client(service).get(BASE, headers={"Authorization": "Bearer good-token"})
+    assert res.status_code == 200 and len(res.json()) == 1
+    assert service.list_call == (CallerIdentity(customer_id=SUBJECT), 1)
+
+
+def test_bearer_gana_sobre_la_cookie_chat_sid(service):
+    client = make_client(service)
+    client.cookies.set("chat_sid", "abc")
+    client.post(BASE, headers={"Authorization": "Bearer good-token"})
+    assert service.created_for == CallerIdentity(customer_id=SUBJECT)
 
 
 def test_health_responde_ok_sin_base_de_datos():
