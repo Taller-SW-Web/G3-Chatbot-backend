@@ -5,7 +5,6 @@ from typing import Any
 
 from src.application.tools.tool_registry import ExecutionContext, ToolRegistry, ToolResult
 
-
 QUICK_ACTIONS = {
     "SOLICITAR_REGISTRO": "solicitar_registro",
     "BUSCAR_PRODUCTOS": "buscar_productos",

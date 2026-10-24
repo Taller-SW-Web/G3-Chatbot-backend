@@ -4,7 +4,6 @@ Thin: no business rules. Anonymous reads need no session; explicit ids
 work without a chat context (carousel ordinals stay unavailable then).
 """
 from typing import Any
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
@@ -106,7 +105,6 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         cantidad: int | None = Query(default=None, ge=1),
         service: ManageCatalogUseCase = Depends(catalog_provider),
     ) -> list[AvailabilityOut]:
-        from src.application.tools.tool_registry import ExecutionContext
 
         try:
             rows = await service.inventory.get_availability([sku.strip()])

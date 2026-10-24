@@ -8,7 +8,12 @@ from pydantic import BaseModel, ConfigDict
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
 from src.application.tools.catalog_tools import build_tool_registry
 from src.application.tools.tool_registry import (
-    ExecutionContext, ToolDefinition, ToolRegistry, ToolResult as RegistryResult,
+    ExecutionContext,
+    ToolDefinition,
+    ToolRegistry,
+)
+from src.application.tools.tool_registry import (
+    ToolResult as RegistryResult,
 )
 from src.infrastructure.config import container
 from src.infrastructure.config.container import provide_tool_executor

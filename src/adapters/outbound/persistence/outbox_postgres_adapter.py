@@ -5,8 +5,8 @@ No hace commit: la transaccion la controla el caso de uso (el INSERT del
 outbox comparte transaccion con el intento de pago / checkout). El worker
 de APScheduler usa listar_pendientes con SKIP LOCKED.
 """
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession

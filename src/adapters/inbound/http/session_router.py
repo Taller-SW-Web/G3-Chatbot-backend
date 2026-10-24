@@ -9,8 +9,8 @@ lives in LocalStorage there. Mutating session calls require the
 allowlist (ADR-0023). Public registration endpoints are rate limited per IP
 and per email (SPEC-01/02).
 """
-from collections.abc import Callable, Sequence
 import logging
+from collections.abc import Callable, Sequence
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request, Response

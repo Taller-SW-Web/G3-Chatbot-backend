@@ -6,7 +6,7 @@ breakdown); `shipping` stays None until checkout quotes it. Inactive
 lines never add to the total. `Decimal` throughout; rounding to two
 decimals happens only when presenting.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
 
 

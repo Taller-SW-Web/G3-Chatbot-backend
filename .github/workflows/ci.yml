@@ -7,8 +7,28 @@ on:
     branches: [development, main]
 
 jobs:
+  # Single job on purpose: `test` is the required status check of the protected branches.
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        # PostgreSQL 18 for native uuidv7(), as the integration tests require.
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chatbot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/chatbot_test
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/chatbot_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -16,8 +36,15 @@ jobs:
           python-version: '3.12'
           cache: pip
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt ruff==0.17.2
+      - name: Lint
+        run: ruff check .
       - name: Run unit tests
         run: python -m pytest tests/unit
-        env:
-          PYTHONPATH: .
+      - name: Check migrations (upgrade, downgrade, upgrade)
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+      - name: Run integration tests
+        run: python -m pytest tests/integration

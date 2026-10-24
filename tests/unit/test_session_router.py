@@ -1,5 +1,4 @@
 """Session HTTP edge of SPEC-03 with dependency overrides (no database, no network)."""
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
