@@ -24,10 +24,25 @@ def _number(name: str, default: str, cast, *, minimum: float):
     return value
 
 
+MODULE_MODES = ("fake", "http")
+MODULES = ("security", "products", "sales", "dispatch")
+
+
 def _modules_mode() -> str:
     value = os.getenv("MODULES_MODE", "http").strip().lower()
-    if value not in ("fake", "http"):
+    if value not in MODULE_MODES:
         raise ValueError(f"MODULES_MODE must be fake or http, got {value!r}")
+    return value
+
+
+def _module_mode_override(module: str) -> str | None:
+    """`<MODULE>_MODE` (e.g. SECURITY_MODE); unset or empty inherits MODULES_MODE."""
+    name = f"{module.upper()}_MODE"
+    value = os.getenv(name, "").strip().lower()
+    if not value:
+        return None
+    if value not in MODULE_MODES:
+        raise ValueError(f"{name} must be fake or http, got {value!r}")
     return value
 
 
@@ -64,11 +79,26 @@ class Settings:
     # In-process module fakes for deployed environments without real
     # modules (ADR-0022). Environment wiring belongs to the deploy track.
     modules_mode: str = "http"
+    # Per-module overrides of `modules_mode` (None inherits it), so integrations
+    # can be switched to the real module one at a time.
+    security_mode: str | None = None
+    products_mode: str | None = None
+    sales_mode: str | None = None
+    dispatch_mode: str | None = None
     # Per-module timeouts in seconds (DoD: exact timeouts per integration).
     security_timeout_seconds: float = 5.0
     products_timeout_seconds: float = 4.0
     sales_timeout_seconds: float = 5.0
     dispatch_timeout_seconds: float = 4.0
+
+    def module_mode(self, module: str) -> str:
+        """Effective `fake`/`http` mode of one module: its override or `modules_mode`."""
+        if module not in MODULES:
+            raise ValueError(f"unknown module {module!r} ({'/'.join(MODULES)})")
+        return getattr(self, f"{module}_mode") or self.modules_mode
+
+    def fake_modules(self) -> tuple[str, ...]:
+        return tuple(module for module in MODULES if self.module_mode(module) == "fake")
 
 
 def _origins(name: str, default: str) -> tuple[str, ...]:
@@ -91,6 +121,10 @@ def get_settings() -> Settings:
         llm_reasoning_effort=_choice("LLM_REASONING_EFFORT", "none", LLM_REASONING_EFFORTS),
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
         modules_mode=_modules_mode(),
+        security_mode=_module_mode_override("security"),
+        products_mode=_module_mode_override("products"),
+        sales_mode=_module_mode_override("sales"),
+        dispatch_mode=_module_mode_override("dispatch"),
         security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),
         security_expected_issuer=os.getenv("SECURITY_EXPECTED_ISSUER", "auth-service").strip() or "auth-service",
         security_client_secret=os.getenv("SECURITY_CLIENT_SECRET", "").strip(),

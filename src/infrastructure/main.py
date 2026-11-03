@@ -31,10 +31,12 @@ def create_app(
 ) -> FastAPI:
     """Scopes can be replaced by tests behind the text-stream and direct-action endpoints."""
     settings = get_settings()
-    if settings.modules_mode == "fake":
+    fake_modules = settings.fake_modules()
+    if fake_modules:
         logger.warning(
-            "MODULES_MODE=fake: using in-process module fakes; "
-            "do not deploy this configuration to production."
+            "In-process module fakes active for %s (MODULES_MODE / <MODULE>_MODE); "
+            "real integrations are not used for them.",
+            ", ".join(fake_modules),
         )
     app = FastAPI(title="G3 Chatbot backend")
     register_problem_handlers(app)

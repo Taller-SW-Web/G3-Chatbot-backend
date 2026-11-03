@@ -119,18 +119,18 @@ def provide_action_dispatcher(session: AsyncSession) -> ActionDispatcher:
 
 
 def provide_product_catalog(settings: Settings | None = None):
-    """Catalog port honoring `MODULES_MODE` (ADR-0022): in-process fakes
+    """Catalog port honoring the products mode (`PRODUCTS_MODE`, else `MODULES_MODE`, ADR-0022): in-process fakes
     for deployed environments without real modules, HTTP otherwise."""
     settings = settings or get_settings()
-    if settings.modules_mode == "fake":
+    if settings.module_mode("products") == "fake":
         return FakeCatalogPort()
     return provide_products_client(settings)
 
 
 def provide_product_inventory(settings: Settings | None = None):
-    """Inventory port honoring `MODULES_MODE` (ADR-0022)."""
+    """Inventory port honoring the products mode (`PRODUCTS_MODE`, else `MODULES_MODE`)."""
     settings = settings or get_settings()
-    if settings.modules_mode == "fake":
+    if settings.module_mode("products") == "fake":
         return FakeInventoryPort()
     return provide_inventory_client(settings)
 
@@ -238,17 +238,17 @@ def provide_security_client(
 
 
 def provide_security_port(settings: Settings | None = None):
-    """Seguridad port honoring `MODULES_MODE` (ADR-0022): in-process fake or HTTP client."""
+    """Seguridad port honoring the security mode (`SECURITY_MODE`, else `MODULES_MODE`, ADR-0022): in-process fake or HTTP client."""
     settings = settings or get_settings()
-    if settings.modules_mode == "fake":
+    if settings.module_mode("security") == "fake":
         return _FAKE_SECURITY
     return provide_security_client(settings)
 
 
 def provide_access_token_validator(settings: Settings | None = None):
-    """Local token validator honoring `MODULES_MODE`: fake claims or JWKS (SPEC-03 Req. 5)."""
+    """Local token validator honoring the security mode: fake claims or JWKS (SPEC-03 Req. 5)."""
     settings = settings or get_settings()
-    if settings.modules_mode == "fake":
+    if settings.module_mode("security") == "fake":
         return _FAKE_TOKEN_VALIDATOR
     return JwksTokenValidator(
         security_base_url=settings.security_base_url,
@@ -257,9 +257,9 @@ def provide_access_token_validator(settings: Settings | None = None):
 
 
 def provide_service_token_provider(settings: Settings | None = None):
-    """Service token provider for privileged calls (A3), fake or client_credentials."""
+    """Service token provider for privileged calls (A3), following the security mode."""
     settings = settings or get_settings()
-    if settings.modules_mode == "fake":
+    if settings.module_mode("security") == "fake":
         return _FAKE_SERVICE_TOKEN_PROVIDER
     return SecurityServiceTokenProvider(
         base_url=settings.security_base_url,
