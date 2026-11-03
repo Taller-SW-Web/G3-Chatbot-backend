@@ -44,7 +44,6 @@ from src.ports.outbound.llm_provider_port import (
     LLMProvider,
     LLMRole,
     LLMTimeoutError,
-    LLMUnavailableError,
     TextDelta,
     TextPart,
     ToolCall,

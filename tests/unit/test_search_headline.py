@@ -1,7 +1,11 @@
 """H3-15: parsing of ts_headline output into highlight segments (SPEC-05 Req. 1 · Buscar chats)."""
 from src.adapters.outbound.persistence.conversation_postgres_adapter import (
     HIGHLIGHT_START as S,
+)
+from src.adapters.outbound.persistence.conversation_postgres_adapter import (
     HIGHLIGHT_STOP as E,
+)
+from src.adapters.outbound.persistence.conversation_postgres_adapter import (
     parse_headline,
 )
 from src.domain.entities.conversation import HighlightSegment as Seg

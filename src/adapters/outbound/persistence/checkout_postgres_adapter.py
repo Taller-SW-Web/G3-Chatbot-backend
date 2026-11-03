@@ -5,8 +5,8 @@ No hace commit: la transaccion la controla el caso de uso. La creacion
 del checkout, el intento de pago y la tarea outbox comparten transaccion
 (patron transaccional, ADR-0011).
 """
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError

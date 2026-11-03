@@ -16,8 +16,8 @@ Open question: respx mocks live in
 `tests/helpers`; the default `http://localhost:4011` has no server behind,
 so deployed environments still need a mocks hosting decision (ADR-0017).
 """
-from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import quote
 

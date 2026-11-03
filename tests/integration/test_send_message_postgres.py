@@ -14,6 +14,7 @@ from src.adapters.outbound.persistence.conversation_postgres_adapter import (
 )
 from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
 from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from src.application.tools.action_dispatcher import QUICK_ACTIONS
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.domain.entities.message import MessageRole
 from src.domain.value_objects.caller_identity import CallerIdentity
@@ -83,16 +84,19 @@ async def test_a_degraded_turn_streams_the_spec_shaped_quick_actions(postgres_se
     conversations = ConversationPostgresAdapter(postgres_session)
     cid = (await conversations.create(VISITOR)).id
     llm = FakeLLMProvider([LLMUnavailableError("down")])
+    # The degraded menu only offers quick actions whose tool is registered, so register them all.
+    tools = FakeToolExecutor({name: ToolResult("OK", {}) for name in set(QUICK_ACTIONS.values())})
 
-    async with make_client(postgres_session, llm, FakeToolExecutor()) as client:
+    async with make_client(postgres_session, llm, tools) as client:
         res = await client.post(f"/api/v1/chat/conversaciones/{cid}/mensajes", json={"texto": "hola"})
 
     events = frames(res.text)
     assert [name for name, _ in events] == ["aceptado", "degradado", "token", "bloque", "fin"]
     assert events[2][1]["texto"]  # the fallback text reaches the live message
     block = events[3][1]["bloque"]
-    assert block["tipo"] == "ACCIONES_RAPIDAS" and len(block["acciones"]) == 6
-    assert set(block["acciones"][0]) == {"id", "etiqueta"}
+    assert block["tipo"] == "ACCIONES_RAPIDAS" and block["acciones"]
+    assert all(set(action) == {"id", "etiqueta"} for action in block["acciones"])
+    assert {action["id"] for action in block["acciones"]} <= set(QUICK_ACTIONS)
 
 
 async def test_a_conversation_of_another_visitor_is_a_404_and_nothing_is_stored(postgres_session):

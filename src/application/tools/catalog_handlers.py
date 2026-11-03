@@ -7,7 +7,6 @@ from the execution context, never from LLM arguments.
 """
 import uuid
 
-from src.ports.outbound.module_errors import ModuleUnavailableError
 from src.application.tools.tool_context import (
     caller_from_context,
     conversation_id_from_context,
@@ -15,6 +14,7 @@ from src.application.tools.tool_context import (
 from src.application.tools.tool_registry import ExecutionContext, ToolResult
 from src.application.use_cases.manage_catalog_use_case import CatalogError
 from src.domain.value_objects.caller_identity import CallerIdentity
+from src.ports.outbound.module_errors import ModuleUnavailableError
 
 
 def _caller(context: ExecutionContext) -> CallerIdentity | None:

@@ -5,10 +5,10 @@ El test de integración contra Supabase (INSERT real + UNIQUE + CHECK) queda par
 """
 import re
 
-from src.adapters.outbound.persistence.models import Base, LocalPhoneVerification
 from src.adapters.outbound.persistence.local_phone_verification_postgres_adapter import (
     LocalPhoneVerificationPostgresAdapter,
 )
+from src.adapters.outbound.persistence.models import Base, LocalPhoneVerification
 
 
 def test_modelo_registrado_en_base():

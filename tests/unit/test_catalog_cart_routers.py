@@ -4,7 +4,6 @@ Dependency overrides inject fake-backed use cases: no network, no database.
 """
 import uuid
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity

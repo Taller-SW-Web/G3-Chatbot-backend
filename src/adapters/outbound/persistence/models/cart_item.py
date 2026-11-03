@@ -12,7 +12,18 @@ Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `cart_item`).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, FetchedValue, ForeignKey, Index, Integer, Numeric, Text, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    FetchedValue,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 

@@ -4,7 +4,7 @@ Resolves carousel ordinals against the conversation working memory and
 variant attributes against a product detail. Used by the catalog and
 cart use cases so both resolve the same SKU for the same words.
 """
-from src.domain.services.variant_resolver import VariantResolver, VariantMatch
+from src.domain.services.variant_resolver import VariantMatch, VariantResolver
 
 MEMORY_CAROUSEL_KEY = "ultimoCarrusel"
 MEMORY_FILTERS_KEY = "filtrosVigentes"

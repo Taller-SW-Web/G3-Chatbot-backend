@@ -7,11 +7,13 @@ import pytest
 from pydantic import BaseModel
 
 from src.application.tools.action_dispatcher import ActionDispatcher
-from src.application.tools.catalog_tools import EmptyArguments, QuantityArguments, build_tool_registry
+from src.application.tools.catalog_tools import EmptyArguments, build_tool_registry
 from src.application.tools.tool_registry import (
-    ExecutionContext, ToolDefinition, ToolRegistry, ToolResult,
+    ExecutionContext,
+    ToolDefinition,
+    ToolRegistry,
+    ToolResult,
 )
-
 
 NAMES = (
     "buscar_productos", "ver_detalle_producto", "consultar_disponibilidad",

@@ -12,8 +12,8 @@ from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
 from src.adapters.outbound.persistence.cart_item_postgres_adapter import CartItemPostgresAdapter
+from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
 from src.adapters.outbound.persistence.models import Base, Cart, CartItem, Conversation
 
 cart_table = Base.metadata.tables["cart"]

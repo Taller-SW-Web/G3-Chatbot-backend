@@ -7,7 +7,6 @@ implements `InventoryPort`.
 """
 from typing import Any, Protocol
 
-
 MAX_SKUS_PER_CALL = 20
 
 # Commercial availability batches (Productos HTTP 0.5.0, SPEC-10): the

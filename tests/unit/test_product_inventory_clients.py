@@ -3,10 +3,11 @@
 Covers SPEC-06 (search), SPEC-09 (detail), SPEC-10 (availability) and the
 SPEC-11 pricing hooks. No network, no real module, no database.
 """
+from decimal import Decimal
+
 import httpx
 import pytest
 import respx
-from decimal import Decimal
 
 from src.adapters.outbound.http_clients.base_client import ModuleUnavailableError
 from src.adapters.outbound.http_clients.inventory_client import (

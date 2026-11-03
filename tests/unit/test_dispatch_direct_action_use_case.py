@@ -11,7 +11,6 @@ from src.domain.entities.message import Message, MessageRole
 from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
 
-
 NOW = datetime(2026, 10, 16, tzinfo=timezone.utc)
 
 

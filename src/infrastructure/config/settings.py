@@ -3,7 +3,6 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
-
 LLM_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
 
 

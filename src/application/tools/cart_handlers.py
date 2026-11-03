@@ -4,15 +4,14 @@ Same handlers serve the LLM path and direct UI actions (SPEC-05 Req. 8):
 the dispatcher calls them with validated arguments while the router
 validates the explicit UI confirmation for `vaciar_carrito` beforehand.
 """
-import uuid
 
-from src.ports.outbound.module_errors import ModuleUnavailableError
 from src.application.tools.tool_context import (
     caller_from_context,
     conversation_id_from_context,
 )
 from src.application.tools.tool_registry import ExecutionContext, ToolResult
 from src.application.use_cases.manage_cart_use_case import CartError
+from src.ports.outbound.module_errors import ModuleUnavailableError
 
 
 def build_cart_handlers(cart_use_case) -> dict:

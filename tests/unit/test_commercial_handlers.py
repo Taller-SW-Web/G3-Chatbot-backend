@@ -14,7 +14,6 @@ from src.application.tools.catalog_tools import build_tool_registry
 from src.application.tools.tool_registry import ExecutionContext
 from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
 from src.application.use_cases.manage_catalog_use_case import ManageCatalogUseCase
-from src.domain.value_objects.caller_identity import CallerIdentity
 from tests.fakes.fake_commerce import (
     FakeCarts,
     FakeCatalogPort,
