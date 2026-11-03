@@ -63,6 +63,14 @@ def mask_document(document: dict) -> dict:
     return {"tipo": document.get("tipo"), "numeroEnmascarado": masked}
 
 
+def _profile_document(profile: dict, checkout_document: dict | None) -> dict | None:
+    """Seguridad's `tipoDocumento`/`documentoEnmascarado` win; else the last checkout document."""
+    masked = profile.get("documentoEnmascarado")
+    if masked:
+        return {"tipo": profile.get("tipoDocumento"), "numeroEnmascarado": str(masked)}
+    return mask_document(checkout_document) if checkout_document else None
+
+
 class InvalidCredentialsError(Exception):
     """Wrong password, blocked account or wrong OTP. May carry the remaining OTP attempts."""
 
@@ -99,8 +107,8 @@ class ManageSessionUseCase:
         email: str,
         password: str,
         phone: str,
-        first_name: str | None = None,
-        last_name: str | None = None,
+        first_name: str,
+        last_name: str,
     ) -> dict:
         """Creates the account in Seguridad and never opens a session (SPEC-01 Req. 3).
 
@@ -216,7 +224,7 @@ class ManageSessionUseCase:
             verified = await self._phone_verifications.existe(uuid.UUID(str(customer_id)), phone)
         profile["celularVerificado"] = verified
         document = None
-        if self._checkouts is not None:
+        if "documentoEnmascarado" not in profile and self._checkouts is not None:
             document = await self._checkouts.latest_document(uuid.UUID(str(customer_id)))
-        profile["ultimoDocumento"] = mask_document(document) if document else None
+        profile["ultimoDocumento"] = _profile_document(profile, document)
         return profile

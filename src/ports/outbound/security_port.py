@@ -14,10 +14,12 @@ class SecurityPort(Protocol):
         password: str,
         phone: str,
         *,
-        first_name: str | None = None,
-        last_name: str | None = None,
+        first_name: str,
+        last_name: str,
     ) -> dict[str, Any]:
-        """Creates a `PENDIENTE_VERIFICACION` account (`canalOrigen=CHATBOT`)."""
+        """Creates a `PENDIENTE_VERIFICACION` account (`canalOrigen=CHATBOT`); answers `{id, estado}`.
+
+        `phone` must already be in the `+51XXXXXXXXX` form Seguridad requires."""
         ...
 
     async def password_policy(self) -> dict[str, Any]:

@@ -5,9 +5,9 @@ with `canalOrigen: "CHATBOT"`, email verification, login with optional MFA,
 refresh/logout/me, addresses and introspection.
 
 Mock strategy: Prism serves Seguridad's published `openapi.yaml` on `:4010`
-without the `/api/v1` prefix, examples picked with the `Prefer` header and
-a `client_secret` header (SECURITY_CLIENT_SECRET, mandatory: no code default) until real authentication replaces it. Only 2xx bodies are
-returned as data: 4xx answers raise `ModuleRequestError` with the contract
+without the `/api/v1` prefix, examples picked with the `Prefer` header. The
+client secret never travels here: only the service token provider sends it,
+to `POST /auth/token`. Only 2xx bodies are returned as data: 4xx answers raise `ModuleRequestError` with the contract
 `code`, and transport failures (timeout/connection/5xx) raise
 `ModuleUnavailableError` (503 + module). External `codigo` fields
 normalize to `code` on the way out.
@@ -25,6 +25,7 @@ from src.ports.outbound.module_errors import (
     ModuleRequestError,
     ModuleUnavailableError,
 )
+from src.ports.outbound.service_token_port import ServiceTokenProvider
 
 # Used when a 4xx body carries no `code`/`codigo` (or is not JSON at all).
 FALLBACK_ERROR_CODES = {
@@ -42,8 +43,21 @@ def _clip(value: Any, limit: int = MAX_DETAIL_CHARS) -> str:
     return str(value).strip()[:limit]
 
 
+def _scalar(value: Any) -> str | None:
+    """Text for a str/int/bool rule value; anything else is dropped."""
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, (str, int)) and str(value).strip():
+        return str(value)
+    return None
+
+
 def _field_errors(raw: Any) -> list[dict[str, str]]:
-    """Keep only well-formed `{campo, mensaje}` rows, bounded in count and length."""
+    """Keep only well-formed rows, bounded in count and length.
+
+    Two shapes exist: `{campo, mensaje}` (400 VALIDACION) and
+    `{regla, esperado}` (422 POLITICA_INCUMPLIDA).
+    """
     if not isinstance(raw, list):
         return []
     rows: list[dict[str, str]] = []
@@ -53,7 +67,35 @@ def _field_errors(raw: Any) -> list[dict[str, str]]:
         campo, mensaje = item.get("campo"), item.get("mensaje")
         if isinstance(campo, str) and isinstance(mensaje, str) and campo.strip() and mensaje.strip():
             rows.append({"campo": _clip(campo, 60), "mensaje": _clip(mensaje)})
+            continue
+        regla, esperado = item.get("regla"), _scalar(item.get("esperado"))
+        if isinstance(regla, str) and regla.strip() and esperado is not None:
+            rows.append({"regla": _clip(regla, 60), "esperado": _clip(esperado, 60)})
     return rows
+
+
+def normalize_password_policy(policy: dict[str, Any]) -> dict[str, Any]:
+    """Seguridad's policy plus the legacy aliases the channel already renders.
+
+    Real shape: `longitudMinima`, `requiereMayuscula`, `requiereMinuscula`,
+    `requiereDigito`, `requiereCaracterEspecial`, `rechazaComunes`,
+    `rechazaDatosPersonales`, `historial`, `caducidadDiasAdmin`. The aliases
+    (`minLength`, `requireUpper`, `requireLower`, `requireDigit`,
+    `requireSymbol`) are only added when missing, so the frontend can migrate
+    to the Spanish names at its own pace.
+    """
+    aliases = {
+        "minLength": "longitudMinima",
+        "requireUpper": "requiereMayuscula",
+        "requireLower": "requiereMinuscula",
+        "requireDigit": "requiereDigito",
+        "requireSymbol": "requiereCaracterEspecial",
+    }
+    result = dict(policy)
+    for alias, real in aliases.items():
+        if real in policy and alias not in policy:
+            result[alias] = policy[real]
+    return result
 
 
 def parse_security_body(module: str, status_code: int, body: Any) -> Any:
@@ -123,19 +165,10 @@ class SecurityClient(SecurityBaseClient):
         base_url: str,
         timeout_seconds: float = 5.0,
         client: httpx.AsyncClient | None = None,
-        client_secret: str = "",
+        service_token_provider: ServiceTokenProvider | None = None,
     ):
-        if not client_secret.strip():
-            raise ValueError(
-                "SECURITY_CLIENT_SECRET is required: set it in the environment "
-                "(see .env.template); there is no code default."
-            )
         super().__init__(base_url=base_url, timeout_seconds=timeout_seconds, client=client)
-        self.client_secret = client_secret
-
-    def _mock_headers(self) -> dict[str, str]:
-        """Prism mock header: the client secret (ADR-0017)."""
-        return {"client_secret": self.client_secret}
+        self._service_tokens = service_token_provider
 
     async def register(
         self,
@@ -143,27 +176,27 @@ class SecurityClient(SecurityBaseClient):
         password: str,
         phone: str,
         *,
-        first_name: str | None = None,
-        last_name: str | None = None,
+        first_name: str,
+        last_name: str,
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "email": email,
-            "password": password,
-            "phone": phone,
-            "canalOrigen": "CHATBOT",
-        }
-        # Names are optional in the Seguridad contract: only forward them when the
-        # form collected them, so existing callers keep the exact same payload.
-        if first_name:
-            payload["nombres"] = first_name
-        if last_name:
-            payload["apellidos"] = last_name
+        """Seguridad requires names, phone and terms; the chatbot form collects them all.
+
+        Answers `{id, estado}` (201). `aceptaTerminos` is always true here: the
+        BFF rejects the request before this call when the terms were refused.
+        """
         response = await self._request(
             "POST",
             "/auth/registro",
-            json=payload,
-            headers=self._mock_headers(),
+            json={
+                "correo": email,
+                "contrasena": password,
+                "nombres": first_name,
+                "apellidos": last_name,
+                "celular": phone,
+                "aceptaTerminos": True,
+                "canalOrigen": "CHATBOT",
+            },
             correlation_id=correlation_id,
         )
         return await self._parse_response(response)
@@ -172,17 +205,16 @@ class SecurityClient(SecurityBaseClient):
         response = await self._request(
             "GET",
             "/password/politica",
-            headers=self._mock_headers(),
             correlation_id=correlation_id,
         )
-        return await self._parse_response(response)
+        body = await self._parse_response(response)
+        return normalize_password_policy(body) if isinstance(body, dict) else body
 
     async def verify_email(self, token: str, *, correlation_id: str | None = None) -> dict[str, Any]:
         response = await self._request(
             "POST",
             "/auth/verificar-correo",
             json={"token": token},
-            headers=self._mock_headers(),
             correlation_id=correlation_id,
         )
         return await self._parse_response(response)
@@ -191,8 +223,7 @@ class SecurityClient(SecurityBaseClient):
         response = await self._request(
             "POST",
             "/auth/verificar-correo/reenviar",
-            json={"email": email},
-            headers=self._mock_headers(),
+            json={"correo": email},
             correlation_id=correlation_id,
         )
         return await self._parse_response(response)
@@ -206,8 +237,7 @@ class SecurityClient(SecurityBaseClient):
         response = await self._request(
             "POST",
             "/auth/login",
-            json={"email": email, "password": password},
-            headers=self._mock_headers(),
+            json={"correo": email, "contrasena": password},
             correlation_id=correlation_id,
         )
         try:
@@ -229,7 +259,6 @@ class SecurityClient(SecurityBaseClient):
             "POST",
             "/auth/otp/solicitar",
             json=payload,
-            headers=self._mock_headers(),
             correlation_id=correlation_id,
         )
         return await self._parse_response(response)
@@ -240,8 +269,7 @@ class SecurityClient(SecurityBaseClient):
         response = await self._request(
             "POST",
             "/auth/otp/verificar",
-            json={"challengeToken": challenge_token, "code": code},
-            headers=self._mock_headers(),
+            json={"challengeToken": challenge_token, "codigo": code},
             correlation_id=correlation_id,
         )
         return await self._parse_response(response)
@@ -251,7 +279,6 @@ class SecurityClient(SecurityBaseClient):
             "POST",
             "/auth/refresh",
             json={"refreshToken": refresh_token},
-            headers=self._mock_headers(),
             correlation_id=correlation_id,
         )
         return await self._parse_response(response)
@@ -261,7 +288,6 @@ class SecurityClient(SecurityBaseClient):
             "POST",
             "/auth/logout",
             json={"refreshToken": refresh_token},
-            headers=self._mock_headers(),
             correlation_id=correlation_id,
         )
         return await self._parse_response(response)
@@ -272,7 +298,7 @@ class SecurityClient(SecurityBaseClient):
         response = await self._request(
             "GET",
             "/auth/me",
-            headers={"Authorization": f"Bearer {holder_token}", **self._mock_headers()},
+            headers={"Authorization": f"Bearer {holder_token}"},
             correlation_id=correlation_id,
         )
         return await self._parse_response(response)
@@ -283,10 +309,13 @@ class SecurityClient(SecurityBaseClient):
         response = await self._request(
             "GET",
             f"/usuarios/{quote(user_id, safe='')}/direcciones",
-            headers={"Authorization": f"Bearer {holder_token}", **self._mock_headers()},
+            headers={"Authorization": f"Bearer {holder_token}"},
             correlation_id=correlation_id,
         )
         body = await self._parse_response(response)
+        if isinstance(body, dict) and isinstance(body.get("direcciones"), list):
+            return body["direcciones"]
+        # Early mock shapes, tolerated: a bare list or `{items: [...]}`.
         if isinstance(body, list):
             return body
         if isinstance(body, dict) and isinstance(body.get("items"), list):
@@ -297,12 +326,16 @@ class SecurityClient(SecurityBaseClient):
         )
 
     async def introspect(self, access_token: str, *, correlation_id: str | None = None) -> dict[str, Any]:
-        """Pre-payment introspection (SPEC-14 RNF, A3): mocked until the real module is available."""
+        """Pre-payment introspection (SPEC-14 RNF, A3): authenticates as the
+        `modulo-chatbot` integration (service token, scope `tokens:introspeccion`)."""
+        if self._service_tokens is None:
+            raise RuntimeError("introspect requires a service token provider")
+        service_token = await self._service_tokens.get_token(correlation_id=correlation_id)
         response = await self._request(
             "POST",
             "/auth/introspeccion",
             json={"token": access_token},
-            headers=self._mock_headers(),
+            headers={"Authorization": f"Bearer {service_token}"},
             correlation_id=correlation_id,
         )
         return await self._parse_response(response)
