@@ -29,7 +29,12 @@ from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
     CartItemPostgresAdapter,
 )
 from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
+from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
 from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
+from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
+    PaymentAttemptPostgresAdapter,
+)
+from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.adapters.outbound.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
@@ -253,6 +258,23 @@ def provide_service_token_provider(settings: Settings | None = None):
 def provide_rate_limiter() -> InMemoryRateLimiter:
     """Process-wide limiter for the public registration endpoints (SPEC-01/02)."""
     return _RATE_LIMITER
+
+
+def provide_payment_gateway() -> PaymentSimulatorAdapter:
+    return PaymentSimulatorAdapter()
+
+
+def provide_checkout_service(
+    session: AsyncSession = Depends(get_session),
+) -> ManageCheckoutUseCase:
+    settings = get_settings()
+    return ManageCheckoutUseCase(
+        checkouts=CheckoutPostgresAdapter(session),
+        payment_attempts=PaymentAttemptPostgresAdapter(session),
+        payment_gateway=provide_payment_gateway(),
+        uow=SqlAlchemyUnitOfWork(session),
+        security_client=provide_security_port(settings),
+    )
 
 
 def provide_manage_session(session: AsyncSession = Depends(get_session)) -> ManageSessionUseCase:
