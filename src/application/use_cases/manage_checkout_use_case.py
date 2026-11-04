@@ -1,8 +1,8 @@
 """Checkout and payment use cases (SPEC-12, SPEC-14)."""
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
-import uuid
 
 from src.adapters.outbound.pagos.payment_simulator_adapter import CardValidationError
 from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter

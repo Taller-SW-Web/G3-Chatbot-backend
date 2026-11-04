@@ -1,5 +1,6 @@
 """Dependencies for checkout endpoints (H4-S6, SPEC-14)."""
 from fastapi import Depends
+
 from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
 from src.adapters.inbound.http.problem import ProblemError
 from src.domain.value_objects.caller_identity import CallerIdentity

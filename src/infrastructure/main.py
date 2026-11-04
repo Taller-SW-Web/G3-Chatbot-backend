@@ -4,18 +4,18 @@ import logging
 from fastapi import FastAPI
 
 from src.adapters.inbound.http.cart_router import create_cart_router
-from src.adapters.inbound.http.checkout_router import create_checkout_router
 from src.adapters.inbound.http.catalog_router import create_catalog_router
 from src.adapters.inbound.http.chatbot_router import ActionScope, TurnScope, create_chatbot_router
+from src.adapters.inbound.http.checkout_router import create_checkout_router
 from src.adapters.inbound.http.health_router import router as health_router
 from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.inbound.http.session_router import create_session_router
 from src.infrastructure.config.container import (
     provide_action_scope,
     provide_cart_service,
-    provide_checkout_service,
     provide_catalog_service,
     provide_chatbot_service,
+    provide_checkout_service,
     provide_manage_session,
     provide_rate_limiter,
     provide_turn_scope,

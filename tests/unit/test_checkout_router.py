@@ -1,11 +1,11 @@
 """Unit tests for checkout HTTP router (SPEC-14, contratos-integracion §2.5)."""
+import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
-import uuid
 
-from fastapi import FastAPI
 import httpx
 import pytest
+from fastapi import FastAPI
 
 from src.adapters.inbound.http.checkout_router import create_checkout_router
 from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity

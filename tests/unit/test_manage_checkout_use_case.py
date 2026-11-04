@@ -1,13 +1,12 @@
 """Unit tests for checkout and payment processing use case (SPEC-14)."""
+import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
-import uuid
 
 import pytest
 
 from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
 from src.adapters.outbound.persistence.models.checkout import Checkout
-from src.adapters.outbound.persistence.models.payment_attempt import PaymentAttempt
 from src.application.use_cases.manage_checkout_use_case import (
     CheckoutError,
     CreateCheckoutInput,
@@ -15,7 +14,7 @@ from src.application.use_cases.manage_checkout_use_case import (
     ProcessPaymentInput,
 )
 from src.domain.entities.checkout import CheckoutStatus
-from src.domain.entities.payment_attempt import PaymentRejectReason, PaymentResult
+from src.domain.entities.payment_attempt import PaymentResult
 
 
 @pytest.fixture

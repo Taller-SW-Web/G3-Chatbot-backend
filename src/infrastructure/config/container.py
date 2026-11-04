@@ -25,16 +25,12 @@ from src.adapters.outbound.http_clients.inventory_client import (
 from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.http_clients.security_client import SecurityClient
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
+from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
 from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
     CartItemPostgresAdapter,
 )
 from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
-from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
 from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
-from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
-    PaymentAttemptPostgresAdapter,
-)
-from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.adapters.outbound.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
@@ -42,6 +38,9 @@ from src.adapters.outbound.persistence.local_phone_verification_postgres_adapter
     LocalPhoneVerificationPostgresAdapter,
 )
 from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
+    PaymentAttemptPostgresAdapter,
+)
 from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
 from src.application.tools.action_dispatcher import ActionDispatcher
@@ -56,6 +55,7 @@ from src.application.use_cases.manage_catalog_use_case import (
     ManageCatalogUseCase,
     OptionCache,
 )
+from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
