@@ -45,8 +45,9 @@ def mock_register_policy_violation(base_url: str = "http://mock:4010"):
                 "code": "POLITICA_INCUMPLIDA",
                 "title": "Politica incumplida",
                 "errores": [
-                    {"regla": "longitudMinima", "esperado": 8},
-                    {"regla": "requiereMayuscula", "esperado": True},
+                    # Real G7 shape: `esperado` only on LONGITUD_MINIMA.
+                    {"regla": "LONGITUD_MINIMA", "esperado": 10},
+                    {"regla": "MAYUSCULA"},
                 ],
             },
         )
