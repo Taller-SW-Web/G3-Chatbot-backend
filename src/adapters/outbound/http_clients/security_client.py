@@ -56,7 +56,9 @@ def _field_errors(raw: Any) -> list[dict[str, str]]:
     """Keep only well-formed rows, bounded in count and length.
 
     Two shapes exist: `{campo, mensaje}` (400 VALIDACION) and
-    `{regla, esperado}` (422 POLITICA_INCUMPLIDA).
+    `{regla}` or `{regla, esperado}` (422 POLITICA_INCUMPLIDA; `regla` is one of
+    LONGITUD_MINIMA, MAYUSCULA, MINUSCULA, DIGITO, CARACTER_ESPECIAL,
+    CONTRASENA_COMUN, DATOS_PERSONALES, YA_UTILIZADA).
     """
     if not isinstance(raw, list):
         return []
@@ -68,9 +70,14 @@ def _field_errors(raw: Any) -> list[dict[str, str]]:
         if isinstance(campo, str) and isinstance(mensaje, str) and campo.strip() and mensaje.strip():
             rows.append({"campo": _clip(campo, 60), "mensaje": _clip(mensaje)})
             continue
+        # G7 publishes `esperado` only for LONGITUD_MINIMA; every other rule
+        # (MAYUSCULA, DIGITO, ...) arrives as `{regla}` alone and must be kept.
         regla, esperado = item.get("regla"), _scalar(item.get("esperado"))
-        if isinstance(regla, str) and regla.strip() and esperado is not None:
-            rows.append({"regla": _clip(regla, 60), "esperado": _clip(esperado, 60)})
+        if isinstance(regla, str) and regla.strip():
+            row = {"regla": _clip(regla, 60)}
+            if esperado is not None:
+                row["esperado"] = _clip(esperado, 60)
+            rows.append(row)
     return rows
 
 

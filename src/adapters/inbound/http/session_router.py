@@ -53,10 +53,18 @@ def _normalize_origin(value: str) -> str:
 
 DEFAULT_POLICY_MESSAGE = "La contraseña no cumple la política de seguridad"
 
-# Seguridad's register field names -> the BFF request names. Seguridad's
-# payload is email/password/phone/nombres/apellidos (security_client.register);
-# unknown names pass through unchanged.
-SECURITY_FIELD_TO_BFF = {"nombres": "firstName", "apellidos": "lastName"}
+# G7's 400 VALIDACION `errores[].campo` names (its register payload fields) ->
+# the BFF request names the frontend already maps to form inputs. Normalizing
+# here keeps the BFF the only place that knows G7's Spanish field names.
+# Unknown names (e.g. `canalOrigen`) pass through unchanged.
+SECURITY_FIELD_TO_BFF = {
+    "correo": "email",
+    "contrasena": "password",
+    "celular": "phone",
+    "nombres": "firstName",
+    "apellidos": "lastName",
+    "aceptaTerminos": "acceptTerms",
+}
 
 
 def _scrub(text: str, password: str) -> str:
@@ -419,9 +427,11 @@ def create_session_router(
                 rules = [
                     {
                         "campo": "password",
-                        "mensaje": _scrub(f"{row['regla']}: {row['esperado']}", body.password),
-                        "regla": row["regla"],
-                        "esperado": row["esperado"],
+                        "mensaje": _scrub(
+                            f"{row['regla']}: {row['esperado']}" if "esperado" in row else row["regla"],
+                            body.password,
+                        ),
+                        **row,
                     }
                     for row in exc.errors
                     if "regla" in row

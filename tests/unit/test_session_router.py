@@ -1,4 +1,5 @@
 """Session HTTP edge of SPEC-03 with dependency overrides (no database, no network)."""
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -428,6 +429,27 @@ def test_register_validation_error_maps_security_fields_to_bff_names():
     assert body["errores"][2]["mensaje"] == "*** no sirve"
 
 
+@pytest.mark.parametrize(
+    ("g7_field", "bff_field"),
+    [
+        ("correo", "email"),
+        ("contrasena", "password"),
+        ("celular", "phone"),
+        ("nombres", "firstName"),
+        ("apellidos", "lastName"),
+        ("aceptaTerminos", "acceptTerms"),
+        ("canalOrigen", "canalOrigen"),
+    ],
+)
+def test_register_validation_maps_every_g7_field_name(g7_field, bff_field):
+    """G7 400 VALIDACION field names reach the client as BFF names (unknown ones pass through)."""
+    sessions = FakeSessions({"register": ModuleRequestError(
+        "security", 400, "VALIDACION", errors=[{"campo": g7_field, "mensaje": "Es obligatorio."}])})
+    res = make_client(sessions).post(BASE + "/registro", json=REGISTRO, headers=CSRF)
+    assert res.status_code == 400
+    assert res.json()["errores"] == [{"campo": bff_field, "mensaje": "Es obligatorio."}]
+
+
 def test_register_policy_error_goes_to_the_password_field():
     """SPEC-01 Req. 4 - 422 POLITICA_INCUMPLIDA carries the detail on `password`."""
     sessions = FakeSessions({"register": ModuleRequestError(
@@ -443,8 +465,9 @@ def test_register_policy_error_goes_to_the_password_field():
 def test_register_policy_error_lists_the_violated_rules():
     """G7 - 422 POLITICA_INCUMPLIDA errores[{regla, esperado}] reach the client per rule."""
     rules = [
-        {"regla": "longitudMinima", "esperado": "8"},
-        {"regla": "requiereMayuscula", "esperado": "true"},
+        {"regla": "LONGITUD_MINIMA", "esperado": "10"},
+        {"regla": "MAYUSCULA"},
+        {"regla": "CARACTER_ESPECIAL"},
     ]
     sessions = FakeSessions({"register": ModuleRequestError(
         "security", 422, "POLITICA_INCUMPLIDA", errors=rules)})
@@ -452,10 +475,12 @@ def test_register_policy_error_lists_the_violated_rules():
     assert res.status_code == 422
     body = res.json()
     assert body["code"] == "POLITICA_INCUMPLIDA"
-    assert [(e["regla"], e["esperado"]) for e in body["errores"]] == [
-        ("longitudMinima", "8"),
-        ("requiereMayuscula", "true"),
+    assert [(e["regla"], e.get("esperado")) for e in body["errores"]] == [
+        ("LONGITUD_MINIMA", "10"),
+        ("MAYUSCULA", None),
+        ("CARACTER_ESPECIAL", None),
     ]
+    assert body["errores"][1]["mensaje"] == "MAYUSCULA"
     assert all(e["campo"] == "password" for e in body["errores"])
 
 

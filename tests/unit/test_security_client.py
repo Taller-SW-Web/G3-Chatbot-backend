@@ -389,6 +389,20 @@ async def test_register_policy_violation_keeps_rule_rows():
         await make_client().register("a@b.pe", "weak", "+51987654321", **NAMES)
     assert (exc.value.status, exc.value.code) == (422, "POLITICA_INCUMPLIDA")
     assert exc.value.errors == [
-        {"regla": "longitudMinima", "esperado": "8"},
-        {"regla": "requiereMayuscula", "esperado": "true"},
+        {"regla": "LONGITUD_MINIMA", "esperado": "10"},
+        {"regla": "MAYUSCULA"},
     ]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_register_policy_violation_keeps_rows_without_esperado():
+    """G7 omits `esperado` on every rule except LONGITUD_MINIMA."""
+    rules = ["MINUSCULA", "DIGITO", "CONTRASENA_COMUN", "DATOS_PERSONALES", "YA_UTILIZADA"]
+    respx.post(f"{BASE_URL}/auth/registro").respond(
+        422,
+        json={"code": "POLITICA_INCUMPLIDA", "errores": [{"regla": r} for r in rules]},
+    )
+    with pytest.raises(ModuleRequestError) as exc:
+        await make_client().register("a@b.pe", "weak", "+51987654321", **NAMES)
+    assert exc.value.errors == [{"regla": r} for r in rules]
