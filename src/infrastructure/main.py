@@ -18,7 +18,7 @@ from src.infrastructure.config.container import (
     provide_rate_limiter,
     provide_turn_scope,
 )
-from src.infrastructure.config.settings import get_settings
+from src.infrastructure.config.settings import MODULES_WITH_ADAPTERS, get_settings
 
 API_PREFIX = "/api/v1"
 
@@ -31,11 +31,23 @@ def create_app(
 ) -> FastAPI:
     """Scopes can be replaced by tests behind the text-stream and direct-action endpoints."""
     settings = get_settings()
-    if settings.modules_mode == "fake":
+    fake_modules = tuple(m for m in settings.fake_modules() if m in MODULES_WITH_ADAPTERS)
+    if fake_modules:
         logger.warning(
-            "MODULES_MODE=fake: using in-process module fakes; "
-            "do not deploy this configuration to production."
+            "In-process module fakes active for %s (MODULES_MODE / <MODULE>_MODE); "
+            "real integrations are not used for them.",
+            ", ".join(fake_modules),
         )
+    if "security" in fake_modules:
+        logger.warning(
+            "Fake Seguridad accepts any credentials (APP_ENV=%s, ALLOW_FAKE_SECURITY=%s).",
+            settings.app_env,
+            settings.allow_fake_security,
+        )
+    logger.warning(
+        "No HTTP adapter exists yet for sales and dispatch (SALES_MODE / DISPATCH_MODE "
+        "have no effect); the real modules are not called."
+    )
     app = FastAPI(title="G3 Chatbot backend")
     register_problem_handlers(app)
     app.include_router(health_router)
