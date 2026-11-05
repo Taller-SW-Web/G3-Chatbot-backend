@@ -42,9 +42,9 @@ def extract_roles(claims: dict) -> list:
     return list(roles or [])
 
 
-def check_claims(claims: dict) -> dict:
+def check_claims(claims: dict, expected_issuer: str = EXPECTED_ISSUER) -> dict:
     """Enforces issuer, token type and `CLIENTE` role on an already verified payload."""
-    if claims.get("iss") != EXPECTED_ISSUER:
+    if claims.get("iss") != expected_issuer:
         raise InvalidTokenError("Unexpected token issuer.")
     if claims.get("tipo") != EXPECTED_TOKEN_TYPE:
         raise InvalidTokenError("Unexpected token type.")
@@ -55,7 +55,7 @@ def check_claims(claims: dict) -> dict:
     return claims
 
 
-def decode_with_jwks(token: str, jwks_keys: dict) -> dict:
+def decode_with_jwks(token: str, jwks_keys: dict, expected_issuer: str = EXPECTED_ISSUER) -> dict:
     """Verifies signature and expiry, then enforces issuer/type/role."""
     try:
         header = jwt.get_unverified_header(token)
@@ -70,14 +70,14 @@ def decode_with_jwks(token: str, jwks_keys: dict) -> dict:
             token,
             public_key,
             algorithms=["RS256"],
-            issuer=EXPECTED_ISSUER,
+            issuer=expected_issuer,
             options={"require": ["exp", "iss", "sub"]},
         )
     except jwt.ExpiredSignatureError:
         raise InvalidTokenError("Token expired.") from None
     except jwt.PyJWTError:
         raise InvalidTokenError("Signature validation failed.") from None
-    return check_claims(claims)
+    return check_claims(claims, expected_issuer)
 
 
 class JwksTokenValidator(AccessTokenValidatorPort):
@@ -85,11 +85,13 @@ class JwksTokenValidator(AccessTokenValidatorPort):
         self,
         security_base_url: str,
         *,
+        expected_issuer: str = EXPECTED_ISSUER,
         clock: Callable[[], float] = time.monotonic,
         ttl_seconds: float = JWKS_TTL_SECONDS,
         min_force_refresh_seconds: float = MIN_FORCE_REFRESH_SECONDS,
     ):
         self._base_url = security_base_url.rstrip("/")
+        self._expected_issuer = expected_issuer
         self._clock = clock
         self._ttl_seconds = ttl_seconds
         self._min_force_refresh_seconds = min_force_refresh_seconds
@@ -100,7 +102,7 @@ class JwksTokenValidator(AccessTokenValidatorPort):
     async def validate_customer(self, token: str) -> dict[str, Any]:
         keys = await self._fetch_jwks()
         try:
-            return decode_with_jwks(token, keys)
+            return decode_with_jwks(token, keys, self._expected_issuer)
         except UnknownKeyIdError:
             return await self._retry_on_unknown_kid(token)
 
@@ -112,7 +114,7 @@ class JwksTokenValidator(AccessTokenValidatorPort):
         self._last_forced_at = now
         keys = await self._fetch_jwks(force_refresh=True)
         try:
-            return decode_with_jwks(token, keys)
+            return decode_with_jwks(token, keys, self._expected_issuer)
         except UnknownKeyIdError:
             raise InvalidTokenError("Unknown key id.") from None
 

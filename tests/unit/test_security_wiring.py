@@ -34,6 +34,29 @@ def test_http_mode_returns_typed_security_adapters():
     assert isinstance(provide_service_token_provider(settings), SecurityServiceTokenProvider)
 
 
+def test_http_mode_builds_the_security_client_without_a_client_secret():
+    # Customer endpoints do not need the secret; only introspection does.
+    settings = Settings(modules_mode="http", security_client_secret="")
+    security = provide_security_port(settings)
+    assert isinstance(security, SecurityClient)
+    assert security._service_tokens is None
+
+
 def test_rate_limiter_is_a_process_singleton():
     assert provide_rate_limiter() is provide_rate_limiter()
     assert isinstance(provide_rate_limiter(), InMemoryRateLimiter)
+
+
+def test_expected_issuer_setting_reaches_the_token_validator(monkeypatch):
+    from src.infrastructure.config.settings import get_settings
+
+    monkeypatch.setenv("SECURITY_EXPECTED_ISSUER", "https://issuer.example/api/v1/auth")
+    get_settings.cache_clear()
+    try:
+        settings = get_settings()
+    finally:
+        get_settings.cache_clear()
+    assert settings.security_expected_issuer == "https://issuer.example/api/v1/auth"
+    validator = provide_access_token_validator(Settings(modules_mode="http", security_expected_issuer=settings.security_expected_issuer))
+    assert validator._expected_issuer == "https://issuer.example/api/v1/auth"
+    assert Settings().security_expected_issuer == "auth-service"

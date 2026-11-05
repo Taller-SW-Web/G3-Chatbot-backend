@@ -54,7 +54,7 @@ class FakeSecurity:
     async def me(self, holder):
         return self.script.get("me", {"id": "cust-001"})
 
-    async def register(self, email, password, phone, *, first_name=None, last_name=None):
+    async def register(self, email, password, phone, *, first_name, last_name):
         self.calls.append(("register", email, phone, first_name, last_name))
         result = self.script.get("register", {"estado": "PENDIENTE_VERIFICACION"})
         if isinstance(result, Exception):
@@ -191,6 +191,20 @@ async def test_profile_adds_verified_phone_and_masked_document():
     assert profile["ultimoDocumento"] == {"tipo": "DNI", "numeroEnmascarado": "****5678"}
 
 
+@pytest.mark.asyncio
+async def test_profile_prefers_the_document_fields_exposed_by_seguridad():
+    class FakeCheckouts:
+        async def latest_document(self, customer_id):
+            raise AssertionError("checkout document must not be read when Seguridad exposes it")
+
+    security = FakeSecurity(
+        {"me": {"id": "cust-001", "tipoDocumento": "DNI", "documentoEnmascarado": "****5678"}}
+    )
+    sessions = make_sessions(security, checkouts=FakeCheckouts())
+    profile = await sessions.profile("holder", CUSTOMER_ID)
+    assert profile["ultimoDocumento"] == {"tipo": "DNI", "numeroEnmascarado": "****5678"}
+
+
 def test_mask_document_keeps_only_the_last_four_digits():
     assert mask_document({"tipo": "DNI", "numero": "12345678"})["numeroEnmascarado"] == "****5678"
 
@@ -236,7 +250,8 @@ async def test_register_never_writes_the_password_to_the_logs(caplog):
     sessions = make_sessions(FakeSecurity())
     with caplog.at_level(logging.DEBUG):
         await sessions.register(
-            email="a@b.pe", password="NuncaEnLogs1", phone="+51987654321"
+            email="a@b.pe", password="NuncaEnLogs1", phone="+51987654321",
+            first_name="Ana", last_name="Díaz",
         )
     assert "NuncaEnLogs1" not in caplog.text
 

@@ -212,12 +212,28 @@ def provide_security_client(
     settings: Settings | None = None, client_secret: str | None = None
 ) -> SecurityClient:
     """Typed Seguridad client (SPEC-01..03): base URL + 5 s timeout
-    from Settings. The secret must come from SECURITY_CLIENT_SECRET (A3)."""
+    from Settings. The secret (SECURITY_CLIENT_SECRET, A3) only feeds the service
+    token provider used by introspection; no other request carries it.
+
+    Customer endpoints (registration, login, MFA, session, profile) are public or
+    use the holder token, so a missing secret only disables introspection
+    instead of breaking the whole client."""
     settings = settings or get_settings()
+    secret = (client_secret or settings.security_client_secret).strip()
+    service_token_provider = (
+        SecurityServiceTokenProvider(
+            base_url=settings.security_base_url,
+            client_id=settings.security_client_id,
+            client_secret=secret,
+            timeout_seconds=settings.security_timeout_seconds,
+        )
+        if secret
+        else None
+    )
     return SecurityClient(
         base_url=settings.security_base_url,
         timeout_seconds=settings.security_timeout_seconds,
-        client_secret=client_secret or settings.security_client_secret,
+        service_token_provider=service_token_provider,
     )
 
 
@@ -234,7 +250,10 @@ def provide_access_token_validator(settings: Settings | None = None):
     settings = settings or get_settings()
     if settings.modules_mode == "fake":
         return _FAKE_TOKEN_VALIDATOR
-    return JwksTokenValidator(security_base_url=settings.security_base_url)
+    return JwksTokenValidator(
+        security_base_url=settings.security_base_url,
+        expected_issuer=settings.security_expected_issuer,
+    )
 
 
 def provide_service_token_provider(settings: Settings | None = None):

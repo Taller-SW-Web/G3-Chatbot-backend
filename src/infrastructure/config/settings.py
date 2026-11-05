@@ -51,6 +51,8 @@ class Settings:
     assistant_name: str = "Botleta"
     # Module base URLs (ADR-0017): mock or real, switched by config without code changes.
     security_base_url: str = "http://localhost:4010"
+    # `iss` claim the Seguridad access tokens must carry (real service: its full /auth URL).
+    security_expected_issuer: str = "auth-service"
     products_base_url: str = "http://localhost:4011"
     sales_base_url: str = "http://localhost:4012"
     dispatch_base_url: str = "http://localhost:4013"
@@ -90,6 +92,7 @@ def get_settings() -> Settings:
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
         modules_mode=_modules_mode(),
         security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),
+        security_expected_issuer=os.getenv("SECURITY_EXPECTED_ISSUER", "auth-service").strip() or "auth-service",
         security_client_secret=os.getenv("SECURITY_CLIENT_SECRET", "").strip(),
         security_client_id=os.getenv("SECURITY_CLIENT_ID", "modulo-chatbot").strip() or "modulo-chatbot",
         products_base_url=os.getenv("PRODUCTS_BASE_URL", "http://localhost:4011").strip().rstrip("/"),
