@@ -55,3 +55,51 @@ def test_invalid_env_override_fails_loudly(monkeypatch, clean_settings):
     monkeypatch.setenv("SALES_MODE", "mock")
     with pytest.raises(ValueError, match="SALES_MODE must be fake or http"):
         get_settings()
+
+
+def test_fake_security_is_refused_in_production_without_opt_in():
+    with pytest.raises(ValueError, match="ALLOW_FAKE_SECURITY"):
+        Settings(modules_mode="fake", app_env="production")
+    with pytest.raises(ValueError, match="fake Seguridad"):
+        Settings(modules_mode="http", security_mode="fake", app_env="prod")
+
+
+def test_fake_security_in_production_needs_the_explicit_opt_in():
+    settings = Settings(modules_mode="fake", app_env="production", allow_fake_security=True)
+    assert settings.module_mode("security") == "fake"
+
+
+def test_production_with_real_security_and_other_fakes_starts():
+    settings = Settings(modules_mode="fake", security_mode="http", app_env="production")
+    assert settings.module_mode("security") == "http"
+
+
+def test_fake_security_is_allowed_outside_production():
+    assert Settings(modules_mode="fake").app_env == "development"
+    assert Settings(modules_mode="fake", app_env="staging").module_mode("security") == "fake"
+
+
+def test_env_reads_app_env_and_opt_in(monkeypatch, clean_settings):
+    monkeypatch.setenv("MODULES_MODE", "fake")
+    monkeypatch.setenv("APP_ENV", " Production ")
+    with pytest.raises(ValueError, match="ALLOW_FAKE_SECURITY"):
+        get_settings()
+    get_settings.cache_clear()
+    monkeypatch.setenv("ALLOW_FAKE_SECURITY", "true")
+    assert get_settings().allow_fake_security is True
+
+
+def test_unset_app_env_keeps_the_current_railway_config_booting(monkeypatch, clean_settings):
+    monkeypatch.setenv("MODULES_MODE", "fake")
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ALLOW_FAKE_SECURITY", raising=False)
+    assert get_settings().module_mode("security") == "fake"
+
+
+def test_startup_warns_that_sales_and_dispatch_have_no_http_adapter(monkeypatch, clean_settings, caplog):
+    from src.infrastructure.main import create_app
+
+    monkeypatch.setenv("MODULES_MODE", "http")
+    with caplog.at_level("WARNING"):
+        create_app()
+    assert "No HTTP adapter exists yet for sales and dispatch" in caplog.text

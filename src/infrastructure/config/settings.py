@@ -26,6 +26,19 @@ def _number(name: str, default: str, cast, *, minimum: float):
 
 MODULE_MODES = ("fake", "http")
 MODULES = ("security", "products", "sales", "dispatch")
+# Modules with an in-process fake or an HTTP adapter wired in the container.
+# Sales and Dispatch have neither yet, so their mode changes nothing today.
+MODULES_WITH_ADAPTERS = ("security", "products")
+PRODUCTION_ENVIRONMENTS = ("production", "prod")
+
+
+def _app_env() -> str:
+    """Explicit deployment indicator (`APP_ENV`); unset means local development."""
+    return os.getenv("APP_ENV", "development").strip().lower() or "development"
+
+
+def _flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
 
 
 def _modules_mode() -> str:
@@ -85,11 +98,27 @@ class Settings:
     products_mode: str | None = None
     sales_mode: str | None = None
     dispatch_mode: str | None = None
+    # Deployment indicator (`APP_ENV`). In production the fake Seguridad is
+    # refused unless `ALLOW_FAKE_SECURITY=true` opts in (e.g. a demo deploy).
+    app_env: str = "development"
+    allow_fake_security: bool = False
     # Per-module timeouts in seconds (DoD: exact timeouts per integration).
     security_timeout_seconds: float = 5.0
     products_timeout_seconds: float = 4.0
     sales_timeout_seconds: float = 5.0
     dispatch_timeout_seconds: float = 4.0
+
+    def __post_init__(self) -> None:
+        if (
+            self.app_env in PRODUCTION_ENVIRONMENTS
+            and self.module_mode("security") == "fake"
+            and not self.allow_fake_security
+        ):
+            raise ValueError(
+                "Refusing to start with the fake Seguridad (accepts any credentials) when "
+                "APP_ENV is production. Set SECURITY_MODE=http, or ALLOW_FAKE_SECURITY=true "
+                "to run a demo on purpose."
+            )
 
     def module_mode(self, module: str) -> str:
         """Effective `fake`/`http` mode of one module: its override or `modules_mode`."""
@@ -121,6 +150,8 @@ def get_settings() -> Settings:
         llm_reasoning_effort=_choice("LLM_REASONING_EFFORT", "none", LLM_REASONING_EFFORTS),
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
         modules_mode=_modules_mode(),
+        app_env=_app_env(),
+        allow_fake_security=_flag("ALLOW_FAKE_SECURITY"),
         security_mode=_module_mode_override("security"),
         products_mode=_module_mode_override("products"),
         sales_mode=_module_mode_override("sales"),
