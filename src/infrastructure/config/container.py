@@ -25,6 +25,7 @@ from src.adapters.outbound.http_clients.inventory_client import (
 from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.http_clients.security_client import SecurityClient
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
+from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
 from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
     CartItemPostgresAdapter,
 )
@@ -37,6 +38,12 @@ from src.adapters.outbound.persistence.local_phone_verification_postgres_adapter
     LocalPhoneVerificationPostgresAdapter,
 )
 from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.adapters.outbound.persistence.order_ref_postgres_adapter import (
+    OrderRefPostgresAdapter,
+)
+from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
+    PaymentAttemptPostgresAdapter,
+)
 from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
 from src.application.tools.action_dispatcher import ActionDispatcher
@@ -51,6 +58,7 @@ from src.application.use_cases.manage_catalog_use_case import (
     ManageCatalogUseCase,
     OptionCache,
 )
+from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
@@ -272,6 +280,67 @@ def provide_service_token_provider(settings: Settings | None = None):
 def provide_rate_limiter() -> InMemoryRateLimiter:
     """Process-wide limiter for the public registration endpoints (SPEC-01/02)."""
     return _RATE_LIMITER
+
+
+def provide_payment_gateway() -> PaymentSimulatorAdapter:
+    return PaymentSimulatorAdapter()
+
+
+def provide_checkout_service(
+    session: AsyncSession = Depends(get_session),
+) -> ManageCheckoutUseCase:
+    settings = get_settings()
+    return ManageCheckoutUseCase(
+        checkouts=CheckoutPostgresAdapter(session),
+        payment_attempts=PaymentAttemptPostgresAdapter(session),
+        payment_gateway=provide_payment_gateway(),
+        uow=SqlAlchemyUnitOfWork(session),
+        security_client=provide_security_port(settings),
+        carts=CartPostgresAdapter(session),
+        cart_items=CartItemPostgresAdapter(session),
+        orders=OrderRefPostgresAdapter(session),
+        phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
+        session=session,
+    )
+
+
+def build_notification_service(session: AsyncSession):
+    """Order confirmation e-mail (SPEC-16). The outbox worker (SPEC-15) builds one per
+    SEND_EMAIL batch and calls `handle_send_email_task`; checkout calls
+    `enqueue_confirmation(order_id)` once the order is PAID_NOTIFIED."""
+    try:
+        from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
+            OrderConfirmationPostgresAdapter,
+        )
+        from src.application.use_cases.notification_service import NotificationService
+
+        from src.adapters.outbound.persistence.notification_postgres_adapter import (
+            NotificationPostgresAdapter,
+        )
+        from src.adapters.outbound.persistence.outbox_postgres_adapter import (
+            OutboxPostgresAdapter,
+        )
+
+        settings = get_settings()
+        email_sender_provider = globals().get("provide_email_sender")
+        email_sender = email_sender_provider(settings) if callable(email_sender_provider) else None
+        email_renderer = globals().get("_EMAIL_RENDERER")
+        return NotificationService(
+            notifications=NotificationPostgresAdapter(session),
+            outbox=OutboxPostgresAdapter(session),
+            sources=OrderConfirmationPostgresAdapter(session),
+            sender=email_sender,
+            templates=email_renderer,
+            uow=SqlAlchemyUnitOfWork(session),
+            frontend_base_url=getattr(settings, "frontend_base_url", "http://localhost:3000"),
+            send_inline=getattr(settings, "notification_send_inline", True),
+        )
+    except (ImportError, AttributeError):
+        class _FallbackNotificationService:
+            async def enqueue_confirmation(self, order_id: str) -> dict:
+                return {"correoEnmascarado": None, "mensaje": None}
+
+        return _FallbackNotificationService()
 
 
 def provide_manage_session(session: AsyncSession = Depends(get_session)) -> ManageSessionUseCase:
