@@ -9,6 +9,7 @@ from src.adapters.inbound.http.chatbot_router import ActionScope, TurnScope, cre
 from src.adapters.inbound.http.health_router import router as health_router
 from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.inbound.http.session_router import create_session_router
+from src.adapters.inbound.http.shipping_router import create_shipping_router
 from src.infrastructure.config.container import (
     provide_action_scope,
     provide_cart_service,
@@ -16,6 +17,7 @@ from src.infrastructure.config.container import (
     provide_chatbot_service,
     provide_manage_session,
     provide_rate_limiter,
+    provide_shipping_service,
     provide_turn_scope,
 )
 from src.infrastructure.config.settings import get_settings
@@ -61,6 +63,9 @@ def create_app(
         create_catalog_router(provide_catalog_service), prefix=API_PREFIX
     )
     app.include_router(create_cart_router(provide_cart_service), prefix=API_PREFIX)
+    app.include_router(
+        create_shipping_router(provide_shipping_service), prefix=API_PREFIX
+    )
     return app
 
 

@@ -18,6 +18,7 @@ from src.adapters.outbound.fakes.fake_security import (
     FakeServiceTokenProvider,
 )
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
+from src.adapters.outbound.http_clients.despacho_api_adapter import DespachoClient
 from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
     InventoryClient,
@@ -53,6 +54,7 @@ from src.application.use_cases.manage_catalog_use_case import (
 )
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
+from src.application.use_cases.manage_shipping_use_case import ManageShippingUseCase
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
@@ -163,6 +165,23 @@ def provide_cart_service(
     )
 
 
+def provide_shipping_service(
+    session: AsyncSession = Depends(get_session),
+) -> ManageShippingUseCase:
+    """Shipping quote and saved addresses (SPEC-12).
+
+    The cart ports give the lines the client never sends; Seguridad prefill
+    addresses and Despacho the real quote with the service token.
+    """
+    settings = get_settings()
+    return ManageShippingUseCase(
+        CartPostgresAdapter(session),
+        CartItemPostgresAdapter(session),
+        provide_despacho_client(settings),
+        provide_security_port(settings),
+    )
+
+
 def sanitize_sensitive_text(text: str) -> str:
     """Redact customer secrets before they are persisted or sent to the LLM."""
     return SensitiveDataFilter().redactar(text).texto
@@ -205,6 +224,20 @@ def provide_inventory_client(settings: Settings | None = None) -> InventoryClien
     return InventoryClient(
         base_url=settings.products_base_url,
         timeout_seconds=INVENTORY_TIMEOUT_SECONDS,
+    )
+
+
+def provide_despacho_client(settings: Settings | None = None) -> DespachoClient:
+    """Typed Despacho client (SPEC-12, SPEC-18): base URL + 4 s timeout.
+
+    Privileged calls authenticate as `modulo-chatbot`; the service token
+    provider owns the credentials (ADR-0009).
+    """
+    settings = settings or get_settings()
+    return DespachoClient(
+        base_url=settings.dispatch_base_url,
+        timeout_seconds=settings.dispatch_timeout_seconds,
+        service_token_provider=provide_service_token_provider(settings),
     )
 
 
