@@ -73,6 +73,7 @@ class OrdersServicePort(Protocol):
         order_id: str,
         *,
         holder_token: str,
+        idempotency_key: str,
     ) -> dict[str, Any]:
         ...
 
@@ -213,12 +214,21 @@ def create_orders_router(
         service: OrdersServicePort = Depends(orders_provider),
     ) -> ResendConfirmationResponse:
         authenticated = _require_customer(caller)
+        idempotency_key = request.headers.get("Idempotency-Key", "").strip()
+        if not idempotency_key:
+            raise ProblemError(
+                status=400,
+                code="VALIDACION",
+                title="Invalid request",
+                detail="Idempotency-Key is required.",
+            )
         holder_token = get_bearer_token(request)
         try:
             raw = await service.resend_confirmation(
                 authenticated.customer_id,
                 pedido_id.strip(),
                 holder_token=holder_token,
+                idempotency_key=idempotency_key,
             )
         except Exception as exc:
             raise _translate_order_error(exc) from exc
