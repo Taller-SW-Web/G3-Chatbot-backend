@@ -27,8 +27,7 @@ def _number(name: str, default: str, cast, *, minimum: float):
 MODULE_MODES = ("fake", "http")
 MODULES = ("security", "products", "sales", "dispatch")
 # Modules with an in-process fake or an HTTP adapter wired in the container.
-# Dispatch has none yet, so its mode changes nothing today.
-MODULES_WITH_ADAPTERS = ("security", "products", "sales")
+MODULES_WITH_ADAPTERS = ("security", "products", "sales", "dispatch")
 PRODUCTION_ENVIRONMENTS = ("production", "prod")
 
 

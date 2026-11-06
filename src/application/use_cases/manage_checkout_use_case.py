@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
+from pydantic import ValidationError
+
 from src.adapters.outbound.pagos.payment_simulator_adapter import CardValidationError
 from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
 from src.adapters.outbound.persistence.models.checkout import Checkout
@@ -15,13 +17,19 @@ from src.adapters.outbound.persistence.models.payment_attempt import PaymentAtte
 from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
 )
+from src.application.dto.commerce_contracts_dto import ShippingQuoteRequest
 from src.application.use_cases.notification_service import NotificationService
+from src.application.use_cases.shipping_quote import (
+    build_destination,
+    build_quote_lines,
+    parse_quote,
+)
 from src.domain.entities.checkout import CheckoutStatus
 from src.domain.entities.payment_attempt import PaymentRejectReason, PaymentResult
+from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.ports.outbound.payment_gateway_port import PaymentGatewayPort
 
 logger = logging.getLogger(__name__)
-DEFAULT_SHIPPING_COST = 12.50
 DOCUMENT_PATTERNS = {
     "DNI": re.compile(r"[0-9]{8}"),
     "RUC": re.compile(r"(?:10|15|17|20)[0-9]{9}"),
@@ -87,6 +95,7 @@ class ManageCheckoutUseCase:
         notification_service: NotificationService | None = None,
         sales_client: Any | None = None,
         outbox: Any | None = None,
+        dispatch: Any | None = None,
     ):
         self.checkouts = checkouts
         self.payment_attempts = payment_attempts
@@ -100,6 +109,7 @@ class ManageCheckoutUseCase:
         self.notification_service = notification_service
         self.sales_client = sales_client
         self.outbox = outbox
+        self.dispatch = dispatch
 
     async def create_checkout(self, input_data: CreateCheckoutInput) -> Checkout:
         if not input_data.idempotency_key:
@@ -169,17 +179,27 @@ class ManageCheckoutUseCase:
             }
             for it in items
         ]
+        quote = await self._quote_shipping(input_data, items)
+        costo_envio = float(quote.costoEnvio)
+
+        # The discount comes only from the cart snapshot, and only while that
+        # snapshot still prices the current lines; otherwise the client must
+        # confirm the recalculated summary (no order is created).
         totals_snapshot = cart.totals_snapshot if isinstance(cart.totals_snapshot, dict) else {}
-        discounts = totals_snapshot.get("descuentos", [])
         descuento = 0.0
-        if (
-            totals_snapshot.get("subtotal") is not None
-            and Decimal(str(totals_snapshot["subtotal"])) == Decimal(str(subtotal))
-            and isinstance(discounts, list)
-        ):
-            descuento = sum(float(discount.get("amount", 0)) for discount in discounts if isinstance(discount, dict))
+        if totals_snapshot.get("subtotal") is not None:
+            if Decimal(str(totals_snapshot["subtotal"])) != Decimal(str(subtotal)):
+                raise CheckoutError(
+                    "CARRITO_DESACTUALIZADO",
+                    "Tu carrito cambió. Revisa el resumen actualizado antes de continuar.",
+                    {"summary": self._stale_summary(items, subtotal, costo_envio)},
+                )
+            discounts = totals_snapshot.get("descuentos", [])
+            if isinstance(discounts, list):
+                descuento = sum(
+                    float(discount.get("amount", 0)) for discount in discounts if isinstance(discount, dict)
+                )
         descuento = min(max(descuento, 0.0), subtotal)
-        costo_envio = DEFAULT_SHIPPING_COST if input_data.direccion else 0.0
         total_final = round(subtotal - descuento + costo_envio, 2)
 
         now = datetime.now(timezone.utc)
@@ -269,6 +289,8 @@ class ManageCheckoutUseCase:
             "costoEnvio": round(costo_envio, 2),
             "descuento": round(descuento, 2),
             "total": round(total_final, 2),
+            "moneda": quote.moneda,
+            "plazoEstimadoDias": quote.plazoEstimadoDias,
             "direccion": input_data.direccion or {},
             "contacto": input_data.contacto or {},
             "orderId": order_id,
@@ -312,6 +334,82 @@ class ManageCheckoutUseCase:
         if self.uow:
             await _safe_call(self.uow, "commit")
         return saved
+
+    async def _quote_shipping(self, input_data: CreateCheckoutInput, items: list[Any]):
+        """Server-side Despacho quote for the cart lines (`SPEC-14` Req. 2).
+
+        Raises `SIN_COBERTURA` for an uncovered district and
+        `MODULO_NO_DISPONIBLE` when Despacho fails or omits cost or lead time.
+        """
+        request = self._build_quote_request(input_data.direccion, input_data.contacto)
+        try:
+            if self.dispatch is None:
+                raise ModuleUnavailableError("dispatch", "Dispatch port not configured")
+            raw = await self.dispatch.quote_shipping(
+                destino=build_destination(request),
+                lineas=build_quote_lines(items),
+                correlation_id=str(uuid.uuid4()),
+            )
+            quote = parse_quote(raw, request.distrito)
+        except (ModuleUnavailableError, ModuleRequestError) as exc:
+            logger.warning("Despacho quote failed during checkout: %s", exc)
+            raise CheckoutError(
+                "MODULO_NO_DISPONIBLE",
+                "No pudimos calcular el envío ahora. Intenta de nuevo en unos segundos.",
+                {"modulo": "dispatch"},
+            ) from exc
+        if quote is None:
+            raise CheckoutError(
+                "SIN_COBERTURA",
+                f"Aún no llegamos a {request.distrito}.",
+                {"distrito": request.distrito},
+            )
+        return quote
+
+    @staticmethod
+    def _build_quote_request(direccion: Any, contacto: dict[str, Any] | None) -> ShippingQuoteRequest:
+        if not isinstance(direccion, dict):
+            raise CheckoutError(
+                "VALIDACION",
+                "La dirección de envío es obligatoria",
+                {"errores": [{"campo": "direccion", "mensaje": "La dirección es obligatoria."}]},
+            )
+        recipient = direccion.get("destinatario") or (contacto or {}).get("nombreCompleto")
+        fields = {
+            "destinatario": recipient,
+            "direccion": direccion.get("direccion") or direccion.get("direccionExacta"),
+            "distrito": direccion.get("distrito"),
+            "departamento": direccion.get("departamento"),
+            "provincia": direccion.get("provincia"),
+            "referencia": direccion.get("referencia"),
+        }
+        try:
+            return ShippingQuoteRequest(**{k: v for k, v in fields.items() if v is not None})
+        except ValidationError as exc:
+            errores = [
+                {
+                    "campo": ".".join(["direccion", *(str(p) for p in err["loc"])]),
+                    "mensaje": err["msg"].removeprefix("Value error, "),
+                }
+                for err in exc.errors()
+            ]
+            raise CheckoutError(
+                "VALIDACION", "La dirección de envío está incompleta", {"errores": errores}
+            ) from exc
+
+    @staticmethod
+    def _stale_summary(items: list[Any], subtotal: float, costo_envio: float) -> dict[str, Any]:
+        """Server-computed summary returned with `409 CARRITO_DESACTUALIZADO`."""
+        return {
+            "lineas": [
+                {"sku": it.sku, "cantidad": it.quantity, "precioUnitario": float(it.unit_price_ref)}
+                for it in items
+            ],
+            "subtotal": round(subtotal, 2),
+            "descuento": 0.0,
+            "costoEnvio": round(costo_envio, 2),
+            "total": round(subtotal + costo_envio, 2),
+        }
 
     async def get_checkout(self, checkout_id: uuid.UUID, customer_id: uuid.UUID) -> Checkout:
         row = await self.checkouts.obtener_por_id(checkout_id)

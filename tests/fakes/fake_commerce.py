@@ -30,6 +30,7 @@ __all__ = [
     "FakeMessages",
     "FakeUow",
     "FakeCartRow",
+    "FakeDispatch",
     "StaleCartError",
     "CartConflictError",
 ]
@@ -136,6 +137,12 @@ class FakeCarts:
             row.totals_snapshot = snapshot
         self._check_flush()
 
+    async def set_coupon(self, cart_id, coupon_code):
+        row = self.rows.get(cart_id)
+        if row is not None:
+            row.coupon_code = coupon_code
+        self._check_flush()
+
     async def reset_checkout(self, cart_id):
         row = self.rows.get(cart_id)
         if row is not None:
@@ -235,3 +242,25 @@ class FakeCartRow:
         self.totals_snapshot = None
         self.version = 0
         self.updated_at = None
+
+
+class FakeDispatch:
+    """Scriptable `DispatchPort` quote: returns `response` or raises `error`."""
+
+    module = "dispatch"
+
+    def __init__(self, response=None, error=None):
+        self.response = response if response is not None else {
+            "coberturaDisponible": True,
+            "costoEnvio": 12.50,
+            "moneda": "PEN",
+            "plazoEstimadoDiasHabiles": 2,
+        }
+        self.error = error
+        self.calls: list[dict] = []
+
+    async def quote_shipping(self, *, destino, lineas, correlation_id=None):
+        self.calls.append({"destino": destino, "lineas": lineas})
+        if self.error is not None:
+            raise self.error
+        return self.response

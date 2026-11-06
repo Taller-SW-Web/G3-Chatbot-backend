@@ -8,7 +8,7 @@ from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
+from src.adapters.inbound.http.dependencies.auth_guard import require_customer
 from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
 from src.adapters.inbound.http.problem import ProblemError, not_found
 from src.application.dto.commerce_contracts_dto import (
@@ -79,17 +79,6 @@ class OrdersServicePort(Protocol):
         ...
 
 
-def _require_customer(caller: CallerIdentity | None) -> CallerIdentity:
-    if not caller or not caller.customer_id:
-        raise ProblemError(
-            status=401,
-            code="REQUIERE_SESION",
-            title="Authentication required",
-            detail="Esta acción requiere una sesión activa de cliente.",
-        )
-    return caller
-
-
 def _translate_order_error(exc: Exception) -> ProblemError:
     if isinstance(exc, ProblemError):
         return exc
@@ -151,14 +140,13 @@ def create_orders_router(
         estado: str | None = Query(default=None),
         page: int = Query(default=1, ge=1),
         pageSize: int = Query(default=10, ge=1, le=50),
-        caller: CallerIdentity | None = Depends(get_caller_identity),
+        caller: CallerIdentity = Depends(require_customer),
         service: OrdersServicePort = Depends(orders_provider),
     ) -> OrderListResponse:
-        authenticated = _require_customer(caller)
         holder_token = get_bearer_token(request)
         try:
             raw = await service.list_orders(
-                authenticated.customer_id,
+                caller.customer_id,
                 holder_token=holder_token,
                 estado=estado,
                 page=page,
@@ -172,14 +160,13 @@ def create_orders_router(
     async def get_order_detail(
         pedido_id: str,
         request: Request,
-        caller: CallerIdentity | None = Depends(get_caller_identity),
+        caller: CallerIdentity = Depends(require_customer),
         service: OrdersServicePort = Depends(orders_provider),
     ) -> OrderDetailResponse:
-        authenticated = _require_customer(caller)
         holder_token = get_bearer_token(request)
         try:
             raw = await service.get_order_detail(
-                authenticated.customer_id,
+                caller.customer_id,
                 pedido_id.strip(),
                 holder_token=holder_token,
             )
@@ -191,14 +178,13 @@ def create_orders_router(
     async def get_order_tracking(
         pedido_id: str,
         request: Request,
-        caller: CallerIdentity | None = Depends(get_caller_identity),
+        caller: CallerIdentity = Depends(require_customer),
         service: OrdersServicePort = Depends(orders_provider),
     ) -> OrderTrackingResponse:
-        authenticated = _require_customer(caller)
         holder_token = get_bearer_token(request)
         try:
             raw = await service.get_order_tracking(
-                authenticated.customer_id,
+                caller.customer_id,
                 pedido_id.strip(),
                 holder_token=holder_token,
             )
@@ -216,10 +202,9 @@ def create_orders_router(
     async def resend_confirmation(
         pedido_id: str,
         request: Request,
-        caller: CallerIdentity | None = Depends(get_caller_identity),
+        caller: CallerIdentity = Depends(require_customer),
         service: OrdersServicePort = Depends(orders_provider),
     ) -> ResendConfirmationResponse:
-        authenticated = _require_customer(caller)
         idempotency_key = request.headers.get("Idempotency-Key", "").strip()
         if not idempotency_key:
             raise ProblemError(
@@ -231,7 +216,7 @@ def create_orders_router(
         holder_token = get_bearer_token(request)
         try:
             raw = await service.resend_confirmation(
-                authenticated.customer_id,
+                caller.customer_id,
                 pedido_id.strip(),
                 holder_token=holder_token,
                 idempotency_key=idempotency_key,

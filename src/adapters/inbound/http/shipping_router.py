@@ -7,9 +7,8 @@ or upstream Despacho/Seguridad errors into `application/problem+json`.
 from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import ValidationError
 
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
+from src.adapters.inbound.http.dependencies.auth_guard import require_customer
 from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
 from src.adapters.inbound.http.problem import ProblemError
 from src.application.dto.commerce_contracts_dto import (
@@ -19,6 +18,7 @@ from src.application.dto.commerce_contracts_dto import (
     ShippingQuoteRequest,
     ShippingQuoteResponse,
 )
+from src.application.use_cases.shipping_quote import parse_quote
 from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 
@@ -47,17 +47,6 @@ class ShippingServicePort(Protocol):
         self, customer_id: Any, payload: ShippingQuoteRequest
     ) -> dict[str, Any]:
         ...
-
-
-def _require_customer(caller: CallerIdentity | None) -> CallerIdentity:
-    if not caller or not caller.customer_id:
-        raise ProblemError(
-            status=401,
-            code="REQUIERE_SESION",
-            title="Authentication required",
-            detail="Esta acción requiere una sesión activa de cliente.",
-        )
-    return caller
 
 
 def _translate_shipping_error(exc: Exception) -> ProblemError:
@@ -110,14 +99,13 @@ def create_shipping_router(
     @router.get("/direcciones", response_model=SavedAddressesResponse)
     async def list_saved_addresses(
         request: Request,
-        caller: CallerIdentity | None = Depends(get_caller_identity),
+        caller: CallerIdentity = Depends(require_customer),
         service: ShippingServicePort = Depends(shipping_provider),
     ) -> SavedAddressesResponse:
-        authenticated = _require_customer(caller)
         holder_token = get_bearer_token(request)
         try:
             raw = await service.list_addresses(
-                authenticated.customer_id, holder_token=holder_token
+                caller.customer_id, holder_token=holder_token
             )
         except Exception as exc:
             raise _translate_shipping_error(exc) from exc
@@ -128,16 +116,19 @@ def create_shipping_router(
     @router.post("/envio/cotizar", response_model=ShippingQuoteResponse)
     async def quote_shipping(
         body: ShippingQuoteRequest,
-        caller: CallerIdentity | None = Depends(get_caller_identity),
+        caller: CallerIdentity = Depends(require_customer),
         service: ShippingServicePort = Depends(shipping_provider),
     ) -> ShippingQuoteResponse:
-        authenticated = _require_customer(caller)
         try:
-            raw = await service.quote_shipping(authenticated.customer_id, body)
+            raw = await service.quote_shipping(caller.customer_id, body)
         except Exception as exc:
             raise _translate_shipping_error(exc) from exc
 
-        if raw.get("coberturaDisponible") is False:
+        try:
+            quote = parse_quote(raw, body.distrito)
+        except ModuleUnavailableError as exc:
+            raise _translate_shipping_error(exc) from exc
+        if quote is None:
             raise ProblemError(
                 status=422,
                 code="SIN_COBERTURA",
@@ -145,22 +136,6 @@ def create_shipping_router(
                 detail=f"Aún no llegamos a {body.distrito}.",
                 extra={"distrito": body.distrito},
             )
-
-        try:
-            plazo = raw.get("plazoEstimadoDias", raw.get("plazoEstimadoDiasHabiles"))
-            return ShippingQuoteResponse(
-                coberturaDisponible=True,
-                costoEnvio=raw["costoEnvio"],
-                moneda=raw.get("moneda", "PEN"),
-                plazoEstimadoDias=plazo,
-                fechaEstimadaEntrega=raw.get("fechaEstimadaEntrega"),
-                nombreZona=raw.get("nombreZona"),
-                modalidad=raw.get("modalidad", "DELIVERY"),
-                distrito=body.distrito,
-            )
-        except (KeyError, TypeError, ValueError, ValidationError) as exc:
-            raise _translate_shipping_error(
-                ModuleUnavailableError("dispatch", "Invalid quote response")
-            ) from exc
+        return quote
 
     return router

@@ -16,8 +16,9 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.adapters.inbound.http.dependencies.jwt_validator import get_current_customer
+from src.adapters.inbound.http.dependencies.auth_guard import require_customer
 from src.adapters.inbound.http.dependencies.rate_limiter import (
+    LOGIN_PER_IP,
     REGISTER_DEBOUNCE_PER_EMAIL,
     REGISTER_PER_IP,
     RESEND_PER_EMAIL,
@@ -240,6 +241,13 @@ def create_session_router(
         sessions: ManageSessionUseCase = Depends(session_provider),
     ):
         _csrf_check(request, allowed_origins)
+        retry_after = await limiter.hit(LOGIN_PER_IP, client_ip(request))
+        if retry_after is not None:
+            raise _too_many(
+                "DEMASIADAS_SOLICITUDES",
+                "Demasiados intentos de inicio de sesión. Espera un momento e inténtalo de nuevo.",
+                retry_after,
+            )
         try:
             answer = await sessions.login(body.email, body.password, canal=body.canal)
         except InvalidCredentialsError:
@@ -366,7 +374,7 @@ def create_session_router(
     async def profile(
         request: Request,
         sessions: ManageSessionUseCase = Depends(session_provider),
-        caller: CallerIdentity = Depends(get_current_customer),
+        caller: CallerIdentity = Depends(require_customer),
     ):
         authorization = request.headers.get("authorization", "")
         holder_token = authorization.partition(" ")[2].strip()

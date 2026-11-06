@@ -30,6 +30,8 @@ class RateLimitRule:
 REGISTER_PER_IP = RateLimitRule("registro_por_ip", 5, 10 * 60)
 REGISTER_DEBOUNCE_PER_EMAIL = RateLimitRule("registro_antirrebote", 1, 10)
 RESEND_PER_EMAIL = RateLimitRule("reenvio_por_correo", 3, 60 * 60)
+LOGIN_PER_IP = RateLimitRule("login_por_ip", 10, 60)
+CHAT_MESSAGES_PER_MINUTE = RateLimitRule("chat_por_minuto", 20, 60)
 
 
 def client_ip(request: Request) -> str:
