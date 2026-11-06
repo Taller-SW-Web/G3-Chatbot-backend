@@ -546,3 +546,131 @@ async def test_card_number_never_persisted_in_attempt(use_case, mock_checkouts, 
     assert attempt.last4 == "1111"
     assert attempt.brand == "VISA"
 
+
+@pytest.mark.asyncio
+async def test_payment_approved_marks_order_paid_notified_and_enqueues_confirmation(
+    mock_checkouts, mock_attempts, payment_gateway
+):
+    checkout_id = uuid.uuid4()
+    cust_id = uuid.uuid4()
+    order_id = "PED-2026-00891"
+
+    row = Checkout(
+        id=checkout_id,
+        cart_id=uuid.uuid4(),
+        customer_id=cust_id,
+        status="PENDING_PAYMENT",
+        summary={"orderId": order_id},
+        total=150.0,
+        payment_attempts=0,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        idempotency_key="k1",
+    )
+    mock_checkouts.obtener_por_id.return_value = row
+
+    mock_orders = MagicMock()
+    order_ref_obj = MagicMock()
+    order_ref_obj.order_id = order_id
+    mock_orders.obtener_por_checkout_id = AsyncMock(return_value=order_ref_obj)
+    mock_orders.actualizar_estado = AsyncMock()
+
+    mock_notif_service = MagicMock()
+    mock_notif_service.enqueue_confirmation = AsyncMock(
+        return_value={
+            "correoEnmascarado": "m***a@ejemplo.com",
+            "mensaje": "Te enviaremos la confirmación a m***a@…",
+        }
+    )
+
+    uow = MagicMock()
+    uow.commit = AsyncMock()
+
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=payment_gateway,
+        uow=uow,
+        orders=mock_orders,
+        notification_service=mock_notif_service,
+    )
+
+    attempt = await use_case.process_payment(
+        ProcessPaymentInput(
+            checkout_id=checkout_id,
+            customer_id=cust_id,
+            idempotency_key="pay-confirm-notif",
+            numero_tarjeta="4111 1111 1111 1111",
+            titular="Diego Test",
+            vencimiento="12/28",
+            cvv="123",
+        )
+    )
+
+    assert attempt.result == "APPROVED"
+    mock_orders.actualizar_estado.assert_called_once_with(order_id, "PAID_NOTIFIED")
+    mock_notif_service.enqueue_confirmation.assert_called_once_with(order_id)
+    assert getattr(attempt, "confirmation", None) == {
+        "correoEnmascarado": "m***a@ejemplo.com",
+        "mensaje": "Te enviaremos la confirmación a m***a@…",
+    }
+
+
+@pytest.mark.asyncio
+async def test_payment_approved_notification_failure_does_not_block_purchase(
+    mock_checkouts, mock_attempts, payment_gateway
+):
+    checkout_id = uuid.uuid4()
+    cust_id = uuid.uuid4()
+    order_id = "PED-2026-99999"
+
+    row = Checkout(
+        id=checkout_id,
+        cart_id=uuid.uuid4(),
+        customer_id=cust_id,
+        status="PENDING_PAYMENT",
+        summary={"orderId": order_id},
+        total=150.0,
+        payment_attempts=0,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        idempotency_key="k1",
+    )
+    mock_checkouts.obtener_por_id.return_value = row
+
+    mock_orders = MagicMock()
+    order_ref_obj = MagicMock()
+    order_ref_obj.order_id = order_id
+    mock_orders.obtener_por_checkout_id = AsyncMock(return_value=order_ref_obj)
+    mock_orders.actualizar_estado = AsyncMock()
+
+    mock_notif_service = MagicMock()
+    mock_notif_service.enqueue_confirmation = AsyncMock(side_effect=RuntimeError("SMTP or Outbox down"))
+
+    uow = MagicMock()
+    uow.commit = AsyncMock()
+
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=payment_gateway,
+        uow=uow,
+        orders=mock_orders,
+        notification_service=mock_notif_service,
+    )
+
+    attempt = await use_case.process_payment(
+        ProcessPaymentInput(
+            checkout_id=checkout_id,
+            customer_id=cust_id,
+            idempotency_key="pay-fail-notif",
+            numero_tarjeta="4111 1111 1111 1111",
+            titular="Diego Test",
+            vencimiento="12/28",
+            cvv="123",
+        )
+    )
+
+    assert attempt.result == "APPROVED"
+    mock_orders.actualizar_estado.assert_called_once_with(order_id, "PAID_NOTIFIED")
+    mock_notif_service.enqueue_confirmation.assert_called_once_with(order_id)
+
+

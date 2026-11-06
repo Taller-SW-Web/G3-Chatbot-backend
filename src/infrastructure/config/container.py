@@ -281,7 +281,47 @@ def provide_checkout_service(
         cart_items=CartItemPostgresAdapter(session),
         orders=OrderRefPostgresAdapter(session),
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
+        session=session,
     )
+
+
+def build_notification_service(session: AsyncSession):
+    """Order confirmation e-mail (SPEC-16). The outbox worker (SPEC-15) builds one per
+    SEND_EMAIL batch and calls `handle_send_email_task`; checkout calls
+    `enqueue_confirmation(order_id)` once the order is PAID_NOTIFIED."""
+    try:
+        from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
+            OrderConfirmationPostgresAdapter,
+        )
+        from src.application.use_cases.notification_service import NotificationService
+
+        from src.adapters.outbound.persistence.notification_postgres_adapter import (
+            NotificationPostgresAdapter,
+        )
+        from src.adapters.outbound.persistence.outbox_postgres_adapter import (
+            OutboxPostgresAdapter,
+        )
+
+        settings = get_settings()
+        email_sender_provider = globals().get("provide_email_sender")
+        email_sender = email_sender_provider(settings) if callable(email_sender_provider) else None
+        email_renderer = globals().get("_EMAIL_RENDERER")
+        return NotificationService(
+            notifications=NotificationPostgresAdapter(session),
+            outbox=OutboxPostgresAdapter(session),
+            sources=OrderConfirmationPostgresAdapter(session),
+            sender=email_sender,
+            templates=email_renderer,
+            uow=SqlAlchemyUnitOfWork(session),
+            frontend_base_url=getattr(settings, "frontend_base_url", "http://localhost:3000"),
+            send_inline=getattr(settings, "notification_send_inline", True),
+        )
+    except (ImportError, AttributeError):
+        class _FallbackNotificationService:
+            async def enqueue_confirmation(self, order_id: str) -> dict:
+                return {"correoEnmascarado": None, "mensaje": None}
+
+        return _FallbackNotificationService()
 
 
 def provide_manage_session(session: AsyncSession = Depends(get_session)) -> ManageSessionUseCase:

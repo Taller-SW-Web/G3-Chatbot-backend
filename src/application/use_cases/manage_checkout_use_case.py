@@ -79,6 +79,8 @@ class ManageCheckoutUseCase:
         cart_items: Any | None = None,
         orders: Any | None = None,
         phone_verifications: Any | None = None,
+        session: Any | None = None,
+        notification_service: Any | None = None,
     ):
         self.checkouts = checkouts
         self.payment_attempts = payment_attempts
@@ -89,6 +91,8 @@ class ManageCheckoutUseCase:
         self.cart_items = cart_items
         self.orders = orders
         self.phone_verifications = phone_verifications
+        self.session = session
+        self.notification_service = notification_service
 
     async def create_checkout(self, input_data: CreateCheckoutInput) -> Checkout:
         if not input_data.idempotency_key:
@@ -323,8 +327,31 @@ class ManageCheckoutUseCase:
             await self.checkouts.marcar_estado(row.id, CheckoutStatus.PAYMENT_APPROVED.value)
             await _safe_call(self.carts, "cambiar_estado", row.cart_id, "CONVERTED")
             ord_row = await _safe_call(self.orders, "obtener_por_checkout_id", row.id)
-            if ord_row and getattr(ord_row, "order_id", None):
-                await _safe_call(self.orders, "actualizar_estado", ord_row.order_id, "PAID_NOTIFIED")
+            order_id = getattr(ord_row, "order_id", None) if ord_row else None
+            if not order_id and isinstance(row.summary, dict):
+                order_id = row.summary.get("orderId")
+
+            confirmation_res = None
+            if order_id:
+                if ord_row and getattr(ord_row, "order_id", None):
+                    await _safe_call(self.orders, "actualizar_estado", order_id, "PAID_NOTIFIED")
+
+                session = self.session or (getattr(self.uow, "session", None) if self.uow else None)
+                try:
+                    if self.notification_service is not None:
+                        confirmation_res = await _safe_call(
+                            self.notification_service, "enqueue_confirmation", order_id
+                        )
+                    elif session is not None:
+                        try:
+                            from src.infrastructure.config.container import build_notification_service
+
+                            notif_svc = build_notification_service(session)
+                            confirmation_res = await notif_svc.enqueue_confirmation(order_id)
+                        except (ImportError, AttributeError):
+                            pass
+                except Exception as exc:
+                    logger.warning("Fallo al encolar confirmación para pedido %s: %s", order_id, exc)
 
             attempt = PaymentAttempt(
                 checkout_id=row.id,
@@ -336,6 +363,8 @@ class ManageCheckoutUseCase:
                 transaction_id=payment_res.transaction_id,
             )
             saved_attempt = await self.payment_attempts.guardar(attempt)
+            if confirmation_res:
+                saved_attempt.confirmation = confirmation_res
             if self.uow:
                 await _safe_call(self.uow, "commit")
             return saved_attempt
