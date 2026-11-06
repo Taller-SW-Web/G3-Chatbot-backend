@@ -1,7 +1,8 @@
 """Seguridad mock helpers (ADR-0017).
 
 respx routes shaped like Prism over Seguridad's published `openapi.yaml`
-(`:4010`, no `/api/v1` prefix, examples picked with `Prefer`).
+(`:4010`, no `/api/v1` prefix, examples picked with `Prefer`), using the
+field names and shapes verified against the real service (G7).
 Switching mock<->real stays config-only: tests point the client at the
 mock base URL, production points it at the real module.
 
@@ -21,7 +22,7 @@ def mock_register(base_url: str = "http://mock:4010"):
     return respx.post(f"{base_url}/auth/registro").mock(
         return_value=httpx.Response(
             201,
-            json={"customerId": "cust-001", "estado": "PENDIENTE_VERIFICACION"},
+            json={"id": "cust-001", "estado": "PENDIENTE_VERIFICACION"},
         )
     )
 
@@ -36,11 +37,39 @@ def mock_register_conflict(base_url: str = "http://mock:4010"):
     )
 
 
+def mock_register_policy_violation(base_url: str = "http://mock:4010"):
+    return respx.post(f"{base_url}/auth/registro").mock(
+        return_value=httpx.Response(
+            422,
+            json={
+                "code": "POLITICA_INCUMPLIDA",
+                "title": "Politica incumplida",
+                "errores": [
+                    # Real G7 shape: `esperado` only on LONGITUD_MINIMA.
+                    {"regla": "LONGITUD_MINIMA", "esperado": 10},
+                    {"regla": "MAYUSCULA"},
+                ],
+            },
+        )
+    )
+
+
+REAL_PASSWORD_POLICY = {
+    "longitudMinima": 8,
+    "requiereMayuscula": True,
+    "requiereMinuscula": True,
+    "requiereDigito": True,
+    "requiereCaracterEspecial": False,
+    "rechazaComunes": True,
+    "rechazaDatosPersonales": True,
+    "historial": 5,
+    "caducidadDiasAdmin": 90,
+}
+
+
 def mock_password_policy(base_url: str = "http://mock:4010"):
     return respx.get(f"{base_url}/password/politica").mock(
-        return_value=httpx.Response(
-            200, json={"minLength": 8, "requireDigit": True, "requireUpper": True}
-        )
+        return_value=httpx.Response(200, json=REAL_PASSWORD_POLICY)
     )
 
 
@@ -90,6 +119,14 @@ def mock_login_invalid(base_url: str = "http://mock:4010"):
     )
 
 
+def mock_login_password_expired(base_url: str = "http://mock:4010"):
+    return respx.post(f"{base_url}/auth/login").mock(
+        return_value=httpx.Response(
+            403, json={"code": "PASSWORD_CADUCADA", "title": "Password caducada"}
+        )
+    )
+
+
 def mock_request_mfa(base_url: str = "http://mock:4010"):
     return respx.post(f"{base_url}/auth/otp/solicitar").mock(return_value=_prism_ok())
 
@@ -99,6 +136,14 @@ def mock_verify_mfa(base_url: str = "http://mock:4010"):
         return_value=httpx.Response(
             200, json={"accessToken": "acc", "expiresIn": 900}
         )
+    )
+
+
+def mock_verify_mfa_error(
+    status: int, code: str, base_url: str = "http://mock:4010", **extra
+):
+    return respx.post(f"{base_url}/auth/otp/verificar").mock(
+        return_value=httpx.Response(status, json={"code": code, **extra})
     )
 
 
@@ -118,7 +163,13 @@ def mock_me(base_url: str = "http://mock:4010"):
     return respx.get(f"{base_url}/auth/me").mock(
         return_value=httpx.Response(
             200,
-            json={"id": "cust-001", "email": "a@b.pe", "celular": "+51987654321"},
+            json={
+                "id": "cust-001",
+                "correo": "a@b.pe",
+                "celular": "+51987654321",
+                "tipoDocumento": "DNI",
+                "documentoEnmascarado": "****5678",
+            },
         )
     )
 
@@ -127,7 +178,7 @@ def mock_addresses(base_url: str = "http://mock:4010"):
     return respx.get(url__regex=r".*/usuarios/.+/direcciones").mock(
         return_value=httpx.Response(
             200,
-            json={"items": [{"id": "dir-1", "distrito": "Miraflores"}]},
+            json={"direcciones": [{"id": "dir-1", "distrito": "Miraflores"}]},
         )
     )
 

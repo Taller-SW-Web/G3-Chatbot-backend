@@ -1,10 +1,14 @@
 {
   "policy": {
-    "minLength": 8,
-    "requireUpper": true,
-    "requireLower": true,
-    "requireDigit": true,
-    "requireSymbol": false,
+    "longitudMinima": 8,
+    "requiereMayuscula": true,
+    "requiereMinuscula": true,
+    "requiereDigito": true,
+    "requiereCaracterEspecial": false,
+    "rechazaComunes": true,
+    "rechazaDatosPersonales": true,
+    "historial": 5,
+    "caducidadDiasAdmin": 90,
     "mensaje": "Mínimo 8 caracteres, con al menos una mayúscula, una minúscula y un número."
   },
   "customers": [

@@ -24,10 +24,38 @@ def _number(name: str, default: str, cast, *, minimum: float):
     return value
 
 
+MODULE_MODES = ("fake", "http")
+MODULES = ("security", "products", "sales", "dispatch")
+# Modules with an in-process fake or an HTTP adapter wired in the container.
+# Sales and Dispatch have neither yet, so their mode changes nothing today.
+MODULES_WITH_ADAPTERS = ("security", "products")
+PRODUCTION_ENVIRONMENTS = ("production", "prod")
+
+
+def _app_env() -> str:
+    """Explicit deployment indicator (`APP_ENV`); unset means local development."""
+    return os.getenv("APP_ENV", "development").strip().lower() or "development"
+
+
+def _flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
+
+
 def _modules_mode() -> str:
     value = os.getenv("MODULES_MODE", "http").strip().lower()
-    if value not in ("fake", "http"):
+    if value not in MODULE_MODES:
         raise ValueError(f"MODULES_MODE must be fake or http, got {value!r}")
+    return value
+
+
+def _module_mode_override(module: str) -> str | None:
+    """`<MODULE>_MODE` (e.g. SECURITY_MODE); unset or empty inherits MODULES_MODE."""
+    name = f"{module.upper()}_MODE"
+    value = os.getenv(name, "").strip().lower()
+    if not value:
+        return None
+    if value not in MODULE_MODES:
+        raise ValueError(f"{name} must be fake or http, got {value!r}")
     return value
 
 
@@ -51,6 +79,8 @@ class Settings:
     assistant_name: str = "Botleta"
     # Module base URLs (ADR-0017): mock or real, switched by config without code changes.
     security_base_url: str = "http://localhost:4010"
+    # `iss` claim the Seguridad access tokens must carry (real service: its full /auth URL).
+    security_expected_issuer: str = "auth-service"
     products_base_url: str = "http://localhost:4011"
     sales_base_url: str = "http://localhost:4012"
     dispatch_base_url: str = "http://localhost:4013"
@@ -62,11 +92,42 @@ class Settings:
     # In-process module fakes for deployed environments without real
     # modules (ADR-0022). Environment wiring belongs to the deploy track.
     modules_mode: str = "http"
+    # Per-module overrides of `modules_mode` (None inherits it), so integrations
+    # can be switched to the real module one at a time.
+    security_mode: str | None = None
+    products_mode: str | None = None
+    sales_mode: str | None = None
+    dispatch_mode: str | None = None
+    # Deployment indicator (`APP_ENV`). In production the fake Seguridad is
+    # refused unless `ALLOW_FAKE_SECURITY=true` opts in (e.g. a demo deploy).
+    app_env: str = "development"
+    allow_fake_security: bool = False
     # Per-module timeouts in seconds (DoD: exact timeouts per integration).
     security_timeout_seconds: float = 5.0
     products_timeout_seconds: float = 4.0
     sales_timeout_seconds: float = 5.0
     dispatch_timeout_seconds: float = 4.0
+
+    def __post_init__(self) -> None:
+        if (
+            self.app_env in PRODUCTION_ENVIRONMENTS
+            and self.module_mode("security") == "fake"
+            and not self.allow_fake_security
+        ):
+            raise ValueError(
+                "Refusing to start with the fake Seguridad (accepts any credentials) when "
+                "APP_ENV is production. Set SECURITY_MODE=http, or ALLOW_FAKE_SECURITY=true "
+                "to run a demo on purpose."
+            )
+
+    def module_mode(self, module: str) -> str:
+        """Effective `fake`/`http` mode of one module: its override or `modules_mode`."""
+        if module not in MODULES:
+            raise ValueError(f"unknown module {module!r} ({'/'.join(MODULES)})")
+        return getattr(self, f"{module}_mode") or self.modules_mode
+
+    def fake_modules(self) -> tuple[str, ...]:
+        return tuple(module for module in MODULES if self.module_mode(module) == "fake")
 
 
 def _origins(name: str, default: str) -> tuple[str, ...]:
@@ -89,7 +150,14 @@ def get_settings() -> Settings:
         llm_reasoning_effort=_choice("LLM_REASONING_EFFORT", "none", LLM_REASONING_EFFORTS),
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
         modules_mode=_modules_mode(),
+        app_env=_app_env(),
+        allow_fake_security=_flag("ALLOW_FAKE_SECURITY"),
+        security_mode=_module_mode_override("security"),
+        products_mode=_module_mode_override("products"),
+        sales_mode=_module_mode_override("sales"),
+        dispatch_mode=_module_mode_override("dispatch"),
         security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),
+        security_expected_issuer=os.getenv("SECURITY_EXPECTED_ISSUER", "auth-service").strip() or "auth-service",
         security_client_secret=os.getenv("SECURITY_CLIENT_SECRET", "").strip(),
         security_client_id=os.getenv("SECURITY_CLIENT_ID", "modulo-chatbot").strip() or "modulo-chatbot",
         products_base_url=os.getenv("PRODUCTS_BASE_URL", "http://localhost:4011").strip().rstrip("/"),

@@ -53,10 +53,18 @@ def _normalize_origin(value: str) -> str:
 
 DEFAULT_POLICY_MESSAGE = "La contraseña no cumple la política de seguridad"
 
-# Seguridad's register field names -> the BFF request names. Seguridad's
-# payload is email/password/phone/nombres/apellidos (security_client.register);
-# unknown names pass through unchanged.
-SECURITY_FIELD_TO_BFF = {"nombres": "firstName", "apellidos": "lastName"}
+# G7's 400 VALIDACION `errores[].campo` names (its register payload fields) ->
+# the BFF request names the frontend already maps to form inputs. Normalizing
+# here keeps the BFF the only place that knows G7's Spanish field names.
+# Unknown names (e.g. `canalOrigen`) pass through unchanged.
+SECURITY_FIELD_TO_BFF = {
+    "correo": "email",
+    "contrasena": "password",
+    "celular": "phone",
+    "nombres": "firstName",
+    "apellidos": "lastName",
+    "aceptaTerminos": "acceptTerms",
+}
 
 
 def _scrub(text: str, password: str) -> str:
@@ -141,10 +149,16 @@ class RegistroIn(BaseModel):
 
     email: str = Field(min_length=5, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     password: str = Field(min_length=1, max_length=256)
-    phone: str = Field(pattern=r"^\+?[0-9]{9,15}$")
+    # Seguridad requires `^\+51[0-9]{9}$`; 9-digit local numbers are accepted and normalized.
+    phone: str = Field(pattern=r"^(\+51)?[0-9]{9}$")
     firstName: str = Field(min_length=1, max_length=80)
     lastName: str = Field(min_length=1, max_length=80)
     acceptTerms: bool
+
+    @field_validator("phone")
+    @classmethod
+    def _normalize_phone(cls, value: str) -> str:
+        return value if value.startswith("+51") else f"+51{value}"
 
     @field_validator("acceptTerms")
     @classmethod
@@ -237,6 +251,9 @@ def create_session_router(
             raise ProblemError(401, "TOKEN_INVALIDO", "Invalid token",
                                "Seguridad devolvió un token inválido") from None
         except ModuleRequestError as exc:
+            if exc.code == "PASSWORD_CADUCADA":
+                raise ProblemError(403, "PASSWORD_CADUCADA", "Password expired",
+                                   "Tu contraseña caducó, restablécela para continuar") from None
             raise ProblemError(exc.status, exc.code, "Module request failed") from None
         if answer.get("mfaRequerido"):
             challenge = str(answer.get("challengeToken") or "")
@@ -302,6 +319,8 @@ def create_session_router(
             raise ProblemError(401, "TOKEN_INVALIDO", "Invalid token",
                                "Seguridad devolvió un token inválido") from None
         except ModuleRequestError as exc:
+            if exc.code == "OTP_EXPIRADO":
+                raise ProblemError(410, "CODIGO_VENCIDO", "Code expired", "Pide un código nuevo") from None
             if exc.code == "OTP_INTENTOS_AGOTADOS":
                 raise ProblemError(exc.status, exc.code, "No attempts left",
                                    "Pide un código nuevo") from None
@@ -397,16 +416,29 @@ def create_session_router(
                 # beyond Seguridad's own availability answer (SPEC-01 Req. 4).
                 raise ProblemError(409, "CORREO_NO_DISPONIBLE", "Email not available",
                                    "Ese correo no está disponible para registro") from None
-            if exc.status == 400 and exc.code == "VALIDACION" and exc.errors:
+            field_rows = [row for row in exc.errors if "campo" in row]
+            if exc.status == 400 and exc.code == "VALIDACION" and field_rows:
                 raise ProblemError(
                     400, "VALIDACION", "Validation failed",
-                    errores=_register_field_errors(exc.errors, body.password),
+                    errores=_register_field_errors(field_rows, body.password),
                 ) from None
             if exc.status == 422 and exc.code == "POLITICA_INCUMPLIDA":
                 detail = _scrub(exc.detail, body.password) or DEFAULT_POLICY_MESSAGE
+                rules = [
+                    {
+                        "campo": "password",
+                        "mensaje": _scrub(
+                            f"{row['regla']}: {row['esperado']}" if "esperado" in row else row["regla"],
+                            body.password,
+                        ),
+                        **row,
+                    }
+                    for row in exc.errors
+                    if "regla" in row
+                ]
                 raise ProblemError(
                     422, "POLITICA_INCUMPLIDA", "Password policy not met", detail,
-                    errores=[{"campo": "password", "mensaje": detail}],
+                    errores=rules or [{"campo": "password", "mensaje": detail}],
                 ) from None
             raise ProblemError(exc.status, exc.code, "Module request failed") from None
         except ModuleUnavailableError:

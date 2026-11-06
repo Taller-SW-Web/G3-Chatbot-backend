@@ -1,4 +1,5 @@
 """Session HTTP edge of SPEC-03 with dependency overrides (no database, no network)."""
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -59,7 +60,7 @@ class FakeSessions:
     async def profile(self, holder, customer_id):
         return {"id": "cust-001", "celularVerificado": True, "ultimoDocumento": None}
 
-    async def register(self, *, email, password, phone, first_name=None, last_name=None):
+    async def register(self, *, email, password, phone, first_name, last_name):
         self.calls.append(("register", email, phone, first_name, last_name))
         result = self.script.get(
             "register",
@@ -313,6 +314,34 @@ def test_verify_mfa_when_attempts_are_exhausted_mirrors_module_status():
     assert res.json()["code"] == "OTP_INTENTOS_AGOTADOS"
 
 
+def test_verify_mfa_expired_code_asks_for_a_new_one():
+    """G7 - 410 OTP_EXPIRADO maps to the channel's CODIGO_VENCIDO."""
+    sessions = FakeSessions({"verify_mfa": ModuleRequestError("security", 410, "OTP_EXPIRADO")})
+    client = make_client(sessions)
+    client.cookies.set("chat_chg", "chg-1")
+    res = client.post(BASE + "/mfa/verificar", json={"code": "123456"}, headers=CSRF)
+    assert res.status_code == 410
+    assert res.json()["code"] == "CODIGO_VENCIDO"
+
+
+def test_verify_mfa_exhausted_attempts_real_status_is_401_and_keeps_code():
+    sessions = FakeSessions({"verify_mfa": ModuleRequestError("security", 401, "OTP_INTENTOS_AGOTADOS")})
+    client = make_client(sessions)
+    client.cookies.set("chat_chg", "chg-1")
+    res = client.post(BASE + "/mfa/verificar", json={"code": "123456"}, headers=CSRF)
+    assert res.status_code == 401
+    assert res.json()["code"] == "OTP_INTENTOS_AGOTADOS"
+
+
+def test_login_with_expired_password_answers_403_password_caducada():
+    sessions = FakeSessions({"login": ModuleRequestError("security", 403, "PASSWORD_CADUCADA")})
+    res = make_client(sessions).post(
+        BASE + "/login", json={"email": "a@b.pe", "password": "x"}, headers=CSRF
+    )
+    assert res.status_code == 403
+    assert res.json()["code"] == "PASSWORD_CADUCADA"
+
+
 def test_profile_returns_enriched_profile_for_authenticated_customer():
     """SPEC-03 design - `/sesion/perfil` proxies `/auth/me` plus local fields."""
     sessions = FakeSessions()
@@ -400,6 +429,27 @@ def test_register_validation_error_maps_security_fields_to_bff_names():
     assert body["errores"][2]["mensaje"] == "*** no sirve"
 
 
+@pytest.mark.parametrize(
+    ("g7_field", "bff_field"),
+    [
+        ("correo", "email"),
+        ("contrasena", "password"),
+        ("celular", "phone"),
+        ("nombres", "firstName"),
+        ("apellidos", "lastName"),
+        ("aceptaTerminos", "acceptTerms"),
+        ("canalOrigen", "canalOrigen"),
+    ],
+)
+def test_register_validation_maps_every_g7_field_name(g7_field, bff_field):
+    """G7 400 VALIDACION field names reach the client as BFF names (unknown ones pass through)."""
+    sessions = FakeSessions({"register": ModuleRequestError(
+        "security", 400, "VALIDACION", errors=[{"campo": g7_field, "mensaje": "Es obligatorio."}])})
+    res = make_client(sessions).post(BASE + "/registro", json=REGISTRO, headers=CSRF)
+    assert res.status_code == 400
+    assert res.json()["errores"] == [{"campo": bff_field, "mensaje": "Es obligatorio."}]
+
+
 def test_register_policy_error_goes_to_the_password_field():
     """SPEC-01 Req. 4 - 422 POLITICA_INCUMPLIDA carries the detail on `password`."""
     sessions = FakeSessions({"register": ModuleRequestError(
@@ -410,6 +460,55 @@ def test_register_policy_error_goes_to_the_password_field():
     assert body["code"] == "POLITICA_INCUMPLIDA"
     assert body["detail"] == "Debe incluir un símbolo"
     assert body["errores"] == [{"campo": "password", "mensaje": "Debe incluir un símbolo"}]
+
+
+def test_register_policy_error_lists_the_violated_rules():
+    """G7 - 422 POLITICA_INCUMPLIDA errores[{regla, esperado}] reach the client per rule."""
+    rules = [
+        {"regla": "LONGITUD_MINIMA", "esperado": "10"},
+        {"regla": "MAYUSCULA"},
+        {"regla": "CARACTER_ESPECIAL"},
+    ]
+    sessions = FakeSessions({"register": ModuleRequestError(
+        "security", 422, "POLITICA_INCUMPLIDA", errors=rules)})
+    res = make_client(sessions).post(BASE + "/registro", json=REGISTRO, headers=CSRF)
+    assert res.status_code == 422
+    body = res.json()
+    assert body["code"] == "POLITICA_INCUMPLIDA"
+    assert [(e["regla"], e.get("esperado")) for e in body["errores"]] == [
+        ("LONGITUD_MINIMA", "10"),
+        ("MAYUSCULA", None),
+        ("CARACTER_ESPECIAL", None),
+    ]
+    assert body["errores"][1]["mensaje"] == "MAYUSCULA"
+    assert all(e["campo"] == "password" for e in body["errores"])
+
+
+def test_register_normalizes_local_phone_numbers_to_plus_51():
+    sessions = FakeSessions()
+    client = make_client(sessions)
+    res = client.post(BASE + "/registro", json={**REGISTRO, "phone": "987654321"}, headers=CSRF)
+    assert res.status_code == 201
+    assert sessions.calls[0][2] == "+51987654321"
+
+
+def test_register_rejects_phones_outside_the_peruvian_format():
+    sessions = FakeSessions()
+    client = make_client(sessions)
+    for phone in ("+34987654321", "+5198765432", "12345678", "+519876543210"):
+        res = client.post(BASE + "/registro", json={**REGISTRO, "phone": phone}, headers=CSRF)
+        assert res.status_code == 400, phone
+    assert sessions.calls == []
+
+
+def test_register_requires_names():
+    sessions = FakeSessions()
+    client = make_client(sessions)
+    for missing in ("firstName", "lastName", "acceptTerms"):
+        body = {k: v for k, v in REGISTRO.items() if k != missing}
+        res = client.post(BASE + "/registro", json=body, headers=CSRF)
+        assert res.status_code == 400, missing
+    assert sessions.calls == []
 
 
 def test_register_policy_error_without_detail_uses_neutral_default_and_hides_password():

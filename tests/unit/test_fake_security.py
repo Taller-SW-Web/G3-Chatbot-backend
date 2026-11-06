@@ -34,9 +34,9 @@ async def test_register_verify_and_login_flow():
 @pytest.mark.asyncio
 async def test_register_with_the_same_email_is_a_conflict():
     security = FakeSecurityAdapter(customers=[])
-    await security.register("a@b.pe", "Segura1234", "+51987654321")
+    await security.register("a@b.pe", "Segura1234", "+51987654321", first_name="Ana", last_name="Díaz")
     with pytest.raises(ModuleRequestError) as exc:
-        await security.register("A@B.PE", "Otra12345", "+51987654322")
+        await security.register("A@B.PE", "Otra12345", "+51987654322", first_name="Ana", last_name="Díaz")
     assert exc.value.status == 409
     assert exc.value.code == "CORREO_NO_DISPONIBLE"
 
@@ -44,7 +44,7 @@ async def test_register_with_the_same_email_is_a_conflict():
 @pytest.mark.asyncio
 async def test_verification_link_is_single_use():
     security = FakeSecurityAdapter(customers=[])
-    await security.register("a@b.pe", "Segura1234", "+51987654321")
+    await security.register("a@b.pe", "Segura1234", "+51987654321", first_name="Ana", last_name="Díaz")
     token = security.verification_token("a@b.pe")
     await security.verify_email(token)
     with pytest.raises(ModuleRequestError) as exc:
@@ -56,7 +56,7 @@ async def test_verification_link_is_single_use():
 async def test_expired_link_reports_expiry():
     now = [0.0]
     security = FakeSecurityAdapter(customers=[], clock=lambda: now[0])
-    await security.register("a@b.pe", "Segura1234", "+51987654321")
+    await security.register("a@b.pe", "Segura1234", "+51987654321", first_name="Ana", last_name="Díaz")
     token = security.verification_token("a@b.pe")
     now[0] += 24 * 60 * 60 + 1
     with pytest.raises(ModuleRequestError) as exc:

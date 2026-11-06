@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from src.adapters.outbound.http_clients.security_client import normalize_password_policy
 from src.ports.outbound.module_errors import ModuleRequestError
 from src.ports.outbound.token_validator_port import InvalidTokenError
 
@@ -56,8 +57,8 @@ class FakeSecurityAdapter:
         password: str,
         phone: str,
         *,
-        first_name: str | None = None,
-        last_name: str | None = None,
+        first_name: str,
+        last_name: str,
     ) -> dict[str, Any]:
         key = _fold(email)
         if key in self._customers:
@@ -73,10 +74,10 @@ class FakeSecurityAdapter:
             "nombreCompleto": full_name,
         }
         self._issue_verification(key)
-        return {"customerId": customer_id, "estado": "PENDIENTE_VERIFICACION"}
+        return {"id": customer_id, "estado": "PENDIENTE_VERIFICACION"}
 
     async def password_policy(self) -> dict[str, Any]:
-        return dict(self._policy)
+        return normalize_password_policy(self._policy)
 
     async def verify_email(self, token: str) -> dict[str, Any]:
         entry = self._verifications.get(token)

@@ -89,6 +89,21 @@ async def test_validate_customer_returns_claims_for_customer_token():
     assert claims["sub"] == "cust-001"
 
 
+REAL_ISSUER = "https://g7-auth-service.onrender.com/api/v1/auth"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_configured_issuer_is_accepted_and_default_is_rejected():
+    private_pem, jwks = _keypair()
+    respx.get(JWKS_URL).mock(return_value=httpx.Response(200, json=jwks))
+    token = _token(private_pem, iss=REAL_ISSUER)
+    claims = await JwksTokenValidator(BASE_URL, expected_issuer=REAL_ISSUER).validate_customer(token)
+    assert claims["iss"] == REAL_ISSUER
+    with pytest.raises(InvalidTokenError):
+        await JwksTokenValidator(BASE_URL).validate_customer(token)
+
+
 @respx.mock
 @pytest.mark.asyncio
 async def test_expired_token_is_rejected():
