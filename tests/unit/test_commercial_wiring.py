@@ -64,6 +64,9 @@ async def test_fake_inventory_status_and_verdicts():
 def test_checkout_provider_wires_real_notification_service(monkeypatch):
     from src.infrastructure.config import container
 
+    monkeypatch.setenv("DISPATCH_MODE", "fake")
+    container.get_settings.cache_clear()
+
     notification_service = MagicMock()
     build_notification_service = MagicMock(return_value=notification_service)
     monkeypatch.setattr(container, "build_notification_service", build_notification_service)
@@ -73,3 +76,5 @@ def test_checkout_provider_wires_real_notification_service(monkeypatch):
 
     build_notification_service.assert_called_once_with(session)
     assert checkout.notification_service is notification_service
+    assert checkout.dispatch is not None
+    container.get_settings.cache_clear()

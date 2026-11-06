@@ -10,6 +10,7 @@ import uuid
 from typing import Any
 
 from src.application.dto.commerce_contracts_dto import ShippingQuoteRequest
+from src.application.use_cases.shipping_quote import build_destination, build_quote_lines
 from src.ports.outbound.module_errors import ModuleRequestError
 
 # Despacho's own code for a quote without lines; validating it here avoids a
@@ -39,16 +40,8 @@ class ManageShippingUseCase:
         `moneda`, `plazoEstimadoDiasHabiles`, `fechaEstimadaEntrega` and
         `nombreZona`. The router turns it into the channel response.
         """
-        destino = {
-            "destinatario": payload.destinatario,
-            "direccion": payload.direccion,
-            "distrito": payload.distrito,
-            "departamento": payload.departamento,
-            "provincia": payload.provincia,
-            "referencia": payload.referencia,
-        }
         return await self._dispatch.quote_shipping(
-            destino=destino,
+            destino=build_destination(payload),
             lineas=await self._cart_lines(customer_id),
             correlation_id=str(uuid.uuid4()),
         )
@@ -56,11 +49,7 @@ class ManageShippingUseCase:
     async def _cart_lines(self, customer_id: Any) -> list[dict[str, Any]]:
         cart = await self._carts.obtener_abierto_por_cliente(customer_id)
         rows = await self._items.listar_por_cart(cart.id) if cart is not None else []
-        lineas = [
-            {"sku": row.sku, "cantidad": row.quantity}
-            for row in rows
-            if row.quantity > 0
-        ]
+        lineas = build_quote_lines(rows)
         if not lineas:
             raise ModuleRequestError(
                 "dispatch",

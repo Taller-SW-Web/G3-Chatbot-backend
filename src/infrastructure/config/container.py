@@ -349,6 +349,7 @@ def provide_checkout_service(
         orders=OrderRefPostgresAdapter(session),
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
         notification_service=build_notification_service(session),
+        dispatch=provide_despacho_client(settings),
     )
 
 
