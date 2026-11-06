@@ -999,6 +999,7 @@ async def test_create_checkout_calls_sales_client_and_records_order_id(
         cart_items=mock_cart_items,
         orders=mock_orders,
         sales_client=mock_sales,
+        dispatch=FakeDispatch(),
     )
 
     chk = await use_case.create_checkout(
@@ -1045,6 +1046,7 @@ async def test_create_checkout_handles_stock_insuficiente_409(
         carts=mock_carts,
         cart_items=mock_cart_items,
         sales_client=mock_sales,
+        dispatch=FakeDispatch(),
     )
 
     with pytest.raises(CheckoutError) as exc:
