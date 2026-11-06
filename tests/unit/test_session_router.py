@@ -3,6 +3,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from src.adapters.inbound.http.dependencies.auth_guard import require_customer
 from src.adapters.inbound.http.dependencies.jwt_validator import get_current_customer
 from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.inbound.http.session_router import create_session_router
@@ -102,9 +103,9 @@ def make_client(sessions, *, with_profile_identity: bool = False):
         prefix="/api/v1",
     )
     if with_profile_identity:
-        app.dependency_overrides[get_current_customer] = lambda: CallerIdentity(
-            customer_id=CUSTOMER_ID
-        )
+        identity = CallerIdentity(customer_id=CUSTOMER_ID)
+        app.dependency_overrides[get_current_customer] = lambda: identity
+        app.dependency_overrides[require_customer] = lambda: identity
     return TestClient(app)
 
 
