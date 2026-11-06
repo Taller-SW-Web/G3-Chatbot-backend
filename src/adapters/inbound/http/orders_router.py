@@ -18,6 +18,7 @@ from src.application.dto.commerce_contracts_dto import (
     OrderTrackingResponse,
     ResendConfirmationResponse,
 )
+from src.application.use_cases.notification_service import NotificationError
 from src.domain.services.tracking_mapper import sanitize_tracking_payload
 from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
@@ -96,6 +97,11 @@ def _translate_order_error(exc: Exception) -> ProblemError:
         code = exc.code
         detail = exc.detail
         extra = exc.extra
+    elif isinstance(exc, NotificationError):
+        # SPEC-16 resend: RECURSO_NO_ENCONTRADO (404) or LIMITE_REENVIOS_EXCEDIDO (429).
+        code = exc.code
+        detail = exc.detail or None
+        extra = {}
     elif isinstance(exc, ModuleRequestError):
         # SPEC-17 Req. 1: 403/404 from Ventas on order lookup maps to 404 RECURSO_NO_ENCONTRADO
         # so the channel never leaks whether an order id exists for another customer.

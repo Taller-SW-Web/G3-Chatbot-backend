@@ -7,6 +7,7 @@ from src.adapters.inbound.http.cart_router import create_cart_router
 from src.adapters.inbound.http.catalog_router import create_catalog_router
 from src.adapters.inbound.http.chatbot_router import ActionScope, TurnScope, create_chatbot_router
 from src.adapters.inbound.http.health_router import router as health_router
+from src.adapters.inbound.http.orders_router import create_orders_router
 from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.inbound.http.session_router import create_session_router
 from src.infrastructure.config.container import (
@@ -15,6 +16,7 @@ from src.infrastructure.config.container import (
     provide_catalog_service,
     provide_chatbot_service,
     provide_manage_session,
+    provide_orders_service,
     provide_rate_limiter,
     provide_turn_scope,
 )
@@ -73,6 +75,7 @@ def create_app(
         create_catalog_router(provide_catalog_service), prefix=API_PREFIX
     )
     app.include_router(create_cart_router(provide_cart_service), prefix=API_PREFIX)
+    app.include_router(create_orders_router(provide_orders_service), prefix=API_PREFIX)
     return app
 
 
