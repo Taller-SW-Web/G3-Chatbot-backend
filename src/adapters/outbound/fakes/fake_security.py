@@ -139,6 +139,15 @@ class FakeSecurityAdapter:
             "celular": customer.get("phone"),
         }
 
+    async def list_addresses(
+        self, user_id: str, holder_token: str, *, correlation_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Saved addresses for the checkout prefill (SPEC-12). The seed has none."""
+        customer = self._customer_by_id(user_id)
+        if customer is None:
+            raise ModuleRequestError(self.module, 404, "RECURSO_NO_ENCONTRADO")
+        return []
+
     def claims_for_token(self, token: str) -> dict[str, Any] | None:
         """Used by `FakeAccessTokenValidator`; `None` when the token is unknown."""
         customer = self._customer_by_id(token.removeprefix(ACCESS_TOKEN_PREFIX))
