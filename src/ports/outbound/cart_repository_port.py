@@ -35,6 +35,10 @@ class CartRepository(Protocol):
         self, cart_id, snapshot: dict[str, Any] | None
     ) -> None: ...
 
+    async def set_coupon(self, cart_id, coupon_code: str | None) -> None:
+        """Store (or clear) the validated coupon code; totals recalc after it."""
+        ...
+
     async def reset_checkout(self, cart_id) -> None:
         """Drop the coupon/shipping/totals snapshots (empty the cart)."""
         ...

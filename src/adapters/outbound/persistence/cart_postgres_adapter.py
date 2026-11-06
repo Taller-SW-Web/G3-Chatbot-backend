@@ -92,6 +92,14 @@ class CartPostgresAdapter:
         )
         await self._flush()
 
+    async def set_coupon(self, cart_id: uuid.UUID, coupon_code: str | None) -> None:
+        await self.session.execute(
+            update(Cart)
+            .where(Cart.id == cart_id)
+            .values(coupon_code=coupon_code, updated_at=datetime.now(timezone.utc))
+        )
+        await self._flush()
+
     async def reset_checkout(self, cart_id: uuid.UUID) -> None:
         await self.session.execute(
             update(Cart)

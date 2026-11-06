@@ -18,6 +18,7 @@ from typing import Any
 from src.application.catalog.product_lookup import (
     resolve_product_id,
 )
+from src.application.services.coupon_attempts import CouponAttempts
 from src.domain.entities.message import MessageRole
 from src.domain.services.cart_line_resolver import CartLineResolver
 from src.domain.services.stock_validator import StockValidator
@@ -33,6 +34,11 @@ logger = logging.getLogger(__name__)
 MAX_PER_LINE = 10
 MAX_LINES = 20
 ANONYMOUS_TTL = timedelta(days=7)
+
+# Compartido por todas las peticiones: un `ManageCartUseCase` se construye por
+# request, así que el contador de intentos de cupón vive a nivel de módulo.
+_DEFAULT_COUPON_ATTEMPTS = CouponAttempts()
+_COUPON_SIN_CAMBIAR = object()
 
 
 class CartError(Exception):
@@ -54,6 +60,7 @@ class ManageCartUseCase:
         messages,
         uow,
         totals: TotalsCalculator | None = None,
+        coupon_attempts: CouponAttempts | None = None,
     ):
         self._carts = carts
         self._items = items
@@ -63,6 +70,7 @@ class ManageCartUseCase:
         self._messages = messages
         self._uow = uow
         self._totals = totals or TotalsCalculator()
+        self._coupon_attempts = coupon_attempts or _DEFAULT_COUPON_ATTEMPTS
         self._lines = CartLineResolver()
         self._variants = VariantResolver()
         self._stock = StockValidator()
@@ -110,6 +118,104 @@ class ManageCartUseCase:
         if cart is None:
             return {"code": "OK", "texto": "Tu carrito está vacío", "bloques": []}
         return await self._cart_view(cart, conversation_id)
+
+    async def apply_coupon(
+        self,
+        caller,
+        conversation_id: uuid.UUID,
+        *,
+        codigo: str,
+        confirmar_reemplazo: bool = False,
+    ) -> dict:
+        """Aplica un cupón validado contra Productos, sin consumirlo (SPEC-13).
+
+        El uso se consume recién cuando Ventas confirma el pedido. Un carrito
+        admite un solo cupón: reemplazarlo exige `confirmar_reemplazo`.
+        """
+        customer_id = self._require_customer(caller)
+        espera = await self._coupon_attempts.blocked(customer_id)
+        if espera is not None:
+            raise CartError(
+                "DEMASIADAS_SOLICITUDES",
+                "Demasiados intentos de cupón. Intenta de nuevo más tarde.",
+                {"reintentarEn": espera},
+            )
+        codigo = (codigo or "").strip().upper()
+        if not codigo:
+            raise CartError("VALIDACION", "El código del cupón es obligatorio.")
+        cart = await self._open_cart(caller, conversation_id, create=False)
+        if cart is None:
+            raise CartError("RECURSO_NO_ENCONTRADO", "cart not found")
+        if cart.coupon_code and cart.coupon_code != codigo and not confirmar_reemplazo:
+            raise CartError(
+                "REQUIERE_CONFIRMACION_REEMPLAZO",
+                "Tu carrito ya tiene un cupón aplicado.",
+                {"cuponActual": cart.coupon_code, "cuponNuevo": codigo},
+            )
+        rows = await self._items.listar_por_cart(cart.id)
+        if not rows:
+            raise CartError("VALIDACION", "Agrega productos antes de aplicar un cupón.")
+        try:
+            evaluacion = await self._catalog.evaluate_promotions(
+                [{"sku": row.sku, "quantity": row.quantity} for row in rows],
+                coupon_code=codigo,
+                customer_ref=customer_id,
+            )
+        except Exception as exc:
+            raise self._map_module_error(exc) from exc
+        if not evaluacion.get("coupon_applied", False):
+            await self._coupon_attempts.record_failure(customer_id)
+            motivo = str(
+                evaluacion.get("reason") or evaluacion.get("motivo") or "INEXISTENTE"
+            )
+            raise CartError("CUPON_INVALIDO", "El cupón no es válido.", {"motivo": motivo})
+        await self._coupon_attempts.clear(customer_id)
+        await self._carts.set_coupon(cart.id, codigo)
+        try:
+            view = await self._cart_view(cart, conversation_id, coupon_code=codigo)
+            await self._uow.commit()
+        except BaseException:
+            await self._uow.rollback()
+            raise
+        return {
+            "code": "OK",
+            "texto": f"Cupón {codigo} aplicado. {view['texto']}",
+            "cupon": {
+                "codigo": codigo,
+                "descuento": float(evaluacion.get("discount_amount") or 0),
+                "moneda": "PEN",
+                "promocionId": evaluacion.get("promotion_id"),
+            },
+            "bloques": view["bloques"],
+        }
+
+    async def remove_coupon(self, caller, conversation_id: uuid.UUID) -> dict:
+        """Quita el cupón del carrito y recalcula los totales (SPEC-13)."""
+        self._require_customer(caller)
+        cart = await self._open_cart(caller, conversation_id, create=False)
+        if cart is None:
+            raise CartError("RECURSO_NO_ENCONTRADO", "cart not found")
+        await self._carts.set_coupon(cart.id, None)
+        try:
+            view = await self._cart_view(cart, conversation_id, coupon_code=None)
+            await self._uow.commit()
+        except BaseException:
+            await self._uow.rollback()
+            raise
+        return {
+            "code": "OK",
+            "texto": "Quitamos el cupón de tu carrito.",
+            "cupon": None,
+            "bloques": view["bloques"],
+        }
+
+    @staticmethod
+    def _require_customer(caller) -> str:
+        if caller is None or caller.customer_id is None:
+            raise CartError(
+                "REQUIERE_SESION", "Se requiere una sesión de cliente para usar cupones."
+            )
+        return str(caller.customer_id)
 
     async def validate_cart(self, cart) -> dict[str, dict]:
         """Per-line live revalidation for checkout (SPEC-10 Req. 2)."""
@@ -275,14 +381,23 @@ class ManageCartUseCase:
 
     # -- reads ----------------------------------------------------------------
 
-    async def _cart_view(self, cart, conversation_id, *, touch=True) -> dict:
+    async def _cart_view(
+        self, cart, conversation_id, *, touch=True, coupon_code=_COUPON_SIN_CAMBIAR
+    ) -> dict:
         rows = await self._items.listar_por_cart(cart.id)
         if not rows:
             return {"code": "OK", "texto": "Tu carrito está vacío", "bloques": []}
         skus = [row.sku for row in rows]
         prices = await self._prices_map(skus)
-        evaluation, promotions_ok = await self._evaluate(cart, rows)
+        evaluation, promotions_ok = await self._evaluate(
+            cart, rows, coupon_code=coupon_code
+        )
         names = await self._promotion_names()
+        codigo_efectivo = (
+            cart.coupon_code if coupon_code is _COUPON_SIN_CAMBIAR else coupon_code
+        )
+        if codigo_efectivo and evaluation and evaluation.get("promotion_id"):
+            names[str(evaluation["promotion_id"])] = f"Cupón {codigo_efectivo}"
         priced: list[PricedLine] = []
         for row in rows:
             price = prices.get(row.sku)
@@ -486,11 +601,14 @@ class ManageCartUseCase:
             for row in rows
         }
 
-    async def _evaluate(self, cart, rows) -> tuple[dict | None, bool]:
+    async def _evaluate(
+        self, cart, rows, *, coupon_code=_COUPON_SIN_CAMBIAR
+    ) -> tuple[dict | None, bool]:
+        codigo = cart.coupon_code if coupon_code is _COUPON_SIN_CAMBIAR else coupon_code
         try:
             result = await self._catalog.evaluate_promotions(
                 [{"sku": row.sku, "quantity": row.quantity} for row in rows],
-                coupon_code=cart.coupon_code,
+                coupon_code=codigo,
                 customer_ref=str(cart.customer_id) if cart.customer_id else None,
             )
             return result, True
