@@ -1,6 +1,7 @@
 """Unit tests for checkout and payment processing use case (SPEC-14)."""
 import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -16,6 +17,14 @@ from src.application.use_cases.manage_checkout_use_case import (
 )
 from src.domain.entities.checkout import CheckoutStatus
 from src.domain.entities.payment_attempt import PaymentResult
+
+VALID_CONTACT = {
+    "nombreCompleto": "Juan Pérez Rodríguez",
+    "tipoDocumento": "DNI",
+    "numeroDocumento": "72458912",
+    "telefono": "+51999888777",
+    "email": "juan@example.com",
+}
 
 
 @pytest.fixture
@@ -48,11 +57,20 @@ def use_case(mock_checkouts, mock_attempts, payment_gateway):
     uow = MagicMock()
     uow.commit = AsyncMock()
     uow.rollback = AsyncMock()
+    cart_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    carts = MagicMock()
+    carts.obtener_por_id = AsyncMock(return_value=SimpleNamespace(id=cart_id, customer_id=customer_id, totals_snapshot=None))
+    carts.cambiar_estado = AsyncMock()
+    items = MagicMock()
+    items.listar_por_cart = AsyncMock(return_value=[SimpleNamespace(sku="SKU-1", name="Polo", quantity=2, unit_price_ref=50, image_url=None)])
     return ManageCheckoutUseCase(
         checkouts=mock_checkouts,
         payment_attempts=mock_attempts,
         payment_gateway=payment_gateway,
         uow=uow,
+        carts=carts,
+        cart_items=items,
     )
 
 
@@ -63,7 +81,6 @@ async def test_create_checkout_requires_idempotency_key(use_case):
             CreateCheckoutInput(
                 customer_id=uuid.uuid4(),
                 idempotency_key="",
-                total=100.0,
             )
         )
     assert exc_info.value.code == "VALIDACION"
@@ -71,8 +88,9 @@ async def test_create_checkout_requires_idempotency_key(use_case):
 
 @pytest.mark.asyncio
 async def test_create_checkout_success_with_15_min_expiry(use_case, mock_checkouts):
-    cust_id = uuid.uuid4()
-    cart_id = uuid.uuid4()
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cust_id = cart.customer_id
+    cart_id = cart.id
     before = datetime.now(timezone.utc)
 
     checkout = await use_case.create_checkout(
@@ -80,29 +98,27 @@ async def test_create_checkout_success_with_15_min_expiry(use_case, mock_checkou
             customer_id=cust_id,
             idempotency_key="idemp-chk-1",
             cart_id=cart_id,
-            lineas=[{"sku": "SKU-1", "cantidad": 2, "precio": 50.0}],
-            subtotal=100.0,
-            costo_envio=15.0,
-            descuento=10.0,
-            total=105.0,
+            contacto=VALID_CONTACT,
+            direccion={"distrito": "Miraflores"},
         )
     )
 
     assert checkout.customer_id == cust_id
     assert checkout.cart_id == cart_id
     assert checkout.status == CheckoutStatus.PENDING_PAYMENT.value
-    assert checkout.total == 105.0
+    assert checkout.total == 112.50
     assert checkout.payment_attempts == 0
     assert checkout.expires_at >= before + timedelta(minutes=14, seconds=55)
 
 
 @pytest.mark.asyncio
 async def test_create_checkout_idempotent_returns_existing(use_case, mock_checkouts):
-    cart_id = uuid.uuid4()
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cart_id = cart.id
     existing = Checkout(
         id=uuid.uuid4(),
         cart_id=cart_id,
-        customer_id=uuid.uuid4(),
+        customer_id=cart.customer_id,
         status=CheckoutStatus.PENDING_PAYMENT.value,
         summary={},
         total=100.0,
@@ -117,10 +133,124 @@ async def test_create_checkout_idempotent_returns_existing(use_case, mock_checko
             customer_id=existing.customer_id,
             idempotency_key="same-key",
             cart_id=cart_id,
-            total=100.0,
+            contacto=VALID_CONTACT,
         )
     )
     assert res == existing
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field,value", [
+    ("nombreCompleto", ""),
+    ("tipoDocumento", "OTHER"),
+    ("numeroDocumento", "1234567"),
+    ("numeroDocumento", "30458912345"),
+    ("telefono", 123),
+    ("email", None),
+])
+async def test_create_checkout_rejects_invalid_contact(use_case, mock_checkouts, field, value):
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    contacto = {**VALID_CONTACT, field: value}
+    if field == "numeroDocumento" and value == "30458912345":
+        contacto["tipoDocumento"] = "RUC"
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="invalid-contact",
+            cart_id=cart.id,
+            contacto=contacto,
+        ))
+    assert exc_info.value.code == "DATO_INVALIDO"
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_accepts_contact_with_only_required_fields(use_case, mock_checkouts):
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    contacto = {
+        "nombreCompleto": "Juan Pérez Rodríguez",
+        "tipoDocumento": "DNI",
+        "numeroDocumento": "72458912",
+    }
+    checkout = await use_case.create_checkout(CreateCheckoutInput(
+        customer_id=cart.customer_id,
+        idempotency_key="minimal-contact",
+        cart_id=cart.id,
+        contacto=contacto,
+    ))
+    assert checkout.summary["contacto"] == contacto
+    assert checkout.total == 100.0
+    mock_checkouts.guardar.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("contacto", [None, "invalid", []])
+async def test_create_checkout_rejects_missing_or_malformed_contact(
+    use_case, mock_checkouts, contacto
+):
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="bad-contact-shape",
+            cart_id=cart.id,
+            contacto=contacto,
+        ))
+    assert exc_info.value.code == "DATO_INVALIDO"
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("foreign", [False, True])
+async def test_create_checkout_rejects_missing_or_foreign_cart_before_insert(
+    use_case, mock_checkouts, foreign
+):
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    use_case.carts.obtener_por_id.return_value = (
+        SimpleNamespace(id=cart.id, customer_id=uuid.uuid4()) if foreign else None
+    )
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="unknown-cart",
+            cart_id=cart.id,
+            contacto=VALID_CONTACT,
+        ))
+    assert exc_info.value.code == "RECURSO_NO_ENCONTRADO"
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_rejects_empty_cart_without_client_fallback(use_case, mock_checkouts):
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    use_case.cart_items.listar_por_cart.return_value = []
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="empty-cart",
+            cart_id=cart.id,
+            contacto=VALID_CONTACT,
+        ))
+    assert exc_info.value.code == "CARRITO_VACIO"
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_uses_only_cart_discount_snapshot(use_case):
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cart.totals_snapshot = {
+        "subtotal": "100.00",
+        "descuentos": [{"name": "PROMO", "amount": "10.00"}],
+    }
+    checkout = await use_case.create_checkout(CreateCheckoutInput(
+        customer_id=cart.customer_id,
+        idempotency_key="server-discount",
+        cart_id=cart.id,
+        contacto=VALID_CONTACT,
+        direccion={"distrito": "Miraflores"},
+    ))
+    assert checkout.summary["descuento"] == 10.0
+    assert checkout.total == 102.50
 
 
 @pytest.mark.asyncio
@@ -433,6 +563,17 @@ async def test_payment_idempotency_key_returns_existing_attempt(
         transaction_id="SIM-previo-1",
     )
     mock_attempts.obtener_por_idempotency_key = AsyncMock(return_value=existing_attempt)
+    mock_checkouts.obtener_por_id.return_value = Checkout(
+        id=checkout_id,
+        cart_id=uuid.uuid4(),
+        customer_id=cust_id,
+        status="PENDING_PAYMENT",
+        summary={},
+        total=150.0,
+        payment_attempts=1,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        idempotency_key="checkout-key",
+    )
 
     uow = MagicMock()
     uow.commit = AsyncMock()
@@ -458,6 +599,43 @@ async def test_payment_idempotency_key_returns_existing_attempt(
 
 
 @pytest.mark.asyncio
+async def test_payment_idempotency_retry_rejects_foreign_customer(
+    use_case, mock_checkouts, mock_attempts
+):
+    checkout_id = uuid.uuid4()
+    mock_attempts.obtener_por_idempotency_key = AsyncMock(return_value=PaymentAttempt(
+        id=uuid.uuid4(),
+        checkout_id=checkout_id,
+        idempotency_key="foreign-retry",
+        result="APPROVED",
+        amount=100.0,
+    ))
+    mock_checkouts.obtener_por_id.return_value = Checkout(
+        id=checkout_id,
+        cart_id=uuid.uuid4(),
+        customer_id=uuid.uuid4(),
+        status="PENDING_PAYMENT",
+        summary={},
+        total=100.0,
+        payment_attempts=1,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        idempotency_key="checkout-key",
+    )
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.process_payment(ProcessPaymentInput(
+            checkout_id=checkout_id,
+            customer_id=uuid.uuid4(),
+            idempotency_key="foreign-retry",
+            numero_tarjeta="4111111111111111",
+            titular="Other Customer",
+            vencimiento="12/28",
+            cvv="123",
+        ))
+    assert exc_info.value.code == "RECURSO_NO_ENCONTRADO"
+    mock_attempts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_create_checkout_recalculates_items_and_shipping_from_server(
     mock_checkouts, mock_attempts, payment_gateway
 ):
@@ -467,6 +645,7 @@ async def test_create_checkout_recalculates_items_and_shipping_from_server(
     mock_cart = MagicMock()
     mock_cart.id = cart_id
     mock_cart.customer_id = cust_id
+    mock_cart.totals_snapshot = None
 
     mock_carts = MagicMock()
     mock_carts.obtener_abierto_por_cliente = AsyncMock(return_value=mock_cart)
@@ -494,14 +673,14 @@ async def test_create_checkout_recalculates_items_and_shipping_from_server(
         cart_items=mock_items,
     )
 
-    # 2 * 40 = 80 subtotal. Envio 12.50. Total servidor = 92.50
+    # The server calculates the subtotal and adds its default shipping cost.
     checkout = await use_case.create_checkout(
         CreateCheckoutInput(
             customer_id=cust_id,
             idempotency_key="chk-recalc-1",
-            cart_id=None,  # Not provided, resolves open cart!
-            costo_envio=12.50,
-            total=92.50,
+            cart_id=None,
+            contacto=VALID_CONTACT,
+            direccion={"distrito": "Miraflores"},
         )
     )
     assert checkout.total == 92.50

@@ -4,7 +4,7 @@ from typing import Any, Callable
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from src.adapters.inbound.http.dependencies.checkout_guard import require_customer
 from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
@@ -35,12 +35,7 @@ class CreateCheckoutRequest(BaseModel):
 
     cartId: UUID | None = None
     direccion: dict[str, Any] | None = None
-    contacto: dict[str, Any] | None = None
-    lineas: list[dict[str, Any]] = Field(default_factory=list)
-    subtotal: float = 0.0
-    costoEnvio: float = 0.0
-    descuento: float = 0.0
-    total: float = 0.0
+    contacto: Any = None
 
 
 class ProcessPaymentRequest(BaseModel):
@@ -60,7 +55,8 @@ def _translate_error(err: CheckoutError) -> ProblemError:
         "PAGO_RECHAZADO": 402,
         "CHECKOUT_EXPIRADO": 410,
         "VALIDACION": 400,
-        "CARRITO_VACIO": 422,
+        "DATO_INVALIDO": 400,
+        "CARRITO_VACIO": 409,
         "ERROR_PROCESAMIENTO": 503,
         "SERVICIO_NO_DISPONIBLE": 503,
         "CELULAR_NO_VERIFICADO": 403,
@@ -119,11 +115,6 @@ def create_checkout_router(
                     cart_id=payload.cartId,
                     direccion=payload.direccion,
                     contacto=payload.contacto,
-                    lineas=payload.lineas,
-                    subtotal=payload.subtotal,
-                    costo_envio=payload.costoEnvio,
-                    descuento=payload.descuento,
-                    total=payload.total,
                 )
             )
             order_id = row.summary.get("orderId") if isinstance(row.summary, dict) else None

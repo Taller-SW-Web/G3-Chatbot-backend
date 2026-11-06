@@ -77,7 +77,13 @@ async def test_post_checkout_creates_session_201(test_app, mock_service, custome
         res = await client.post(
             "/api/v1/checkout",
             headers={"Idempotency-Key": "idemp-1"},
-            json={"total": 120.0, "subtotal": 100.0, "costoEnvio": 20.0},
+            json={
+                "lineas": [{"sku": "FORGED", "precio": 1}],
+                "subtotal": 1.0,
+                "costoEnvio": 0.0,
+                "descuento": 999.0,
+                "total": 1.0,
+            },
         )
         assert res.status_code == 201
         data = res.json()
@@ -85,6 +91,29 @@ async def test_post_checkout_creates_session_201(test_app, mock_service, custome
         assert data["status"] == "PENDING_PAYMENT"
         assert data["total"] == 120.0
         assert data["intentosRestantes"] == 3
+        submitted = mock_service.create_checkout.call_args.args[0]
+        assert not any(hasattr(submitted, field) for field in (
+            "lineas", "subtotal", "costo_envio", "descuento", "total"
+        ))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code,status", [
+    ("DATO_INVALIDO", 400),
+    ("RECURSO_NO_ENCONTRADO", 404),
+    ("CARRITO_VACIO", 409),
+])
+async def test_post_checkout_contract_errors_use_problem_json(test_app, mock_service, code, status):
+    mock_service.create_checkout.side_effect = CheckoutError(code, "Invalid checkout")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_app), base_url="http://test") as client:
+        res = await client.post(
+            "/api/v1/checkout",
+            headers={"Idempotency-Key": "idemp-error"},
+            json={"contacto": "invalid" if code == "DATO_INVALIDO" else {}},
+        )
+    assert res.status_code == status
+    assert res.headers["content-type"] == "application/problem+json"
+    assert res.json()["code"] == code
 
 
 @pytest.mark.asyncio

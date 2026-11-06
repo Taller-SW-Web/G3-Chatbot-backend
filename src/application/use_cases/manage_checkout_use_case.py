@@ -1,9 +1,11 @@
 """Checkout and payment use cases (SPEC-12, SPEC-14)."""
 import inspect
 import logging
+import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any
 
 from src.adapters.outbound.pagos.payment_simulator_adapter import CardValidationError
@@ -18,6 +20,13 @@ from src.domain.entities.payment_attempt import PaymentRejectReason, PaymentResu
 from src.ports.outbound.payment_gateway_port import PaymentGatewayPort
 
 logger = logging.getLogger(__name__)
+DEFAULT_SHIPPING_COST = 12.50
+DOCUMENT_PATTERNS = {
+    "DNI": re.compile(r"[0-9]{8}"),
+    "RUC": re.compile(r"(?:10|15|17|20)[0-9]{9}"),
+    "CE": re.compile(r"[a-zA-Z0-9]{8,12}"),
+    "PASAPORTE": re.compile(r"[a-zA-Z0-9]{6,12}"),
+}
 
 
 async def _safe_call(obj: Any, method_name: str, *args: Any, **kwargs: Any) -> Any:
@@ -48,11 +57,6 @@ class CreateCheckoutInput:
     cart_id: uuid.UUID | None = None
     direccion: dict[str, Any] | None = None
     contacto: dict[str, Any] | None = None
-    lineas: list[dict[str, Any]] = field(default_factory=list)
-    subtotal: float = 0.0
-    costo_envio: float | None = None
-    descuento: float = 0.0
-    total: float = 0.0
 
 
 @dataclass
@@ -98,6 +102,17 @@ class ManageCheckoutUseCase:
         if not input_data.idempotency_key:
             raise CheckoutError("VALIDACION", "Se requiere Idempotency-Key", {"campo": "Idempotency-Key"})
 
+        contacto = input_data.contacto
+        for field_name in ("nombreCompleto", "tipoDocumento", "numeroDocumento"):
+            if not isinstance(contacto, dict) or not isinstance(contacto.get(field_name), str) or not contacto[field_name].strip():
+                raise CheckoutError("DATO_INVALIDO", "Los datos de contacto son obligatorios", {"campo": f"contacto.{field_name}"})
+        for field_name in ("telefono", "email"):
+            if field_name in contacto and not isinstance(contacto[field_name], str):
+                raise CheckoutError("DATO_INVALIDO", "El dato de contacto debe ser texto", {"campo": f"contacto.{field_name}"})
+        pattern = DOCUMENT_PATTERNS.get(contacto["tipoDocumento"])
+        if pattern is None or pattern.fullmatch(contacto["numeroDocumento"]) is None:
+            raise CheckoutError("DATO_INVALIDO", "El documento no tiene un formato válido", {"campo": "contacto.numeroDocumento"})
+
         # 1. Idempotencia real previa por clave
         existing = await _safe_call(self.checkouts, "obtener_por_idempotency_key", input_data.idempotency_key)
         if existing and isinstance(existing, Checkout):
@@ -109,7 +124,7 @@ class ManageCheckoutUseCase:
         cart_id = input_data.cart_id
         if cart_id is not None:
             cart = await _safe_call(self.carts, "obtener_por_id", cart_id)
-            if cart and getattr(cart, "customer_id", None) and cart.customer_id != input_data.customer_id:
+            if cart is None or getattr(cart, "customer_id", None) != input_data.customer_id:
                 raise CheckoutError("RECURSO_NO_ENCONTRADO", "Carrito no encontrado")
         elif self.carts:
             cart = await _safe_call(self.carts, "obtener_abierto_por_cliente", input_data.customer_id)
@@ -117,8 +132,7 @@ class ManageCheckoutUseCase:
                 raise CheckoutError("CARRITO_VACIO", "No se encontró un carrito activo para iniciar checkout")
             cart_id = cart.id
         else:
-            if not cart_id:
-                raise CheckoutError("VALIDACION", "Se requiere cartId válido", {"campo": "cartId"})
+            raise CheckoutError("CARRITO_VACIO", "No se encontró un carrito activo para iniciar checkout")
 
         # 3. Comprobar checkout vivo por carrito garantizando pertenencia
         existing_cart_chk = await _safe_call(
@@ -138,42 +152,32 @@ class ManageCheckoutUseCase:
                 raise CheckoutError("CELULAR_NO_VERIFICADO", "El celular no ha sido verificado")
 
         # 5. Cálculo y revalidación de importes en el servidor
-        lineas = input_data.lineas
-        subtotal = float(input_data.subtotal)
         items = await _safe_call(self.cart_items, "listar_por_cart", cart_id)
-        if items and isinstance(items, list):
-            subtotal = float(sum(float(getattr(it, "unit_price_ref", 0)) * getattr(it, "quantity", 1) for it in items))
-            lineas = [
-                {
-                    "sku": getattr(it, "sku", ""),
-                    "nombre": getattr(it, "name", ""),
-                    "cantidad": getattr(it, "quantity", 1),
-                    "precio": float(getattr(it, "unit_price_ref", 0)),
-                    "imagen": getattr(it, "image_url", None),
-                }
-                for it in items
-            ]
-        elif self.cart_items and not lineas:
+        if not items:
             raise CheckoutError("CARRITO_VACIO", "Tu carrito no tiene productos disponibles para comprar")
-
-        costo_envio = float(input_data.costo_envio if input_data.costo_envio is not None else (12.50 if input_data.direccion else 0.0))
-        descuento = float(input_data.descuento or 0.0)
-        total_servidor = round(subtotal - descuento + costo_envio, 2)
-
-        # Si el cliente envió un total y difiere de lo calculado en servidor, rechazar con 409
-        if input_data.total > 0 and total_servidor > 0 and abs(float(input_data.total) - total_servidor) > 0.01:
-            raise CheckoutError(
-                "CARRITO_DESACTUALIZADO",
-                "El total del carrito ha cambiado. Por favor confirma el nuevo resumen.",
-                {
-                    "total": total_servidor,
-                    "subtotal": round(subtotal, 2),
-                    "costoEnvio": round(costo_envio, 2),
-                    "descuento": round(descuento, 2),
-                },
-            )
-
-        total_final = total_servidor if total_servidor > 0 else float(input_data.total)
+        subtotal = float(sum(float(it.unit_price_ref) * it.quantity for it in items))
+        lineas = [
+            {
+                "sku": it.sku,
+                "nombre": it.name,
+                "cantidad": it.quantity,
+                "precio": float(it.unit_price_ref),
+                "imagen": it.image_url,
+            }
+            for it in items
+        ]
+        totals_snapshot = cart.totals_snapshot if isinstance(cart.totals_snapshot, dict) else {}
+        discounts = totals_snapshot.get("descuentos", [])
+        descuento = 0.0
+        if (
+            totals_snapshot.get("subtotal") is not None
+            and Decimal(str(totals_snapshot["subtotal"])) == Decimal(str(subtotal))
+            and isinstance(discounts, list)
+        ):
+            descuento = sum(float(discount.get("amount", 0)) for discount in discounts if isinstance(discount, dict))
+        descuento = min(max(descuento, 0.0), subtotal)
+        costo_envio = DEFAULT_SHIPPING_COST if input_data.direccion else 0.0
+        total_final = round(subtotal - descuento + costo_envio, 2)
 
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(minutes=15)
@@ -254,6 +258,9 @@ class ManageCheckoutUseCase:
         # 1. Idempotencia real: buscar por clave antes de ejecutar
         existing_attempt = await _safe_call(self.payment_attempts, "obtener_por_idempotency_key", input_data.idempotency_key)
         if existing_attempt and isinstance(existing_attempt, PaymentAttempt):
+            existing_checkout = await self.checkouts.obtener_por_id(existing_attempt.checkout_id)
+            if not existing_checkout or existing_checkout.customer_id != input_data.customer_id:
+                raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
             if existing_attempt.checkout_id != input_data.checkout_id:
                 raise CheckoutError("CONFLICTO", "Idempotency-Key ya usada en otro checkout")
             return existing_attempt
