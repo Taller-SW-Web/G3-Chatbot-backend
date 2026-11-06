@@ -9,6 +9,7 @@ checkout quotes it. Never imports FastAPI, httpx or SQLAlchemy: the
 repositories (`CartRepository`, `CartItemRepository`) build the rows and
 translate driver errors into `StaleCartError`/`CartConflictError`.
 """
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -19,8 +20,11 @@ from src.application.catalog.product_lookup import (
     resolve_product_id,
 )
 from src.application.services.coupon_attempts import CouponAttempts
+from src.application.tools.tool_registry import ExecutionContext
 from src.domain.entities.message import MessageRole
 from src.domain.services.cart_line_resolver import CartLineResolver
+from src.domain.services.offer_policy import amount, instant, price_projection
+from src.domain.services.product_projection import normalize_detail
 from src.domain.services.stock_validator import StockValidator
 from src.domain.services.totals_calculator import PricedLine, TotalsCalculator
 from src.domain.services.variant_resolver import VariantResolver
@@ -28,6 +32,7 @@ from src.ports.outbound.cart_repository_port import (
     CartConflictError,
     StaleCartError,
 )
+from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +65,7 @@ class ManageCartUseCase:
         messages,
         uow,
         totals: TotalsCalculator | None = None,
+        discovery=None,
         coupon_attempts: CouponAttempts | None = None,
     ):
         self._carts = carts
@@ -74,19 +80,33 @@ class ManageCartUseCase:
         self._lines = CartLineResolver()
         self._variants = VariantResolver()
         self._stock = StockValidator()
+        self._discovery = discovery
 
     # -- public operations ----------------------------------------------------
 
     async def add(self, caller, conversation_id: uuid.UUID, *, sku=None,
                   producto_ref=None, product_id=None, size=None, color=None,
-                  quantity: int = 1, tool: str = "agregar_al_carrito") -> dict:
+                  quantity: int = 1, tool: str = "agregar_al_carrito", deliver_cross_sell: bool = True) -> dict:
         if not 1 <= quantity <= MAX_PER_LINE:
             raise CartError("LIMITE_CANTIDAD", f"quantity {quantity} out of 1..10")
-        return await self._mutate(
+        added = []
+        result = await self._mutate(
             caller, conversation_id, tool,
             lambda cart: self._add_line(cart, conversation_id, sku, producto_ref,
-                                        product_id, size, color, quantity),
+                                        product_id, size, color, quantity, added),
         )
+        if deliver_cross_sell and added and added[-1] and self._discovery is not None and not result.get("requiere_variante"):
+            context = ExecutionContext(
+                conversacion_id=str(conversation_id) if conversation_id else None,
+                cliente_id=str(caller.customer_id) if caller.customer_id else None,
+                chat_sid=caller.anonymous_sid)
+            try:
+                result["bloques"].extend(await self._discovery.cross_sell(added[-1], context))
+            except Exception:
+                # The cart transaction has already committed. No failure here may undo it.
+                await self._uow.rollback()
+                logger.warning("cross-sell unavailable after successful add")
+        return result
 
     async def update_quantity(self, caller, conversation_id: uuid.UUID, *,
                               item_id=None, item_ref=None, name=None,
@@ -309,7 +329,7 @@ class ManageCartUseCase:
         return f"{texto} Tu carrito: {len(lineas)} productos · S/ {datos.get('total', 0):.2f}"
 
     async def _add_line(self, cart, conversation_id, sku, producto_ref,
-                        product_id, size, color, quantity) -> str:
+                        product_id, size, color, quantity, added=None) -> str:
         resolved = await self._resolve_sku(
             cart, conversation_id, sku, producto_ref, product_id, size, color
         )
@@ -342,7 +362,18 @@ class ManageCartUseCase:
                 "LIMITE_CANTIDAD", "Tu carrito llegó al máximo de 20 productos distintos"
             )
         await self._check_can_sell(sku_value, current + quantity)
-        price = await self._live_price(sku_value)
+        captured_price = []
+        price = await self._live_price(sku_value, captured_price)
+        if conversation_id is not None and captured_price:
+            projection = price_projection(captured_price[0])
+            memory = await self._memory(conversation_id)
+            snapshots = dict(memory.get("cartOfferPrices", {}))
+            if projection["offer_price"] is not None:
+                snapshots[sku_value] = {"name": detail.get("name"), **projection}
+                # Context must stay JSON-serializable in the existing repository.
+                snapshots[sku_value]["price"] = str(projection["price"])
+                memory["cartOfferPrices"] = snapshots
+                await self._conversations.save_context(conversation_id, memory)
         if existing is None:
             await self._items.agregar(
                 cart_id=cart.id,
@@ -358,6 +389,8 @@ class ManageCartUseCase:
             await self._items.set_quantity(
                 existing.id, quantity=current + quantity, unit_price_ref=float(price)
             )
+        if added is not None:
+            added.append(str(detail.get("product_id")))
         prefijo = f"Agregué {detail.get('name') or sku_value} (S/ {float(price):.2f})."
         return f"{prefijo}{self._variant_suffix(variant)}"
 
@@ -388,11 +421,14 @@ class ManageCartUseCase:
         if not rows:
             return {"code": "OK", "texto": "Tu carrito está vacío", "bloques": []}
         skus = [row.sku for row in rows]
-        prices = await self._prices_map(skus)
-        evaluation, promotions_ok = await self._evaluate(
-            cart, rows, coupon_code=coupon_code
+        price_rows = {}
+        prices, (evaluation, promotions_ok) = await asyncio.gather(
+            self._prices_map(skus, price_rows),
+            self._evaluate(cart, rows, coupon_code=coupon_code),
         )
-        names = await self._promotion_names()
+        # No campaign lookup is needed when no campaign was applied. Preserve
+        # every authoritative evaluated discount; only its display name is optional.
+        names = await self._promotion_names() if evaluation and evaluation.get("promotion_id") else {}
         codigo_efectivo = (
             cart.coupon_code if coupon_code is _COUPON_SIN_CAMBIAR else coupon_code
         )
@@ -432,7 +468,7 @@ class ManageCartUseCase:
                 "nombre": row.name,
                 "variante": row.variant_description,
                 "cantidad": row.quantity,
-                "precio": float(priced[i].unit_price),
+                "precio": float(priced[i].unit_price) if priced[i].available else None,
                 "disponible": priced[i].available,
                 "imagen": row.image_url,
             }
@@ -441,6 +477,22 @@ class ManageCartUseCase:
         unavailable = [line for i, line in enumerate(lines_out) if not priced[i].available]
         texto = f"Tu carrito: {len(rows)} productos · S/ {totals.total:.2f}"
         notices = list(totals.notices)
+        if conversation_id is not None:
+            memory = await self._memory(conversation_id)
+            snapshots = dict(memory.get("cartOfferPrices", {}))
+            changed = False
+            for row in rows:
+                prior = snapshots.get(row.sku, {})
+                expiry = prior.get("offer_valid_until")
+                if (expiry and instant(expiry) <= datetime.now(timezone.utc)
+                        and prices.get(row.sku) is not None
+                        and price_projection(price_rows.get(row.sku, {}))["offer_price"] is None):
+                    notices.append(f"La oferta de {row.name} terminó; el precio ahora es S/ {prices[row.sku]:.2f}")
+                    snapshots.pop(row.sku)
+                    changed = True
+            if changed:
+                memory["cartOfferPrices"] = snapshots
+                await self._conversations.save_context(conversation_id, memory)
         for line in unavailable:
             notices.append(f"{line['nombre']} ya no está disponible. Puedes quitarlo.")
             line["nota"] = "Ya no disponible"
@@ -464,6 +516,7 @@ class ManageCartUseCase:
                     "total": float(totals.total),
                     "avisos": notices,
                     "promociones_ok": promotions_ok,
+                    "promotion_reason": evaluation.get("reason") if evaluation else None,
                 },
             }],
         }
@@ -546,12 +599,9 @@ class ManageCartUseCase:
         return None, detail, None
 
     async def _sku_context(self, sku, size, color, product_id=None):
-        """Detail for an explicit SKU.
+        """Hydrate an explicit product, or verify exact SKU matches from bounded search.
 
-        The card/detail flow sends `product_id` with the SKU, so the line
-        keeps the real name, image and product id. Productos exposes no
-        by-SKU detail endpoint (A16), so a bare `{sku}` falls back to the
-        SKU as the display name.
+        If G6 cannot resolve a bare SKU, retain the line without merchandising.
         """
         detail: dict[str, Any] | None = None
         if product_id:
@@ -559,6 +609,33 @@ class ManageCartUseCase:
                 detail = await self._catalog.get_product_detail(product_id)
             except Exception as exc:
                 raise self._map_module_error(exc, inactive=True) from exc
+            variants = normalize_detail(detail)["variants"]
+            match = next((row for row in variants if row.get("sku") == sku), None)
+            if str(detail.get("product_id")) != product_id or (
+                match is None and (variants or detail.get("sku_base") != sku)
+            ):
+                raise CartError("PRODUCTO_NO_DISPONIBLE", "SKU does not belong to the supplied product")
+            for label, selected in (("talla", size), ("color", color)):
+                actual = (match or {}).get(label)
+                if selected is not None and (
+                    not isinstance(actual, str) or selected.casefold() != actual.casefold()
+                ):
+                    raise CartError("PRODUCTO_NO_DISPONIBLE", "SKU attributes do not match the selection")
+        else:
+            try:
+                page = await self._catalog.search_products(q=sku, size=10)
+                for candidate in page.get("items", []):
+                    try:
+                        found = await self._catalog.get_product_detail(candidate["product_id"])
+                    except ModuleRequestError as exc:
+                        if exc.status == 404:
+                            continue
+                        raise
+                    if any(v.get("sku") == sku for v in found.get("variants", [])):
+                        detail = found
+                        break
+            except Exception:
+                logger.warning("product lookup unavailable for explicit SKU")
         return sku, (detail or {"name": sku, "images": [], "product_id": ""}), {
             "sku": sku, "talla": size, "color": color,
         }
@@ -582,24 +659,38 @@ class ManageCartUseCase:
         if not quantity.ok:
             raise CartError(quantity.code, f"sku {sku} lacks stock for {total}")
 
-    async def _live_price(self, sku: str) -> Decimal:
+    async def _live_price(self, sku: str, captured=None) -> Decimal:
         # SPEC-11 Req. 3: the subtotal is the *regular* price x quantity;
         # promotions add the discount through the single evaluation.
         try:
             row = await self._catalog.get_price(sku)
         except Exception as exc:
             raise self._map_module_error(exc, inactive=True) from exc
-        return Decimal(str(row.get("precio_regular", 0)))
+        try:
+            price_projection(row)  # Validate currency/validity even though subtotal uses regular.
+            regular = amount(row.get("precio_regular"))
+        except ValueError as exc:
+            raise self._map_module_error(exc) from exc
+        if regular is None:
+            raise CartError("PRODUCTO_NO_DISPONIBLE", "Precio no disponible")
+        if captured is not None:
+            captured.append(row)
+        return regular
 
-    async def _prices_map(self, skus: list[str]) -> dict[str, Decimal]:
+    async def _prices_map(self, skus: list[str], captured=None) -> dict[str, Decimal]:
         try:
             rows = await self._catalog.get_prices(skus)
         except Exception as exc:
             raise self._map_module_error(exc) from exc
-        return {
-            str(row.get("sku")): Decimal(str(row.get("precio_regular", 0)))
-            for row in rows
-        }
+        try:
+            for row in rows:
+                price_projection(row)
+                if captured is not None:
+                    captured[str(row["sku"])] = row
+            return {str(row["sku"]): amount(row["precio_regular"])
+                    for row in rows if row.get("precio_regular") is not None}
+        except ValueError as exc:
+            raise self._map_module_error(exc) from exc
 
     async def _evaluate(
         self, cart, rows, *, coupon_code=_COUPON_SIN_CAMBIAR
@@ -611,6 +702,14 @@ class ManageCartUseCase:
                 coupon_code=codigo,
                 customer_ref=str(cart.customer_id) if cart.customer_id else None,
             )
+            if result.get("currency") != "PEN":
+                raise ValueError("unsupported evaluation currency")
+            values = {key: amount(result.get(key)) for key in (
+                "original_amount", "discount_amount", "result_amount")}
+            if any(value is None for value in values.values()):
+                raise ValueError("incomplete evaluation totals")
+            if values["original_amount"] - values["discount_amount"] != values["result_amount"]:
+                raise ValueError("inconsistent evaluation totals")
             return result, True
         except Exception:
             return None, False
@@ -651,11 +750,6 @@ class ManageCartUseCase:
 
     @staticmethod
     def _map_module_error(exc: Exception, *, inactive: bool = False):
-        from src.ports.outbound.module_errors import (
-            ModuleRequestError,
-            ModuleUnavailableError,
-        )
-
         if isinstance(exc, CartError):
             return exc
         if isinstance(exc, ModuleRequestError) and exc.status == 404 and inactive:

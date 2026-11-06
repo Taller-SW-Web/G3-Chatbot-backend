@@ -28,9 +28,12 @@ def build_cart_handlers(cart_use_case) -> dict:
             return ToolResult(exc.code, data)
         except ModuleUnavailableError as exc:
             return ToolResult("SERVICIO_NO_DISPONIBLE", {"modulo": exc.module})
-        return ToolResult(result["code"], {
-            "texto": result["texto"], "bloques": result["bloques"],
-        })
+        data = {"texto": result["texto"], "bloques": result["bloques"]}
+        cart_data = next((item.get("datos", {}) for item in result["bloques"]
+                          if item.get("tipo") == "CARRITO"), None)
+        if cart_data is not None:
+            data["promotion_reason"] = cart_data.get("promotion_reason") or "No tengo el detalle de las condiciones de la promoción."
+        return ToolResult(result["code"], data)
 
     async def agregar_al_carrito(args, context: ExecutionContext) -> ToolResult:
         return await _run(

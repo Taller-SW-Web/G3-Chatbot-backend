@@ -96,6 +96,8 @@ class Settings:
     # can be switched to the real module one at a time.
     security_mode: str | None = None
     products_mode: str | None = None
+    # Public supplier phase 1 is an explicit opt-in; service authentication stays the default.
+    products_auth_mode: str = "service"
     sales_mode: str | None = None
     dispatch_mode: str | None = None
     # Deployment indicator (`APP_ENV`). In production the fake Seguridad is
@@ -122,6 +124,8 @@ class Settings:
     notification_send_inline: bool = True
 
     def __post_init__(self) -> None:
+        if self.products_auth_mode not in ("service", "public"):
+            raise ValueError("PRODUCTS_AUTH_MODE must be one of service, public")
         if (
             self.app_env in PRODUCTION_ENVIRONMENTS
             and self.module_mode("security") == "fake"
@@ -167,6 +171,7 @@ def get_settings() -> Settings:
         allow_fake_security=_flag("ALLOW_FAKE_SECURITY"),
         security_mode=_module_mode_override("security"),
         products_mode=_module_mode_override("products"),
+        products_auth_mode=_choice("PRODUCTS_AUTH_MODE", "service", ("service", "public")),
         sales_mode=_module_mode_override("sales"),
         dispatch_mode=_module_mode_override("dispatch"),
         security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),

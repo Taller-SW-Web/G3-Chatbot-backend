@@ -1,6 +1,7 @@
 """Minimal dependency wiring (ADR-0002): builds use cases from a request-scoped DB session."""
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import lru_cache
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -183,6 +184,7 @@ def provide_cart_service(
         ConversationPostgresAdapter(session),
         MessagePostgresAdapter(session),
         SqlAlchemyUnitOfWork(session),
+        discovery=provide_catalog_service(session),
     )
 
 
@@ -236,6 +238,7 @@ def provide_products_client(settings: Settings | None = None) -> ProductsClient:
     return ProductsClient(
         base_url=settings.products_base_url,
         timeout_seconds=settings.products_timeout_seconds,
+        service_token_provider=_products_auth_provider(settings),
     )
 
 
@@ -245,6 +248,7 @@ def provide_inventory_client(settings: Settings | None = None) -> InventoryClien
     return InventoryClient(
         base_url=settings.products_base_url,
         timeout_seconds=INVENTORY_TIMEOUT_SECONDS,
+        service_token_provider=_products_auth_provider(settings),
     )
 
 
@@ -462,3 +466,25 @@ async def provide_action_scope() -> AsyncIterator[DispatchDirectActionUseCase]:
             dispatcher=provide_action_dispatcher(session),
             sanitize_text=sanitize_sensitive_text,
         )
+
+
+class _MissingProductsCredential:
+    async def get_token(self, *, correlation_id=None):
+        from src.ports.outbound.module_errors import ModuleUnavailableError
+        raise ModuleUnavailableError("security", "SECURITY_CLIENT_SECRET required for G6 M2M")
+
+
+def _products_auth_provider(settings: Settings):
+    """Public G6 requires no G7 token; customer authentication is independent."""
+    if settings.products_auth_mode == "public":
+        return None
+    return _products_token_provider(
+        settings.security_base_url, settings.security_client_id, settings.security_client_secret,
+    )
+
+
+@lru_cache(maxsize=8)
+def _products_token_provider(base_url, client_id, client_secret):
+    if not client_secret.strip():
+        return _MissingProductsCredential()
+    return SecurityServiceTokenProvider(base_url, client_id, client_secret)

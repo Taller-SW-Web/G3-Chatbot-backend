@@ -219,6 +219,11 @@ class ConversationPostgresAdapter:
         stmt = update(Conversation).where(Conversation.id == conversation_id).values(context=dict(context))
         await self.session.execute(stmt)
 
+    async def get_context_for_update(self, conversation_id: uuid.UUID) -> dict:
+        stmt = select(Conversation.context).where(Conversation.id == conversation_id).with_for_update()
+        context = (await self.session.execute(stmt)).scalar_one_or_none()
+        return dict(context) if isinstance(context, dict) else {}
+
     async def assign_title_if_missing(self, conversation_id: uuid.UUID, title: str) -> bool:
         stmt = (
             update(Conversation)

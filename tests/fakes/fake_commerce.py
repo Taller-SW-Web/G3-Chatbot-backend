@@ -80,6 +80,9 @@ class FakeConversations:
     async def save_context(self, conversation_id, context) -> None:
         self.rows[conversation_id].context = dict(context)
 
+    async def get_context_for_update(self, conversation_id):
+        return await self.get_context(conversation_id)
+
     async def touch(self, conversation_id) -> None:
         self.touched.append(conversation_id)
 

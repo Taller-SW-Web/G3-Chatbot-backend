@@ -1,0 +1,826 @@
+{
+  "NIK-REV7": {
+    "precio_regular": 329.9,
+    "precio_oferta": 279.9,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-PRED": {
+    "precio_regular": 349.0,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-POLO": {
+    "precio_regular": 79.9,
+    "precio_oferta": 59.9,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-POLO": {
+    "precio_regular": 99.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-MOCH": {
+    "precio_regular": 229.0,
+    "precio_oferta": 189.0,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-TRAIL": {
+    "precio_regular": 299.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-MORR": {
+    "precio_regular": 149.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-COMP": {
+    "precio_regular": 119.9,
+    "precio_oferta": 89.9,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-CANG": {
+    "precio_regular": 69.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-PREC": {
+    "precio_regular": 379.0,
+    "precio_oferta": 319.0,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-HX-011": {
+    "precio_regular": 242.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-SX-012": {
+    "precio_regular": 295.9,
+    "precio_oferta": 236.72,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-DX-013": {
+    "precio_regular": 348.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-HX-014": {
+    "precio_regular": 401.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-SX-015": {
+    "precio_regular": 454.9,
+    "precio_oferta": 363.92,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-DX-016": {
+    "precio_regular": 107.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-HX-017": {
+    "precio_regular": 160.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-PX-018": {
+    "precio_regular": 213.9,
+    "precio_oferta": 171.12,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-CX-019": {
+    "precio_regular": 266.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-RX-020": {
+    "precio_regular": 319.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-PX-021": {
+    "precio_regular": 372.9,
+    "precio_oferta": 298.32,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-CX-022": {
+    "precio_regular": 425.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-RX-023": {
+    "precio_regular": 78.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-PX-024": {
+    "precio_regular": 131.9,
+    "precio_oferta": 105.52,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-CX-025": {
+    "precio_regular": 184.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-RX-026": {
+    "precio_regular": 237.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-CV-027": {
+    "precio_regular": 290.9,
+    "precio_oferta": 232.72,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-CT-028": {
+    "precio_regular": 343.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-EX-029": {
+    "precio_regular": 396.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-CV-030": {
+    "precio_regular": 449.9,
+    "precio_oferta": 359.92,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-CT-031": {
+    "precio_regular": 102.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-EX-032": {
+    "precio_regular": 155.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-CV-033": {
+    "precio_regular": 208.9,
+    "precio_oferta": 167.12,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-CT-034": {
+    "precio_regular": 261.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-EX-035": {
+    "precio_regular": 314.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-TX-036": {
+    "precio_regular": 367.9,
+    "precio_oferta": 294.32,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-TX-037": {
+    "precio_regular": 420.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-CP-038": {
+    "precio_regular": 73.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-TX-039": {
+    "precio_regular": 126.9,
+    "precio_oferta": 101.52,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-TX-040": {
+    "precio_regular": 179.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-CP-041": {
+    "precio_regular": 232.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-TX-042": {
+    "precio_regular": 285.9,
+    "precio_oferta": 228.72,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-TX-043": {
+    "precio_regular": 338.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-CP-044": {
+    "precio_regular": 391.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-AZ-045": {
+    "precio_regular": 444.9,
+    "precio_oferta": 355.92,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-MX-046": {
+    "precio_regular": 97.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-GS-047": {
+    "precio_regular": 150.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-AZ-048": {
+    "precio_regular": 203.9,
+    "precio_oferta": 163.12,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-MX-049": {
+    "precio_regular": 256.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-GS-050": {
+    "precio_regular": 309.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-AZ-051": {
+    "precio_regular": 362.9,
+    "precio_oferta": 290.32,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-MX-052": {
+    "precio_regular": 415.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-GS-053": {
+    "precio_regular": 68.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-PX-054": {
+    "precio_regular": 121.9,
+    "precio_oferta": 97.52,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-HX-055": {
+    "precio_regular": 174.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-VX-056": {
+    "precio_regular": 227.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-PX-057": {
+    "precio_regular": 280.9,
+    "precio_oferta": 224.72,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-HX-058": {
+    "precio_regular": 333.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-VX-059": {
+    "precio_regular": 386.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-PX-060": {
+    "precio_regular": 439.9,
+    "precio_oferta": 351.92,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-HX-061": {
+    "precio_regular": 92.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-VX-062": {
+    "precio_regular": 145.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-CX-063": {
+    "precio_regular": 198.9,
+    "precio_oferta": 159.12,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-CP-064": {
+    "precio_regular": 251.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-TP-065": {
+    "precio_regular": 304.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-CX-066": {
+    "precio_regular": 357.9,
+    "precio_oferta": 286.32,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-CP-067": {
+    "precio_regular": 410.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-TP-068": {
+    "precio_regular": 63.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-CX-069": {
+    "precio_regular": 116.9,
+    "precio_oferta": 93.52,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-CP-070": {
+    "precio_regular": 169.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-TP-071": {
+    "precio_regular": 222.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-DX-072": {
+    "precio_regular": 275.9,
+    "precio_oferta": 220.72,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-AX-073": {
+    "precio_regular": 328.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-SD-074": {
+    "precio_regular": 381.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-DX-075": {
+    "precio_regular": 434.9,
+    "precio_oferta": 347.92,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-AX-076": {
+    "precio_regular": 87.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-SD-077": {
+    "precio_regular": 140.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-DX-078": {
+    "precio_regular": 193.9,
+    "precio_oferta": 155.12,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-AX-079": {
+    "precio_regular": 246.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-SD-080": {
+    "precio_regular": 299.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-TX-081": {
+    "precio_regular": 352.9,
+    "precio_oferta": 282.32,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-PT-082": {
+    "precio_regular": 405.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-MB-083": {
+    "precio_regular": 458.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-TX-084": {
+    "precio_regular": 111.9,
+    "precio_oferta": 89.52,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-PT-085": {
+    "precio_regular": 164.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-MB-086": {
+    "precio_regular": 217.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-TX-087": {
+    "precio_regular": 270.9,
+    "precio_oferta": 216.72,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-PT-088": {
+    "precio_regular": 323.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-MB-089": {
+    "precio_regular": 376.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-SX-090": {
+    "precio_regular": 429.9,
+    "precio_oferta": 343.92,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-TX-091": {
+    "precio_regular": 82.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-CX-092": {
+    "precio_regular": 135.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-SX-093": {
+    "precio_regular": 188.9,
+    "precio_oferta": 151.12,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-TX-094": {
+    "precio_regular": 241.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "ADI-CX-095": {
+    "precio_regular": 294.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-SX-096": {
+    "precio_regular": 347.9,
+    "precio_oferta": 278.32,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-TX-097": {
+    "precio_regular": 400.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "AND-CX-098": {
+    "precio_regular": 453.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-XG-099": {
+    "precio_regular": 106.9,
+    "precio_oferta": 85.52,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-EX-100": {
+    "precio_regular": 159.9,
+    "precio_oferta": null,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-REV7-42-NEG": {
+    "precio_regular": 329.9,
+    "precio_oferta": 279.9,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-REV7-42-BLA": {
+    "precio_regular": 329.9,
+    "precio_oferta": 279.9,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  },
+  "NIK-REV7-43-NEG": {
+    "precio_regular": 329.9,
+    "precio_oferta": 279.9,
+    "currency": "PEN",
+    "channel_id": "CHATBOT",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "valid_until": null
+  }
+}

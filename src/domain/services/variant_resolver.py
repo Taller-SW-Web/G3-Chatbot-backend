@@ -5,6 +5,8 @@ reports what is missing / which close combinations exist. Pure.
 """
 from dataclasses import dataclass
 
+from src.domain.services.product_projection import normalize_detail
+
 
 @dataclass(frozen=True)
 class VariantMatch:
@@ -25,7 +27,7 @@ class VariantResolver:
         size: str | None = None,
         color: str | None = None,
     ) -> VariantMatch:
-        variants = [v for v in detail.get("variants", []) if isinstance(v, dict)]
+        variants = normalize_detail(detail)["variants"]
         if not variants:
             sku = detail.get("sku_base")
             return VariantMatch(sku=sku) if sku else VariantMatch()

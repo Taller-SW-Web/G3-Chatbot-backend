@@ -61,7 +61,7 @@ async def test_search_sends_real_param_names_and_pagination():
     assert params["canal"] == "CHATBOT"
     assert params["pagina"] == "1"
     assert params["tamanio"] == "10"
-    assert params["estado"] == "ACTIVO"
+    assert "estado" not in params
     assert params["precioMin"] == "100.00"
     assert params["precioMax"] == "350.00"
     assert request.headers["x-correlation-id"] == "corr-1"
@@ -165,9 +165,8 @@ async def test_categories_401_raises_instead_of_shape_error():
     respx.get(f"{BASE_URL}/categorias").mock(
         return_value=httpx.Response(401, json={"code": "TOKEN_INVALIDO"})
     )
-    with pytest.raises(ModuleRequestError) as error:
+    with pytest.raises(ModuleUnavailableError):
         await make_catalog().list_categories()
-    assert (error.value.status, error.value.code) == (401, "TOKEN_INVALIDO")
 
 
 @respx.mock
@@ -199,12 +198,12 @@ async def test_categories_and_brands():
     catalog = make_catalog()
     categories = await catalog.list_categories()
     brands = await catalog.list_brands()
-    assert [c["category_id"] for c in categories] == [
+    assert [c["categoria_id"] for c in categories] == [
         "cat-zapatillas",
         "cat-polos",
         "cat-mochilas",
     ]
-    assert [b["brand_id"] for b in brands] == [
+    assert [b["marca_id"] for b in brands] == [
         "brand-nike",
         "brand-adidas",
         "brand-andes",
@@ -344,6 +343,7 @@ async def test_verify_quantities_posts_real_keys():
     assert by_sku["AND-POLO-M-NEG"]["veredicto"] == "INDETERMINADO"
     body = json.loads(route.calls[0].request.content)
     assert body["channel_id"] == "CHATBOT"
+    assert body["fulfillment"] == {"mode": "ENVIO_DOMICILIO"}
     assert body["lines"] == [{"sku": "NIK-REV7-42-NEG", "quantity": 2}]
 
 
@@ -427,9 +427,13 @@ async def test_non_json_4xx_keeps_status_and_falls_back_to_a_code(status, code):
     respx.get(f"{BASE_URL}/productos/prod-1").mock(
         return_value=httpx.Response(status, text="<html>error</html>")
     )
-    with pytest.raises(ModuleRequestError) as error:
-        await make_catalog().get_product_detail("prod-1")
-    assert (error.value.status, error.value.code) == (status, code)
+    if status == 401:
+        with pytest.raises(ModuleUnavailableError):
+            await make_catalog().get_product_detail("prod-1")
+    else:
+        with pytest.raises(ModuleRequestError) as error:
+            await make_catalog().get_product_detail("prod-1")
+        assert (error.value.status, error.value.code) == (status, code)
 
 
 @respx.mock
