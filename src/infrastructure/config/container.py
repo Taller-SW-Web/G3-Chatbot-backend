@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.adapters.inbound.http.dependencies.rate_limiter import InMemoryRateLimiter
 from src.adapters.outbound.auth.jwks_token_validator import JwksTokenValidator
 from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
+from src.adapters.outbound.fakes.fake_dispatch import FakeDispatchPort
 from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
 from src.adapters.outbound.fakes.fake_products import (
     FakeCatalogPort,
@@ -247,13 +248,15 @@ def provide_inventory_client(settings: Settings | None = None) -> InventoryClien
     )
 
 
-def provide_despacho_client(settings: Settings | None = None) -> DespachoClient:
-    """Typed Despacho client (SPEC-12, SPEC-18): base URL + 4 s timeout.
+def provide_despacho_client(settings: Settings | None = None):
+    """Despacho port honoring `DISPATCH_MODE` (ADR-0022): in-process fake or HTTP.
 
-    Privileged calls authenticate as `modulo-chatbot`; the service token
-    provider owns the credentials (ADR-0009).
+    The HTTP client authenticates as `modulo-chatbot` with the service token
+    provider (ADR-0009); the fake keeps the demo working without G2 credentials.
     """
     settings = settings or get_settings()
+    if settings.module_mode("dispatch") == "fake":
+        return FakeDispatchPort()
     return DespachoClient(
         base_url=settings.dispatch_base_url,
         timeout_seconds=settings.dispatch_timeout_seconds,
