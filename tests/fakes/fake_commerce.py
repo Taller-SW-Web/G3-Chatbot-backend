@@ -136,6 +136,12 @@ class FakeCarts:
             row.totals_snapshot = snapshot
         self._check_flush()
 
+    async def set_coupon(self, cart_id, coupon_code):
+        row = self.rows.get(cart_id)
+        if row is not None:
+            row.coupon_code = coupon_code
+        self._check_flush()
+
     async def reset_checkout(self, cart_id):
         row = self.rows.get(cart_id)
         if row is not None:

@@ -6,16 +6,22 @@ from fastapi import FastAPI
 from src.adapters.inbound.http.cart_router import create_cart_router
 from src.adapters.inbound.http.catalog_router import create_catalog_router
 from src.adapters.inbound.http.chatbot_router import ActionScope, TurnScope, create_chatbot_router
+from src.adapters.inbound.http.checkout_router import create_checkout_router
 from src.adapters.inbound.http.health_router import router as health_router
+from src.adapters.inbound.http.orders_router import create_orders_router
 from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.inbound.http.session_router import create_session_router
+from src.adapters.inbound.http.shipping_router import create_shipping_router
 from src.infrastructure.config.container import (
     provide_action_scope,
     provide_cart_service,
     provide_catalog_service,
     provide_chatbot_service,
+    provide_checkout_service,
     provide_manage_session,
+    provide_orders_service,
     provide_rate_limiter,
+    provide_shipping_service,
     provide_turn_scope,
 )
 from src.infrastructure.config.settings import MODULES_WITH_ADAPTERS, get_settings
@@ -31,6 +37,9 @@ def create_app(
 ) -> FastAPI:
     """Scopes can be replaced by tests behind the text-stream and direct-action endpoints."""
     settings = get_settings()
+    limiter = provide_rate_limiter()
+    if turn_scope is not None:
+        limiter.reset()
     fake_modules = tuple(m for m in settings.fake_modules() if m in MODULES_WITH_ADAPTERS)
     if fake_modules:
         logger.warning(
@@ -56,7 +65,7 @@ def create_app(
             provide_manage_session,
             cookie_secure=settings.cookie_secure,
             allowed_origins=settings.allowed_origins,
-            rate_limiter=provide_rate_limiter(),
+            rate_limiter=limiter,
         ),
         prefix=API_PREFIX,
     )
@@ -66,6 +75,7 @@ def create_app(
             cookie_secure=settings.cookie_secure,
             turn_scope=turn_scope or provide_turn_scope,
             action_scope=action_scope,
+            rate_limiter=limiter,
         ),
         prefix=API_PREFIX,
     )
@@ -73,6 +83,11 @@ def create_app(
         create_catalog_router(provide_catalog_service), prefix=API_PREFIX
     )
     app.include_router(create_cart_router(provide_cart_service), prefix=API_PREFIX)
+    app.include_router(create_orders_router(provide_orders_service), prefix=API_PREFIX)
+    app.include_router(create_checkout_router(provide_checkout_service), prefix=API_PREFIX)
+    app.include_router(
+        create_shipping_router(provide_shipping_service), prefix=API_PREFIX
+    )
     return app
 
 

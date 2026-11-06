@@ -10,8 +10,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
+from src.adapters.inbound.http.dependencies.auth_guard import require_customer
 from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
 from src.adapters.inbound.http.problem import ProblemError
+from src.application.dto.commerce_contracts_dto import ApplyCouponRequest
 from src.application.use_cases.manage_cart_use_case import (
     CartError,
     ManageCartUseCase,
@@ -26,14 +28,18 @@ ERROR_STATUS = {
     "STOCK_INSUFICIENTE": 409,
     "SKU_AGOTADO": 409,
     "CARRITO_DESACTUALIZADO": 409,
+    "REQUIERE_CONFIRMACION_REEMPLAZO": 409,
     "CONFLICTO": 409,
     "VARIANTE_REQUERIDA": 409,
     "LIMITE_CANTIDAD": 422,
     "LINEA_AMBIGUA": 422,
+    "CUPON_INVALIDO": 422,
+    "DEMASIADAS_SOLICITUDES": 429,
     "VALIDACION": 400,
     # Productos could not decide (`INDETERMINADO`): never treat it as stock,
     # so the caller gets 503 and can retry instead of a wrong cart change.
     "INDETERMINADO": 503,
+    "MODULO_NO_DISPONIBLE": 503,
     "SERVICIO_NO_DISPONIBLE": 503,
 }
 
@@ -45,11 +51,16 @@ def _problem(error: CartError) -> ProblemError:
         404: "Resource not found",
         409: "Cart conflict",
         422: "Unprocessable cart change",
+        429: "Too many requests",
         400: "Invalid request",
         503: "Service unavailable",
     }[status]
-    body: dict[str, Any] = {"opciones": error.data["opciones"]} \
-        if error.code == "LINEA_AMBIGUA" else {}
+    if error.code == "LINEA_AMBIGUA":
+        body: dict[str, Any] = {"opciones": error.data["opciones"]}
+    elif error.data:
+        body = dict(error.data)
+    else:
+        body = {}
     return ProblemError(status, error.code, title, error.detail or None,
                         extra=body)
 
@@ -169,5 +180,60 @@ def create_cart_router(cart_provider) -> APIRouter:
         except CartError as exc:
             raise _problem(exc)
         return {"mensaje": result["texto"]}
+
+    @router.post("/cupon")
+    async def apply_coupon(
+        body: ApplyCouponRequest,
+        conversacionId: UUID | None = Query(default=None),
+        caller: CallerIdentity = Depends(require_customer),
+        service: ManageCartUseCase = Depends(cart_provider),
+    ) -> dict[str, Any]:
+        apply_fn = getattr(service, "apply_coupon", None)
+        if apply_fn is None:
+            raise ProblemError(
+                503,
+                "SERVICIO_NO_DISPONIBLE",
+                "Service unavailable",
+                "La validación de cupones no está disponible en este momento.",
+            )
+        try:
+            result = await apply_fn(
+                caller,
+                conversacionId,
+                codigo=body.codigo,
+                confirmar_reemplazo=body.confirmarReemplazo,
+            )
+        except CartError as exc:
+            raise _problem(exc)
+        bloques = result.get("bloques", [])
+        return {
+            "mensaje": result.get("texto", ""),
+            "cupon": result.get("cupon"),
+            "carrito": bloques[0]["datos"] if bloques else result.get("carrito"),
+        }
+
+    @router.delete("/cupon")
+    async def remove_coupon(
+        conversacionId: UUID | None = Query(default=None),
+        caller: CallerIdentity = Depends(require_customer),
+        service: ManageCartUseCase = Depends(cart_provider),
+    ) -> dict[str, Any]:
+        remove_fn = getattr(service, "remove_coupon", None)
+        if remove_fn is None:
+            raise ProblemError(
+                503,
+                "SERVICIO_NO_DISPONIBLE",
+                "Service unavailable",
+                "La gestión de cupones no está disponible en este momento.",
+            )
+        try:
+            result = await remove_fn(caller, conversacionId)
+        except CartError as exc:
+            raise _problem(exc)
+        bloques = result.get("bloques", [])
+        return {
+            "mensaje": result.get("texto", ""),
+            "carrito": bloques[0]["datos"] if bloques else result.get("carrito"),
+        }
 
     return router

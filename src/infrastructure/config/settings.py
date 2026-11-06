@@ -27,8 +27,8 @@ def _number(name: str, default: str, cast, *, minimum: float):
 MODULE_MODES = ("fake", "http")
 MODULES = ("security", "products", "sales", "dispatch")
 # Modules with an in-process fake or an HTTP adapter wired in the container.
-# Sales and Dispatch have neither yet, so their mode changes nothing today.
-MODULES_WITH_ADAPTERS = ("security", "products")
+# Sales still has neither, so its mode changes nothing today.
+MODULES_WITH_ADAPTERS = ("security", "products", "dispatch")
 PRODUCTION_ENVIRONMENTS = ("production", "prod")
 
 
@@ -107,6 +107,19 @@ class Settings:
     products_timeout_seconds: float = 4.0
     sales_timeout_seconds: float = 5.0
     dispatch_timeout_seconds: float = 4.0
+    # Order confirmation e-mail (SPEC-16). Without SMTP_HOST the in-memory
+    # FakeEmailSender is used and nothing is delivered. Mailtrap in development.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_sender: str = "Botleta <no-reply@g3-chatbot.local>"
+    smtp_starttls: bool = True
+    smtp_timeout_seconds: float = 10.0
+    # Base of the deep link in the e-mail (`/pedidos/{pedidoId}`).
+    frontend_base_url: str = "http://localhost:3000"
+    # Send right after enqueueing, until the outbox worker (SPEC-15) runs SEND_EMAIL.
+    notification_send_inline: bool = True
 
     def __post_init__(self) -> None:
         if (
@@ -167,4 +180,13 @@ def get_settings() -> Settings:
         products_timeout_seconds=_number("PRODUCTS_TIMEOUT_SECONDS", "4", float, minimum=0.1),
         sales_timeout_seconds=_number("SALES_TIMEOUT_SECONDS", "5", float, minimum=0.1),
         dispatch_timeout_seconds=_number("DISPATCH_TIMEOUT_SECONDS", "4", float, minimum=0.1),
+        smtp_host=os.getenv("SMTP_HOST", "").strip(),
+        smtp_port=_number("SMTP_PORT", "587", int, minimum=1),
+        smtp_username=os.getenv("SMTP_USER", "").strip(),
+        smtp_password=os.getenv("SMTP_PASSWORD", ""),
+        smtp_sender=os.getenv("SMTP_FROM", "").strip() or "Botleta <no-reply@g3-chatbot.local>",
+        smtp_starttls=os.getenv("SMTP_STARTTLS", "true").strip().lower() != "false",
+        smtp_timeout_seconds=_number("SMTP_TIMEOUT_SECONDS", "10", float, minimum=0.1),
+        frontend_base_url=os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").strip().rstrip("/"),
+        notification_send_inline=os.getenv("NOTIFICATION_SEND_INLINE", "true").strip().lower() != "false",
     )

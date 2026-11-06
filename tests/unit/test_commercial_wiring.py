@@ -2,6 +2,8 @@
 
 No network, no database.
 """
+from unittest.mock import MagicMock
+
 import pytest
 
 from src.adapters.outbound.fakes.fake_products import (
@@ -9,6 +11,7 @@ from src.adapters.outbound.fakes.fake_products import (
     FakeInventoryPort,
 )
 from src.infrastructure.config.container import (
+    provide_checkout_service,
     provide_product_catalog,
     provide_product_inventory,
 )
@@ -56,3 +59,17 @@ async def test_fake_inventory_status_and_verdicts():
     assert [row["status"] for row in rows] == ["AGOTADO", "DISPONIBLE"]
     verdicts = await inventory.verify_quantities([{"sku": "A", "quantity": 1}])
     assert verdicts[0]["veredicto"] == "INSUFICIENTE"
+
+
+def test_checkout_provider_wires_real_notification_service(monkeypatch):
+    from src.infrastructure.config import container
+
+    notification_service = MagicMock()
+    build_notification_service = MagicMock(return_value=notification_service)
+    monkeypatch.setattr(container, "build_notification_service", build_notification_service)
+    session = MagicMock()
+
+    checkout = provide_checkout_service(session)
+
+    build_notification_service.assert_called_once_with(session)
+    assert checkout.notification_service is notification_service
