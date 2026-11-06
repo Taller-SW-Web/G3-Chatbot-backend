@@ -6,11 +6,27 @@ ejecuta el worker sobre el outbox (tarea SEND_EMAIL de Sonny).
 """
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.persistence.models.notification import Notification
+from src.ports.outbound.notification_repository_port import NotificationRecord
+
+CONFIRMATION = "ORDER_CONFIRMATION"
+RESEND = "CONFIRMATION_RESEND"
+
+
+def _record(row: Notification) -> NotificationRecord:
+    return NotificationRecord(
+        order_id=row.order_id,
+        resend_number=row.resend_number,
+        recipient=row.recipient,
+        status=row.status,
+        attempts=row.attempts or 0,
+        last_error=row.last_error,
+    )
 
 
 class NotificationPostgresAdapter:
@@ -67,6 +83,60 @@ class NotificationPostgresAdapter:
             return None
         row.status = "FAILED"
         row.attempts = (row.attempts or 0) + 1
+        row.last_error = last_error
+        row.updated_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return row
+
+    # -- NotificationRepositoryPort (NotificationService, SPEC-16) -------------
+
+    async def crear_si_no_existe(
+        self, order_id: str, resend_number: int, recipient: str
+    ) -> NotificationRecord:
+        # ON CONFLICT DO NOTHING keeps the transaction alive (guardar() rolls back).
+        stmt = (
+            insert(Notification)
+            .values(
+                order_id=order_id,
+                type=CONFIRMATION if resend_number == 0 else RESEND,
+                resend_number=resend_number,
+                recipient=recipient,
+            )
+            .on_conflict_do_nothing(constraint="uq_notification_order_resend")
+        )
+        await self.session.execute(stmt)
+        row = await self.obtener_por_order_y_reenvio(order_id, resend_number)
+        return _record(row)
+
+    async def obtener(self, order_id: str, resend_number: int) -> NotificationRecord | None:
+        row = await self.obtener_por_order_y_reenvio(order_id, resend_number)
+        return _record(row) if row is not None else None
+
+    async def contar_reenvios(self, order_id: str) -> int:
+        stmt = select(func.count()).select_from(Notification).where(
+            Notification.order_id == order_id, Notification.type == RESEND
+        )
+        return int((await self.session.execute(stmt)).scalar_one())
+
+    async def registrar_reintento(
+        self, order_id: str, resend_number: int, last_error: str
+    ) -> Notification | None:
+        row = await self.obtener_por_order_y_reenvio(order_id, resend_number)
+        if row is None:
+            return None
+        row.attempts = (row.attempts or 0) + 1
+        row.last_error = last_error
+        row.updated_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return row
+
+    async def cerrar_fallida(
+        self, order_id: str, resend_number: int, last_error: str
+    ) -> Notification | None:
+        row = await self.obtener_por_order_y_reenvio(order_id, resend_number)
+        if row is None:
+            return None
+        row.status = "FAILED"
         row.last_error = last_error
         row.updated_at = datetime.now(timezone.utc)
         await self.session.flush()

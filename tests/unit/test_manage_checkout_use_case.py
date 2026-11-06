@@ -754,11 +754,15 @@ async def test_payment_approved_marks_order_paid_notified_and_enqueues_confirmat
     mock_orders.actualizar_estado = AsyncMock()
 
     mock_notif_service = MagicMock()
-    mock_notif_service.enqueue_confirmation = AsyncMock(
-        return_value={
+    async def enqueue_after_attempt_is_saved(order_id):
+        mock_attempts.guardar.assert_awaited_once()
+        return {
             "correoEnmascarado": "m***a@ejemplo.com",
             "mensaje": "Te enviaremos la confirmación a m***a@…",
         }
+
+    mock_notif_service.enqueue_confirmation = AsyncMock(
+        side_effect=enqueue_after_attempt_is_saved
     )
 
     uow = MagicMock()
@@ -796,7 +800,7 @@ async def test_payment_approved_marks_order_paid_notified_and_enqueues_confirmat
 
 @pytest.mark.asyncio
 async def test_payment_approved_notification_failure_does_not_block_purchase(
-    mock_checkouts, mock_attempts, payment_gateway
+    mock_checkouts, mock_attempts, payment_gateway, caplog
 ):
     checkout_id = uuid.uuid4()
     cust_id = uuid.uuid4()
@@ -851,5 +855,6 @@ async def test_payment_approved_notification_failure_does_not_block_purchase(
     assert attempt.result == "APPROVED"
     mock_orders.actualizar_estado.assert_called_once_with(order_id, "PAID_NOTIFIED")
     mock_notif_service.enqueue_confirmation.assert_called_once_with(order_id)
+    assert f"Failed to enqueue confirmation for order {order_id}" in caplog.text
 
 

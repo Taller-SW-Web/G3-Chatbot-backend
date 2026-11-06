@@ -142,7 +142,7 @@ async def test_get_checkout_success(test_app, mock_service, customer_id):
 @pytest.mark.asyncio
 async def test_process_payment_approved_200(test_app, mock_service, customer_id):
     chk_id = uuid.uuid4()
-    mock_service.process_payment.return_value = PaymentAttempt(
+    attempt = PaymentAttempt(
         id=uuid.uuid4(),
         checkout_id=chk_id,
         idempotency_key="pay-key-1",
@@ -152,6 +152,11 @@ async def test_process_payment_approved_200(test_app, mock_service, customer_id)
         amount=150.0,
         transaction_id="SIM-12345",
     )
+    attempt.confirmation = {
+        "correoEnmascarado": "m***a@ejemplo.com",
+        "mensaje": "Te enviaremos la confirmación a m***a@ejemplo.com",
+    }
+    mock_service.process_payment.return_value = attempt
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_app), base_url="http://test") as client:
         res = await client.post(
@@ -170,6 +175,8 @@ async def test_process_payment_approved_200(test_app, mock_service, customer_id)
         assert data["marca"] == "VISA"
         assert data["ultimos4"] == "1111"
         assert data["idTransaccion"] == "SIM-12345"
+        assert data["correoEnmascarado"] == "m***a@ejemplo.com"
+        assert data["mensaje"] == "Te enviaremos la confirmación a m***a@ejemplo.com"
 
 
 @pytest.mark.asyncio

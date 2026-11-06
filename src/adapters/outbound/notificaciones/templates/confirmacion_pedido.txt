@@ -1,0 +1,34 @@
+¡Gracias por tu compra{% if cliente %}, {{ cliente }}{% endif %}!
+
+Confirmamos tu pedido {{ pedido_id }} del {{ fecha }}.
+
+Productos:
+{% for linea in lineas %}
+- {{ linea.nombre }}{% if linea.variante %} ({{ linea.variante }}){% endif %}: {{ linea.cantidad }} x {{ linea.precio_unitario or "—" }} = {{ linea.importe or "—" }}
+{% endfor %}
+
+{% if subtotal %}
+Subtotal: {{ subtotal }}
+{% endif %}
+{% if descuento %}
+Descuento{% if cupon %} (cupón {{ cupon }}){% endif %}: - {{ descuento }}
+{% endif %}
+{% if costo_envio %}
+Envío: {{ costo_envio }}
+{% endif %}
+Total: {{ total or "—" }}
+
+{% if tarjeta %}
+Pago: {{ tarjeta }}
+{% endif %}
+{% if direccion %}
+Entrega: {% if direccion.destinatario %}{{ direccion.destinatario }}, {% endif %}{{ direccion.linea or "" }}{% if direccion.distrito %}, {{ direccion.distrito }}{% endif %}{% if direccion.referencia %} ({{ direccion.referencia }}){% endif %}
+
+{% endif %}
+{% if plazo_dias %}
+Plazo estimado: {{ plazo_dias }} {{ "día hábil" if plazo_dias == 1 else "días hábiles" }}
+{% endif %}
+
+Consultar estado: {{ enlace_pedido }}
+
+Si no reconoces esta compra, escríbenos desde el chat de la tienda. Este correo se envió automáticamente; no lo respondas.

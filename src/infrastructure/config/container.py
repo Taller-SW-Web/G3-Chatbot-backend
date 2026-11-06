@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.adapters.inbound.http.dependencies.rate_limiter import InMemoryRateLimiter
 from src.adapters.outbound.auth.jwks_token_validator import JwksTokenValidator
 from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
+from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
 from src.adapters.outbound.fakes.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
@@ -25,6 +26,8 @@ from src.adapters.outbound.http_clients.inventory_client import (
 from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.http_clients.security_client import SecurityClient
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
+from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
+from src.adapters.outbound.notificaciones.smtp_email_adapter import SmtpEmailSender
 from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
 from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
     CartItemPostgresAdapter,
@@ -38,9 +41,14 @@ from src.adapters.outbound.persistence.local_phone_verification_postgres_adapter
     LocalPhoneVerificationPostgresAdapter,
 )
 from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.adapters.outbound.persistence.notification_postgres_adapter import NotificationPostgresAdapter
+from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
+    OrderConfirmationPostgresAdapter,
+)
 from src.adapters.outbound.persistence.order_ref_postgres_adapter import (
     OrderRefPostgresAdapter,
 )
+from src.adapters.outbound.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
 )
@@ -61,6 +69,7 @@ from src.application.use_cases.manage_catalog_use_case import (
 from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
+from src.application.use_cases.notification_service import NotificationError, NotificationService
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
@@ -79,6 +88,9 @@ _FAKE_TOKEN_VALIDATOR = FakeAccessTokenValidator(_FAKE_SECURITY)
 _FAKE_SERVICE_TOKEN_PROVIDER = FakeServiceTokenProvider()
 # One limiter per process: see its module docstring for the multi-instance caveat.
 _RATE_LIMITER = InMemoryRateLimiter()
+# Without SMTP_HOST the confirmations land here (process-wide, inspectable in local runs).
+_FAKE_EMAIL_SENDER = FakeEmailSender()
+_EMAIL_RENDERER = JinjaEmailRenderer()
 
 
 def provide_chatbot_service(session: AsyncSession = Depends(get_session)) -> ManageConversationUseCase:
@@ -300,47 +312,8 @@ def provide_checkout_service(
         cart_items=CartItemPostgresAdapter(session),
         orders=OrderRefPostgresAdapter(session),
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
-        session=session,
+        notification_service=build_notification_service(session),
     )
-
-
-def build_notification_service(session: AsyncSession):
-    """Order confirmation e-mail (SPEC-16). The outbox worker (SPEC-15) builds one per
-    SEND_EMAIL batch and calls `handle_send_email_task`; checkout calls
-    `enqueue_confirmation(order_id)` once the order is PAID_NOTIFIED."""
-    try:
-        from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
-            OrderConfirmationPostgresAdapter,
-        )
-        from src.application.use_cases.notification_service import NotificationService
-
-        from src.adapters.outbound.persistence.notification_postgres_adapter import (
-            NotificationPostgresAdapter,
-        )
-        from src.adapters.outbound.persistence.outbox_postgres_adapter import (
-            OutboxPostgresAdapter,
-        )
-
-        settings = get_settings()
-        email_sender_provider = globals().get("provide_email_sender")
-        email_sender = email_sender_provider(settings) if callable(email_sender_provider) else None
-        email_renderer = globals().get("_EMAIL_RENDERER")
-        return NotificationService(
-            notifications=NotificationPostgresAdapter(session),
-            outbox=OutboxPostgresAdapter(session),
-            sources=OrderConfirmationPostgresAdapter(session),
-            sender=email_sender,
-            templates=email_renderer,
-            uow=SqlAlchemyUnitOfWork(session),
-            frontend_base_url=getattr(settings, "frontend_base_url", "http://localhost:3000"),
-            send_inline=getattr(settings, "notification_send_inline", True),
-        )
-    except (ImportError, AttributeError):
-        class _FallbackNotificationService:
-            async def enqueue_confirmation(self, order_id: str) -> dict:
-                return {"correoEnmascarado": None, "mensaje": None}
-
-        return _FallbackNotificationService()
 
 
 def provide_manage_session(session: AsyncSession = Depends(get_session)) -> ManageSessionUseCase:
@@ -356,6 +329,61 @@ def provide_manage_session(session: AsyncSession = Depends(get_session)) -> Mana
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
         checkouts=CheckoutPostgresAdapter(session),
     )
+
+
+def provide_email_sender(settings: Settings | None = None):
+    """SMTP when SMTP_HOST is set (Mailtrap in development); otherwise the in-memory fake (SPEC-16)."""
+    settings = settings or get_settings()
+    if not settings.smtp_host:
+        return _FAKE_EMAIL_SENDER
+    return SmtpEmailSender(
+        host=settings.smtp_host,
+        port=settings.smtp_port,
+        sender=settings.smtp_sender,
+        username=settings.smtp_username,
+        password=settings.smtp_password,
+        starttls=settings.smtp_starttls,
+        timeout_seconds=settings.smtp_timeout_seconds,
+    )
+
+
+def build_notification_service(session: AsyncSession) -> NotificationService:
+    """Order confirmation e-mail (SPEC-16). The outbox worker (SPEC-15) builds one per
+    SEND_EMAIL batch and calls `handle_send_email_task`; checkout calls
+    `enqueue_confirmation(order_id)` once the order is PAID_NOTIFIED."""
+    settings = get_settings()
+    return NotificationService(
+        notifications=NotificationPostgresAdapter(session),
+        outbox=OutboxPostgresAdapter(session),
+        sources=OrderConfirmationPostgresAdapter(session),
+        sender=provide_email_sender(settings),
+        templates=_EMAIL_RENDERER,
+        uow=SqlAlchemyUnitOfWork(session),
+        frontend_base_url=settings.frontend_base_url,
+        send_inline=settings.notification_send_inline,
+    )
+
+
+class OrdersService:
+    """`OrdersServicePort` for the orders router: the confirmation resend (SPEC-16) is
+    implemented; listing, detail and tracking (SPEC-17/18) answer 503 until they exist."""
+
+    def __init__(self, notifications: NotificationService):
+        self._notifications = notifications
+
+    async def resend_confirmation(self, customer_id, order_id, *, holder_token, idempotency_key):
+        return await self._notifications.resend_confirmation(
+            customer_id, order_id, idempotency_key=idempotency_key
+        )
+
+    async def _pending(self, *args, **kwargs):
+        raise NotificationError("SERVICIO_NO_DISPONIBLE", "La consulta de pedidos aún no está disponible.")
+
+    list_orders = get_order_detail = get_order_tracking = _pending
+
+
+def provide_orders_service(session: AsyncSession = Depends(get_session)) -> OrdersService:
+    return OrdersService(build_notification_service(session))
 
 
 def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUseCase:
