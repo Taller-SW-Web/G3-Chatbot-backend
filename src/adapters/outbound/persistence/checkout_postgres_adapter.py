@@ -25,10 +25,12 @@ class CheckoutPostgresAdapter:
             await self.session.flush()
         except IntegrityError:
             # UNIQUE parcial (cart_id vivo) o idempotency_key: el checkout
-            # ya existe; se devuelve el vivo para no duplicar.
+            # ya existe; se devuelve el existente solo si pertenece al mismo customer.
             await self.session.rollback()
-            existing = await self.obtener_vivo_por_cart(row.cart_id)
+            existing = await self.obtener_por_idempotency_key(row.idempotency_key)
             if existing is None:
+                existing = await self.obtener_vivo_por_cart(row.cart_id, customer_id=row.customer_id)
+            if existing is None or existing.customer_id != row.customer_id:
                 raise
             return existing
         return row
@@ -38,14 +40,24 @@ class CheckoutPostgresAdapter:
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 
-    async def obtener_vivo_por_cart(self, cart_id: uuid.UUID) -> Checkout | None:
+    async def obtener_por_idempotency_key(self, idempotency_key: str) -> Checkout | None:
+        stmt = select(Checkout).where(Checkout.idempotency_key == idempotency_key)
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
+
+    async def obtener_vivo_por_cart(
+        self, cart_id: uuid.UUID, customer_id: uuid.UUID | None = None
+    ) -> Checkout | None:
         # Un solo checkout vivo por carrito (anti doble-clic).
+        conditions = [
+            Checkout.cart_id == cart_id,
+            Checkout.status.in_(["PENDING_PAYMENT", "PAYMENT_APPROVED"]),
+        ]
+        if customer_id is not None:
+            conditions.append(Checkout.customer_id == customer_id)
         stmt = (
             select(Checkout)
-            .where(
-                Checkout.cart_id == cart_id,
-                Checkout.status.in_(["PENDING_PAYMENT", "PAYMENT_APPROVED"]),
-            )
+            .where(*conditions)
             .order_by(Checkout.created_at.desc())
             .limit(1)
         )
