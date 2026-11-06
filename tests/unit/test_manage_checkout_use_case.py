@@ -17,6 +17,10 @@ from src.application.use_cases.manage_checkout_use_case import (
 )
 from src.domain.entities.checkout import CheckoutStatus
 from src.domain.entities.payment_attempt import PaymentResult
+from src.ports.outbound.module_errors import ModuleUnavailableError
+from tests.fakes.fake_commerce import FakeDispatch
+
+VALID_ADDRESS = {"direccionExacta": "Av. Larco 1234", "distrito": "Miraflores"}
 
 VALID_CONTACT = {
     "nombreCompleto": "Juan Pérez Rodríguez",
@@ -71,6 +75,7 @@ def use_case(mock_checkouts, mock_attempts, payment_gateway):
         uow=uow,
         carts=carts,
         cart_items=items,
+        dispatch=FakeDispatch(),
     )
 
 
@@ -99,7 +104,7 @@ async def test_create_checkout_success_with_15_min_expiry(use_case, mock_checkou
             idempotency_key="idemp-chk-1",
             cart_id=cart_id,
             contacto=VALID_CONTACT,
-            direccion={"distrito": "Miraflores"},
+            direccion=VALID_ADDRESS,
         )
     )
 
@@ -177,9 +182,10 @@ async def test_create_checkout_accepts_contact_with_only_required_fields(use_cas
         idempotency_key="minimal-contact",
         cart_id=cart.id,
         contacto=contacto,
+        direccion=VALID_ADDRESS,
     ))
     assert checkout.summary["contacto"] == contacto
-    assert checkout.total == 100.0
+    assert checkout.total == 112.50
     mock_checkouts.guardar.assert_called_once()
 
 
@@ -247,10 +253,113 @@ async def test_create_checkout_uses_only_cart_discount_snapshot(use_case):
         idempotency_key="server-discount",
         cart_id=cart.id,
         contacto=VALID_CONTACT,
-        direccion={"distrito": "Miraflores"},
+        direccion=VALID_ADDRESS,
     ))
     assert checkout.summary["descuento"] == 10.0
     assert checkout.total == 102.50
+
+
+async def _create(use_case, key, direccion=VALID_ADDRESS):
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    return cart, await use_case.create_checkout(CreateCheckoutInput(
+        customer_id=cart.customer_id,
+        idempotency_key=key,
+        cart_id=cart.id,
+        contacto=VALID_CONTACT,
+        direccion=direccion,
+    ))
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_uses_quoted_shipping_cost(use_case):
+    use_case.dispatch.response = {
+        "coberturaDisponible": True,
+        "costoEnvio": 18.9,
+        "moneda": "PEN",
+        "plazoEstimadoDiasHabiles": 3,
+    }
+    _, checkout = await _create(use_case, "quoted-cost")
+    assert checkout.summary["costoEnvio"] == 18.9
+    assert checkout.summary["plazoEstimadoDias"] == 3
+    assert checkout.summary["moneda"] == "PEN"
+    assert checkout.total == 118.9
+    call = use_case.dispatch.calls[0]
+    assert call["lineas"] == [{"sku": "SKU-1", "cantidad": 2}]
+    assert call["destino"]["destinatario"] == VALID_CONTACT["nombreCompleto"]
+    assert call["destino"]["direccion"] == "Av. Larco 1234"
+    assert call["destino"]["distrito"] == "Miraflores"
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_without_coverage_raises_sin_cobertura(use_case, mock_checkouts):
+    use_case.dispatch.response = {"coberturaDisponible": False}
+    with pytest.raises(CheckoutError) as exc_info:
+        await _create(use_case, "no-coverage")
+    assert exc_info.value.code == "SIN_COBERTURA"
+    assert exc_info.value.extra == {"distrito": "Miraflores"}
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response", [
+    {"coberturaDisponible": True, "moneda": "PEN", "plazoEstimadoDiasHabiles": 2},
+    {"coberturaDisponible": True, "costoEnvio": 10, "moneda": "PEN"},
+])
+async def test_create_checkout_quote_missing_cost_or_lead_time_is_503(
+    use_case, mock_checkouts, response
+):
+    use_case.dispatch.response = response
+    with pytest.raises(CheckoutError) as exc_info:
+        await _create(use_case, "bad-quote")
+    assert exc_info.value.code == "MODULO_NO_DISPONIBLE"
+    assert exc_info.value.extra == {"modulo": "dispatch"}
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_dispatch_failure_is_503(use_case, mock_checkouts):
+    use_case.dispatch.error = ModuleUnavailableError("dispatch", "timeout")
+    with pytest.raises(CheckoutError) as exc_info:
+        await _create(use_case, "dispatch-down")
+    assert exc_info.value.code == "MODULO_NO_DISPONIBLE"
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("direccion", [None, {"distrito": "Miraflores"}, {"direccionExacta": "Av. Larco 1234"}])
+async def test_create_checkout_incomplete_address_is_validacion(use_case, mock_checkouts, direccion):
+    with pytest.raises(CheckoutError) as exc_info:
+        await _create(use_case, "bad-address", direccion=direccion)
+    assert exc_info.value.code == "VALIDACION"
+    assert exc_info.value.extra["errores"]
+    assert use_case.dispatch.calls == []
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_stale_snapshot_raises_409_with_server_summary(use_case, mock_checkouts):
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cart.totals_snapshot = {
+        "subtotal": "80.00",
+        "descuentos": [{"name": "PROMO", "amount": "10.00"}],
+    }
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="stale",
+            cart_id=cart.id,
+            contacto=VALID_CONTACT,
+            direccion=VALID_ADDRESS,
+        ))
+    assert exc_info.value.code == "CARRITO_DESACTUALIZADO"
+    assert exc_info.value.extra["summary"] == {
+        "lineas": [{"sku": "SKU-1", "cantidad": 2, "precioUnitario": 50.0}],
+        "subtotal": 100.0,
+        "descuento": 0.0,
+        "costoEnvio": 12.5,
+        "total": 112.5,
+    }
+    mock_checkouts.guardar.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -671,21 +780,22 @@ async def test_create_checkout_recalculates_items_and_shipping_from_server(
         uow=uow,
         carts=mock_carts,
         cart_items=mock_items,
+        dispatch=FakeDispatch(),
     )
 
-    # The server calculates the subtotal and adds its default shipping cost.
+    # The server calculates the subtotal and adds the quoted shipping cost.
     checkout = await use_case.create_checkout(
         CreateCheckoutInput(
             customer_id=cust_id,
             idempotency_key="chk-recalc-1",
             cart_id=None,
             contacto=VALID_CONTACT,
-            direccion={"distrito": "Miraflores"},
+            direccion=VALID_ADDRESS,
         )
     )
     assert checkout.total == 92.50
     assert checkout.summary["subtotal"] == 80.0
-    assert checkout.summary["costoEnvio"] == 12.50
+    assert checkout.summary["costoEnvio"] == 12.50  # fake dispatch quote
     assert len(checkout.summary["lineas"]) == 1
     mock_carts.cambiar_estado.assert_called_with(cart_id, "IN_CHECKOUT")
 
