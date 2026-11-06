@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
+from src.adapters.inbound.http.dependencies.auth_guard import require_customer
 from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
 from src.adapters.inbound.http.problem import ProblemError
 from src.application.dto.commerce_contracts_dto import ApplyCouponRequest
@@ -184,16 +185,9 @@ def create_cart_router(cart_provider) -> APIRouter:
     async def apply_coupon(
         body: ApplyCouponRequest,
         conversacionId: UUID | None = Query(default=None),
-        caller: CallerIdentity | None = Depends(get_caller_identity),
+        caller: CallerIdentity = Depends(require_customer),
         service: ManageCartUseCase = Depends(cart_provider),
     ) -> dict[str, Any]:
-        if not caller or not caller.customer_id:
-            raise ProblemError(
-                401,
-                "REQUIERE_SESION",
-                "Authentication required",
-                "Inicia sesión para aplicar un cupón a tu carrito.",
-            )
         apply_fn = getattr(service, "apply_coupon", None)
         if apply_fn is None:
             raise ProblemError(
@@ -221,16 +215,9 @@ def create_cart_router(cart_provider) -> APIRouter:
     @router.delete("/cupon")
     async def remove_coupon(
         conversacionId: UUID | None = Query(default=None),
-        caller: CallerIdentity | None = Depends(get_caller_identity),
+        caller: CallerIdentity = Depends(require_customer),
         service: ManageCartUseCase = Depends(cart_provider),
     ) -> dict[str, Any]:
-        if not caller or not caller.customer_id:
-            raise ProblemError(
-                401,
-                "REQUIERE_SESION",
-                "Authentication required",
-                "Inicia sesión para gestionar el cupón de tu carrito.",
-            )
         remove_fn = getattr(service, "remove_coupon", None)
         if remove_fn is None:
             raise ProblemError(

@@ -37,6 +37,9 @@ def create_app(
 ) -> FastAPI:
     """Scopes can be replaced by tests behind the text-stream and direct-action endpoints."""
     settings = get_settings()
+    limiter = provide_rate_limiter()
+    if turn_scope is not None:
+        limiter.reset()
     fake_modules = tuple(m for m in settings.fake_modules() if m in MODULES_WITH_ADAPTERS)
     if fake_modules:
         logger.warning(
@@ -62,7 +65,7 @@ def create_app(
             provide_manage_session,
             cookie_secure=settings.cookie_secure,
             allowed_origins=settings.allowed_origins,
-            rate_limiter=provide_rate_limiter(),
+            rate_limiter=limiter,
         ),
         prefix=API_PREFIX,
     )
@@ -72,6 +75,7 @@ def create_app(
             cookie_secure=settings.cookie_secure,
             turn_scope=turn_scope or provide_turn_scope,
             action_scope=action_scope,
+            rate_limiter=limiter,
         ),
         prefix=API_PREFIX,
     )

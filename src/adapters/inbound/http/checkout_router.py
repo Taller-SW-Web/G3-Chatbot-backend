@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from pydantic import BaseModel, ConfigDict
 
-from src.adapters.inbound.http.dependencies.checkout_guard import require_customer
+from src.adapters.inbound.http.dependencies.auth_guard import require_customer
 from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
 from src.adapters.inbound.http.problem import ProblemError
 from src.application.use_cases.manage_checkout_use_case import (

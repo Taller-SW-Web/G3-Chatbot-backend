@@ -5,13 +5,18 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from src.adapters.inbound.http.dependencies.caller_identity import (
     CHAT_SID_COOKIE,
     get_caller_identity,
     hash_chat_sid,
+)
+from src.adapters.inbound.http.dependencies.rate_limiter import (
+    CHAT_MESSAGES_PER_MINUTE,
+    InMemoryRateLimiter,
+    client_ip,
 )
 from src.adapters.inbound.http.problem import ProblemError, not_found
 from src.adapters.inbound.http.schemas.conversation_schemas import (
@@ -61,10 +66,12 @@ def create_chatbot_router(
     cookie_secure: bool,
     turn_scope: TurnScope | None = None,
     action_scope: ActionScope | None = None,
+    rate_limiter: InMemoryRateLimiter | None = None,
 ) -> APIRouter:
     """`service_provider` is a FastAPI dependency; infrastructure wires it, tests replace it.
     `turn_scope` opens a session for SSE turns; `action_scope` opens one for direct UI actions."""
     router = APIRouter(prefix="/chat/conversaciones", tags=["conversaciones"])
+    limiter = rate_limiter or InMemoryRateLimiter()
 
     @router.post("", status_code=201, response_model=ConversationCreatedOut)
     async def create_conversation(
@@ -122,10 +129,27 @@ def create_chatbot_router(
         async def send_message(
             conversation_id: uuid.UUID,
             body: SendMessageIn,
+            request: Request,
             caller: CallerIdentity | None = Depends(get_caller_identity),
         ):
             """Phase 1 (validation, ownership, persisting the message) finishes before the response starts, so
             its errors are ordinary problem+json. The turn then streams as Server-Sent Events (see sse.py)."""
+            if caller and caller.customer_id:
+                limit_key = f"cust:{caller.customer_id}"
+            elif caller and caller.anonymous_sid:
+                limit_key = f"anon:{caller.anonymous_sid}"
+            else:
+                limit_key = f"ip:{client_ip(request)}"
+            retry_after = await limiter.hit(CHAT_MESSAGES_PER_MINUTE, limit_key)
+            if retry_after is not None:
+                raise ProblemError(
+                    429,
+                    "DEMASIADAS_SOLICITUDES",
+                    "Too many requests",
+                    "Vas muy rápido, espera un momento antes de enviar otro mensaje.",
+                    headers=[("Retry-After", str(retry_after))],
+                    retryAfter=retry_after,
+                )
             if body.accion is not None:
                 if action_scope is None:
                     raise ProblemError(
