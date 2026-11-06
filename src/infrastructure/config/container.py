@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.adapters.inbound.http.dependencies.rate_limiter import InMemoryRateLimiter
 from src.adapters.outbound.auth.jwks_token_validator import JwksTokenValidator
 from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
+from src.adapters.outbound.fakes.fake_dispatch import FakeDispatchPort
 from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
 from src.adapters.outbound.fakes.fake_products import (
     FakeCatalogPort,
@@ -19,6 +20,7 @@ from src.adapters.outbound.fakes.fake_security import (
     FakeServiceTokenProvider,
 )
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
+from src.adapters.outbound.http_clients.despacho_api_adapter import DespachoClient
 from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
     InventoryClient,
@@ -69,6 +71,7 @@ from src.application.use_cases.manage_catalog_use_case import (
 from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
+from src.application.use_cases.manage_shipping_use_case import ManageShippingUseCase
 from src.application.use_cases.notification_service import NotificationError, NotificationService
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.infrastructure.config.settings import Settings, get_settings
@@ -183,6 +186,23 @@ def provide_cart_service(
     )
 
 
+def provide_shipping_service(
+    session: AsyncSession = Depends(get_session),
+) -> ManageShippingUseCase:
+    """Shipping quote and saved addresses (SPEC-12).
+
+    The cart ports give the lines the client never sends; Seguridad prefill
+    addresses and Despacho the real quote with the service token.
+    """
+    settings = get_settings()
+    return ManageShippingUseCase(
+        CartPostgresAdapter(session),
+        CartItemPostgresAdapter(session),
+        provide_despacho_client(settings),
+        provide_security_port(settings),
+    )
+
+
 def sanitize_sensitive_text(text: str) -> str:
     """Redact customer secrets before they are persisted or sent to the LLM."""
     return SensitiveDataFilter().redactar(text).texto
@@ -225,6 +245,22 @@ def provide_inventory_client(settings: Settings | None = None) -> InventoryClien
     return InventoryClient(
         base_url=settings.products_base_url,
         timeout_seconds=INVENTORY_TIMEOUT_SECONDS,
+    )
+
+
+def provide_despacho_client(settings: Settings | None = None):
+    """Despacho port honoring `DISPATCH_MODE` (ADR-0022): in-process fake or HTTP.
+
+    The HTTP client authenticates as `modulo-chatbot` with the service token
+    provider (ADR-0009); the fake keeps the demo working without G2 credentials.
+    """
+    settings = settings or get_settings()
+    if settings.module_mode("dispatch") == "fake":
+        return FakeDispatchPort()
+    return DespachoClient(
+        base_url=settings.dispatch_base_url,
+        timeout_seconds=settings.dispatch_timeout_seconds,
+        service_token_provider=provide_service_token_provider(settings),
     )
 
 
