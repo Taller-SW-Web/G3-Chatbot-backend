@@ -7,7 +7,6 @@ or upstream Despacho/Seguridad errors into `application/problem+json`.
 from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import ValidationError
 
 from src.adapters.inbound.http.dependencies.auth_guard import require_customer
 from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
@@ -19,6 +18,7 @@ from src.application.dto.commerce_contracts_dto import (
     ShippingQuoteRequest,
     ShippingQuoteResponse,
 )
+from src.application.use_cases.shipping_quote import parse_quote
 from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 
@@ -124,7 +124,11 @@ def create_shipping_router(
         except Exception as exc:
             raise _translate_shipping_error(exc) from exc
 
-        if raw.get("coberturaDisponible") is False:
+        try:
+            quote = parse_quote(raw, body.distrito)
+        except ModuleUnavailableError as exc:
+            raise _translate_shipping_error(exc) from exc
+        if quote is None:
             raise ProblemError(
                 status=422,
                 code="SIN_COBERTURA",
@@ -132,22 +136,6 @@ def create_shipping_router(
                 detail=f"Aún no llegamos a {body.distrito}.",
                 extra={"distrito": body.distrito},
             )
-
-        try:
-            plazo = raw.get("plazoEstimadoDias", raw.get("plazoEstimadoDiasHabiles"))
-            return ShippingQuoteResponse(
-                coberturaDisponible=True,
-                costoEnvio=raw["costoEnvio"],
-                moneda=raw.get("moneda", "PEN"),
-                plazoEstimadoDias=plazo,
-                fechaEstimadaEntrega=raw.get("fechaEstimadaEntrega"),
-                nombreZona=raw.get("nombreZona"),
-                modalidad=raw.get("modalidad", "DELIVERY"),
-                distrito=body.distrito,
-            )
-        except (KeyError, TypeError, ValueError, ValidationError) as exc:
-            raise _translate_shipping_error(
-                ModuleUnavailableError("dispatch", "Invalid quote response")
-            ) from exc
+        return quote
 
     return router

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 from src.adapters.inbound.http.dependencies.auth_guard import require_customer
 from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
 from src.adapters.inbound.http.problem import ProblemError
+from src.application.dto.commerce_contracts_dto import CreateCheckoutRequest
 from src.application.use_cases.manage_checkout_use_case import (
     CheckoutError,
     CreateCheckoutInput,
@@ -28,14 +29,6 @@ async def _safe_call(obj: Any, method_name: str, *args: Any, **kwargs: Any) -> A
     if inspect.isawaitable(res):
         return await res
     return res
-
-
-class CreateCheckoutRequest(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    cartId: UUID | None = None
-    direccion: dict[str, Any] | None = None
-    contacto: Any = None
 
 
 class ProcessPaymentRequest(BaseModel):
@@ -61,6 +54,8 @@ def _translate_error(err: CheckoutError) -> ProblemError:
         "SERVICIO_NO_DISPONIBLE": 503,
         "CELULAR_NO_VERIFICADO": 403,
         "CARRITO_DESACTUALIZADO": 409,
+        "SIN_COBERTURA": 422,
+        "MODULO_NO_DISPONIBLE": 503,
         "CONFLICTO": 409,
     }
     http_status = status_map.get(err.code, 500)
@@ -75,7 +70,11 @@ def _translate_error(err: CheckoutError) -> ProblemError:
         422: "Unprocessable entity",
         503: "Service temporarily unavailable",
     }
-    title = title_map.get(http_status, "Internal error")
+    title = (
+        "Cart changed"
+        if err.code == "CARRITO_DESACTUALIZADO"
+        else title_map.get(http_status, "Internal error")
+    )
     return ProblemError(
         status=http_status,
         code=err.code,
@@ -114,7 +113,7 @@ def create_checkout_router(
                     idempotency_key=idempotency_key,
                     cart_id=payload.cartId,
                     direccion=payload.direccion,
-                    contacto=payload.contacto,
+                    contacto=payload.contacto.model_dump(exclude_none=True) if payload.contacto else None,
                 )
             )
             order_id = row.summary.get("orderId") if isinstance(row.summary, dict) else None

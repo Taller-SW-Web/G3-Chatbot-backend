@@ -463,6 +463,19 @@ def test_checkout_and_payment_contract_dtos() -> None:
     assert ORDERS_ERROR_STATUS["LIMITE_REENVIOS_EXCEDIDO"] == 429
 
 
+def test_checkout_request_accepts_frontend_payload_without_email() -> None:
+    req = CreateCheckoutRequest.model_validate({
+        "direccion": {"direccionExacta": "Av. Larco 1234", "distrito": "Miraflores", "referencia": "Frente al parque"},
+        "contacto": {"nombreCompleto": "Juan Pérez", "tipoDocumento": "DNI", "numeroDocumento": "72458912"},
+    })
+    assert req.contacto.email is None
+    assert req.contacto.model_dump(exclude_none=True) == {
+        "nombreCompleto": "Juan Pérez",
+        "tipoDocumento": "DNI",
+        "numeroDocumento": "72458912",
+    }
+
+
 def test_checkout_contact_validation_uses_problem_json() -> None:
     app = FastAPI()
     register_problem_handlers(app)
