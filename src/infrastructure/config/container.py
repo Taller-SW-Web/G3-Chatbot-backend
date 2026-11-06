@@ -38,6 +38,9 @@ from src.adapters.outbound.persistence.local_phone_verification_postgres_adapter
     LocalPhoneVerificationPostgresAdapter,
 )
 from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.adapters.outbound.persistence.order_ref_postgres_adapter import (
+    OrderRefPostgresAdapter,
+)
 from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
 )
@@ -274,6 +277,10 @@ def provide_checkout_service(
         payment_gateway=provide_payment_gateway(),
         uow=SqlAlchemyUnitOfWork(session),
         security_client=provide_security_port(settings),
+        carts=CartPostgresAdapter(session),
+        cart_items=CartItemPostgresAdapter(session),
+        orders=OrderRefPostgresAdapter(session),
+        phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
     )
 
 

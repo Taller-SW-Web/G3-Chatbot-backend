@@ -7,6 +7,7 @@ import pytest
 
 from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
 from src.adapters.outbound.persistence.models.checkout import Checkout
+from src.adapters.outbound.persistence.models.payment_attempt import PaymentAttempt
 from src.application.use_cases.manage_checkout_use_case import (
     CheckoutError,
     CreateCheckoutInput,
@@ -319,3 +320,229 @@ async def test_third_failed_attempt_marks_checkout_failed(
     assert exc_info.value.code == "PAGO_RECHAZADO"
     assert exc_info.value.extra["intentosRestantes"] == 0
     mock_checkouts.marcar_estado.assert_called_with(checkout_id, CheckoutStatus.FAILED.value)
+
+
+@pytest.mark.asyncio
+async def test_introspection_invalid_token_raises_token_invalido_401(
+    mock_checkouts, mock_attempts, payment_gateway
+):
+    security = MagicMock()
+    security.introspect = AsyncMock(return_value={"activo": False, "motivo": "USUARIO_INACTIVO"})
+    uow = MagicMock()
+    uow.commit = AsyncMock()
+
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=payment_gateway,
+        uow=uow,
+        security_client=security,
+    )
+
+    checkout_id = uuid.uuid4()
+    cust_id = uuid.uuid4()
+    mock_checkouts.obtener_por_id.return_value = Checkout(
+        id=checkout_id,
+        cart_id=uuid.uuid4(),
+        customer_id=cust_id,
+        status="PENDING_PAYMENT",
+        summary={},
+        total=100.0,
+        payment_attempts=0,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        idempotency_key="k1",
+    )
+
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.process_payment(
+            ProcessPaymentInput(
+                checkout_id=checkout_id,
+                customer_id=cust_id,
+                idempotency_key="pay-intro-1",
+                numero_tarjeta="4111 1111 1111 1111",
+                titular="Diego Test",
+                vencimiento="12/28",
+                cvv="123",
+                access_token="token-bloqueado",
+            )
+        )
+    assert exc_info.value.code == "TOKEN_INVALIDO"
+
+
+@pytest.mark.asyncio
+async def test_introspection_down_fails_closed_with_503(
+    mock_checkouts, mock_attempts, payment_gateway
+):
+    security = MagicMock()
+    security.introspect = AsyncMock(side_effect=TimeoutError("Seguridad unreachable"))
+    uow = MagicMock()
+    uow.commit = AsyncMock()
+
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=payment_gateway,
+        uow=uow,
+        security_client=security,
+    )
+
+    checkout_id = uuid.uuid4()
+    cust_id = uuid.uuid4()
+    mock_checkouts.obtener_por_id.return_value = Checkout(
+        id=checkout_id,
+        cart_id=uuid.uuid4(),
+        customer_id=cust_id,
+        status="PENDING_PAYMENT",
+        summary={},
+        total=100.0,
+        payment_attempts=0,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        idempotency_key="k1",
+    )
+
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.process_payment(
+            ProcessPaymentInput(
+                checkout_id=checkout_id,
+                customer_id=cust_id,
+                idempotency_key="pay-intro-timeout",
+                numero_tarjeta="4111 1111 1111 1111",
+                titular="Diego Test",
+                vencimiento="12/28",
+                cvv="123",
+                access_token="token-real",
+            )
+        )
+    assert exc_info.value.code == "SERVICIO_NO_DISPONIBLE"
+
+
+@pytest.mark.asyncio
+async def test_payment_idempotency_key_returns_existing_attempt(
+    mock_checkouts, mock_attempts, payment_gateway
+):
+    checkout_id = uuid.uuid4()
+    cust_id = uuid.uuid4()
+    existing_attempt = PaymentAttempt(
+        id=uuid.uuid4(),
+        checkout_id=checkout_id,
+        idempotency_key="pay-idemp-key-dup",
+        result="APPROVED",
+        brand="VISA",
+        last4="1111",
+        amount=150.0,
+        transaction_id="SIM-previo-1",
+    )
+    mock_attempts.obtener_por_idempotency_key = AsyncMock(return_value=existing_attempt)
+
+    uow = MagicMock()
+    uow.commit = AsyncMock()
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=payment_gateway,
+        uow=uow,
+    )
+
+    res = await use_case.process_payment(
+        ProcessPaymentInput(
+            checkout_id=checkout_id,
+            customer_id=cust_id,
+            idempotency_key="pay-idemp-key-dup",
+            numero_tarjeta="4111 1111 1111 1111",
+            titular="Diego Test",
+            vencimiento="12/28",
+            cvv="123",
+        )
+    )
+    assert res == existing_attempt
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_recalculates_items_and_shipping_from_server(
+    mock_checkouts, mock_attempts, payment_gateway
+):
+    cust_id = uuid.uuid4()
+    cart_id = uuid.uuid4()
+
+    mock_cart = MagicMock()
+    mock_cart.id = cart_id
+    mock_cart.customer_id = cust_id
+
+    mock_carts = MagicMock()
+    mock_carts.obtener_abierto_por_cliente = AsyncMock(return_value=mock_cart)
+    mock_carts.cambiar_estado = AsyncMock()
+
+    mock_item = MagicMock()
+    mock_item.sku = "SKU-PROMO-1"
+    mock_item.name = "Polo Algodon"
+    mock_item.quantity = 2
+    mock_item.unit_price_ref = 40.0
+    mock_item.image_url = None
+
+    mock_items = MagicMock()
+    mock_items.listar_por_cart = AsyncMock(return_value=[mock_item])
+
+    uow = MagicMock()
+    uow.commit = AsyncMock()
+
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=payment_gateway,
+        uow=uow,
+        carts=mock_carts,
+        cart_items=mock_items,
+    )
+
+    # 2 * 40 = 80 subtotal. Envio 12.50. Total servidor = 92.50
+    checkout = await use_case.create_checkout(
+        CreateCheckoutInput(
+            customer_id=cust_id,
+            idempotency_key="chk-recalc-1",
+            cart_id=None,  # Not provided, resolves open cart!
+            costo_envio=12.50,
+            total=92.50,
+        )
+    )
+    assert checkout.total == 92.50
+    assert checkout.summary["subtotal"] == 80.0
+    assert checkout.summary["costoEnvio"] == 12.50
+    assert len(checkout.summary["lineas"]) == 1
+    mock_carts.cambiar_estado.assert_called_with(cart_id, "IN_CHECKOUT")
+
+
+@pytest.mark.asyncio
+async def test_card_number_never_persisted_in_attempt(use_case, mock_checkouts, mock_attempts):
+    checkout_id = uuid.uuid4()
+    cust_id = uuid.uuid4()
+    mock_checkouts.obtener_por_id.return_value = Checkout(
+        id=checkout_id,
+        cart_id=uuid.uuid4(),
+        customer_id=cust_id,
+        status="PENDING_PAYMENT",
+        summary={},
+        total=100.0,
+        payment_attempts=0,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        idempotency_key="k1",
+    )
+
+    pan = "4111 1111 1111 1111"
+    attempt = await use_case.process_payment(
+        ProcessPaymentInput(
+            checkout_id=checkout_id,
+            customer_id=cust_id,
+            idempotency_key="pay-pan-check",
+            numero_tarjeta=pan,
+            titular="Diego Test",
+            vencimiento="12/28",
+            cvv="123",
+        )
+    )
+
+    assert not hasattr(attempt, "numero_tarjeta")
+    assert not hasattr(attempt, "cvv")
+    assert not hasattr(attempt, "pan")
+    assert attempt.last4 == "1111"
+    assert attempt.brand == "VISA"
+

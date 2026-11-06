@@ -1,11 +1,13 @@
 """Checkout and payment endpoints (SPEC-14, contratos-integracion.md §2.5)."""
+import inspect
 from typing import Any, Callable
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import APIRouter, Depends, Header, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.adapters.inbound.http.dependencies.checkout_guard import require_customer
+from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
 from src.adapters.inbound.http.problem import ProblemError
 from src.application.use_cases.manage_checkout_use_case import (
     CheckoutError,
@@ -14,6 +16,18 @@ from src.application.use_cases.manage_checkout_use_case import (
     ProcessPaymentInput,
 )
 from src.domain.value_objects.caller_identity import CallerIdentity
+
+
+async def _safe_call(obj: Any, method_name: str, *args: Any, **kwargs: Any) -> Any:
+    if obj is None:
+        return None
+    method = getattr(obj, method_name, None)
+    if not callable(method):
+        return None
+    res = method(*args, **kwargs)
+    if inspect.isawaitable(res):
+        return await res
+    return res
 
 
 class CreateCheckoutRequest(BaseModel):
@@ -26,7 +40,7 @@ class CreateCheckoutRequest(BaseModel):
     subtotal: float = 0.0
     costoEnvio: float = 0.0
     descuento: float = 0.0
-    total: float
+    total: float = 0.0
 
 
 class ProcessPaymentRequest(BaseModel):
@@ -46,9 +60,12 @@ def _translate_error(err: CheckoutError) -> ProblemError:
         "PAGO_RECHAZADO": 402,
         "CHECKOUT_EXPIRADO": 410,
         "VALIDACION": 400,
+        "CARRITO_VACIO": 422,
         "ERROR_PROCESAMIENTO": 503,
+        "SERVICIO_NO_DISPONIBLE": 503,
         "CELULAR_NO_VERIFICADO": 403,
         "CARRITO_DESACTUALIZADO": 409,
+        "CONFLICTO": 409,
     }
     http_status = status_map.get(err.code, 500)
     title_map = {
@@ -59,6 +76,7 @@ def _translate_error(err: CheckoutError) -> ProblemError:
         404: "Resource not found",
         409: "Conflict",
         410: "Checkout expired",
+        422: "Unprocessable entity",
         503: "Service temporarily unavailable",
     }
     title = title_map.get(http_status, "Internal error")
@@ -108,9 +126,11 @@ def create_checkout_router(
                     total=payload.total,
                 )
             )
+            order_id = row.summary.get("orderId") if isinstance(row.summary, dict) else None
             return {
                 "id": str(row.id),
                 "cartId": str(row.cart_id),
+                "orderId": order_id,
                 "status": row.status,
                 "total": float(row.total),
                 "expiresAt": row.expires_at.isoformat(),
@@ -128,9 +148,11 @@ def create_checkout_router(
     ) -> dict[str, Any]:
         try:
             row = await service.get_checkout(checkout_id, caller.customer_id)
+            order_id = row.summary.get("orderId") if isinstance(row.summary, dict) else None
             return {
                 "id": str(row.id),
                 "cartId": str(row.cart_id),
+                "orderId": order_id,
                 "status": row.status,
                 "total": float(row.total),
                 "expiresAt": row.expires_at.isoformat(),
@@ -144,6 +166,7 @@ def create_checkout_router(
     async def process_payment(
         checkout_id: UUID,
         payload: ProcessPaymentRequest,
+        request: Request,
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
         caller: CallerIdentity = Depends(require_customer),
         service: ManageCheckoutUseCase = Depends(use_case_provider),
@@ -157,6 +180,12 @@ def create_checkout_router(
                 extra={"campo": "Idempotency-Key"},
             )
 
+        token = None
+        try:
+            token = get_bearer_token(request)
+        except Exception:
+            token = None
+
         try:
             attempt = await service.process_payment(
                 ProcessPaymentInput(
@@ -167,11 +196,19 @@ def create_checkout_router(
                     titular=payload.titular,
                     vencimiento=payload.vencimiento,
                     cvv=payload.cvv,
+                    access_token=token,
                 )
             )
+
+            order_id = None
+            ord_row = await _safe_call(service.orders, "obtener_por_checkout_id", checkout_id)
+            if ord_row and getattr(ord_row, "order_id", None):
+                order_id = ord_row.order_id
+
             return {
                 "id": str(attempt.id),
                 "checkoutId": str(attempt.checkout_id),
+                "orderId": order_id,
                 "resultado": "APROBADO",
                 "marca": attempt.brand,
                 "ultimos4": attempt.last4,
