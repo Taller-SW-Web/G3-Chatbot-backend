@@ -7,6 +7,7 @@ or upstream Despacho/Seguridad errors into `application/problem+json`.
 from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import ValidationError
 
 from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
 from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
@@ -145,17 +146,21 @@ def create_shipping_router(
                 extra={"distrito": body.distrito},
             )
 
-        return ShippingQuoteResponse(
-            coberturaDisponible=True,
-            costoEnvio=float(raw.get("costoEnvio", 0.0)),
-            moneda=str(raw.get("moneda", "PEN")),
-            plazoEstimadoDias=int(
-                raw.get("plazoEstimadoDias", raw.get("plazoEstimadoDiasHabiles", 1))
-            ),
-            fechaEstimadaEntrega=raw.get("fechaEstimadaEntrega"),
-            nombreZona=raw.get("nombreZona"),
-            modalidad=str(raw.get("modalidad", "DELIVERY")),
-            distrito=body.distrito,
-        )
+        try:
+            plazo = raw.get("plazoEstimadoDias", raw.get("plazoEstimadoDiasHabiles"))
+            return ShippingQuoteResponse(
+                coberturaDisponible=True,
+                costoEnvio=raw["costoEnvio"],
+                moneda=raw.get("moneda", "PEN"),
+                plazoEstimadoDias=plazo,
+                fechaEstimadaEntrega=raw.get("fechaEstimadaEntrega"),
+                nombreZona=raw.get("nombreZona"),
+                modalidad=raw.get("modalidad", "DELIVERY"),
+                distrito=body.distrito,
+            )
+        except (KeyError, TypeError, ValueError, ValidationError) as exc:
+            raise _translate_shipping_error(
+                ModuleUnavailableError("dispatch", "Invalid quote response")
+            ) from exc
 
     return router

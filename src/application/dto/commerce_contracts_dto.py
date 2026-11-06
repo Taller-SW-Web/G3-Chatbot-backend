@@ -310,20 +310,15 @@ CHECKOUT_ERROR_STATUS: dict[str, int] = {
 
 
 class CreateCheckoutRequest(BaseModel):
-    """Input for `POST /api/v1/checkout` (`SPEC-14` Req. 2, compatible with PR #59)."""
+    """Input for `POST /api/v1/checkout` (`SPEC-14` Req. 2)."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     cartId: UUID | None = None
     conversacionId: UUID | None = None
     guardarDireccion: bool = False
     direccion: dict[str, Any] | None = None
-    contacto: dict[str, Any] | None = None
-    lineas: list[dict[str, Any]] = Field(default_factory=list)
-    subtotal: float = Field(default=0.0, ge=0)
-    costoEnvio: float = Field(default=0.0, ge=0)
-    descuento: float = Field(default=0.0, ge=0)
-    total: float = Field(..., ge=0)
+    contacto: BuyerContactDTO | None = None
 
 
 class CheckoutSessionResponse(BaseModel):

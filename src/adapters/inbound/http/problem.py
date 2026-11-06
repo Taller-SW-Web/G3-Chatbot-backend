@@ -48,13 +48,17 @@ def register_problem_handlers(app: FastAPI) -> None:
         return problem
 
     @app.exception_handler(RequestValidationError)
-    async def _validation(_: Request, exc: RequestValidationError) -> ProblemResponse:
+    async def _validation(request: Request, exc: RequestValidationError) -> ProblemResponse:
         errores = [
             {"campo": ".".join(str(p) for p in e["loc"][1:]), "mensaje": e["msg"]}
             for e in exc.errors()
         ]
+        invalid_contact = request.url.path.endswith("/checkout") and any(
+            e["loc"][:2] == ("body", "contacto") for e in exc.errors()
+        )
+        code = "DATO_INVALIDO" if invalid_contact else "VALIDACION"
         return ProblemResponse(
-            _body(400, "VALIDACION", "Invalid request", None, errores=errores), status_code=400
+            _body(400, code, "Invalid request", None, errores=errores), status_code=400
         )
 
     @app.exception_handler(ModuleUnavailableError)

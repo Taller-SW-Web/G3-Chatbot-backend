@@ -332,6 +332,26 @@ def test_shipping_endpoints_contract_and_error_translation() -> None:
     assert r_quote.json()["costoEnvio"] == 12.50
     assert r_quote.json()["plazoEstimadoDias"] == 1
 
+    for missing_field in ("costoEnvio", "plazoEstimadoDiasHabiles"):
+        service.quote_result = {
+            "coberturaDisponible": True,
+            "costoEnvio": 12.50,
+            "plazoEstimadoDiasHabiles": 1,
+        }
+        del service.quote_result[missing_field]
+        response = client.post(
+            "/api/v1/envio/cotizar",
+            headers=AUTH_HEADER,
+            json={
+                "destinatario": "Juan Pérez",
+                "direccion": "Av. Larco 1234",
+                "distrito": "Miraflores",
+            },
+        )
+        assert response.status_code == 503
+        assert response.json()["code"] == "MODULO_NO_DISPONIBLE"
+        assert response.json()["modulo"] == "dispatch"
+
     # No coverage -> 422 SIN_COBERTURA
     service.quote_result = {"coberturaDisponible": False}
     r_no_cov = client.post(
@@ -387,13 +407,13 @@ def test_checkout_and_payment_contract_dtos() -> None:
         guardarDireccion=True,
         direccion={"distrito": "Miraflores", "direccionExacta": "Av. Larco 1234"},
         contacto={"nombreCompleto": "Juan Pérez", "tipoDocumento": "DNI", "numeroDocumento": "72458912"},
-        subtotal=299.90,
-        descuento=30.0,
-        costoEnvio=12.50,
-        total=282.40,
     )
     assert req.guardarDireccion is True
-    assert req.total == 282.40
+    assert req.contacto.numeroDocumento == "72458912"
+
+    for field in ("lineas", "subtotal", "descuento", "costoEnvio", "total", "precio"):
+        with pytest.raises(ValidationError):
+            CreateCheckoutRequest.model_validate({field: 1})
 
     session = CheckoutSessionResponse(
         id="chk-1",
@@ -441,6 +461,34 @@ def test_checkout_and_payment_contract_dtos() -> None:
     assert CHECKOUT_ERROR_STATUS["CARRITO_DESACTUALIZADO"] == 409
     assert SHIPPING_ERROR_STATUS["SIN_COBERTURA"] == 422
     assert ORDERS_ERROR_STATUS["LIMITE_REENVIOS_EXCEDIDO"] == 429
+
+
+def test_checkout_contact_validation_uses_problem_json() -> None:
+    app = FastAPI()
+    register_problem_handlers(app)
+
+    @app.post("/api/v1/checkout")
+    def create_checkout(body: CreateCheckoutRequest) -> dict[str, bool]:
+        return {"ok": True}
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/checkout",
+        json={
+            "contacto": {
+                "nombreCompleto": "Juan Pérez",
+                "tipoDocumento": "DNI",
+                "numeroDocumento": "123",
+            }
+        },
+    )
+    assert response.status_code == 400
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["code"] == "DATO_INVALIDO"
+
+    amount_response = client.post("/api/v1/checkout", json={"total": 1})
+    assert amount_response.status_code == 400
+    assert amount_response.json()["code"] == "VALIDACION"
 
 
 # ---------------------------------------------------------------------------
@@ -514,6 +562,7 @@ def test_tracking_mapper_strips_forbidden_fields_and_llm_recipient() -> None:
 class _FakeOrdersService:
     def __init__(self) -> None:
         self.error: Exception | None = None
+        self.resend_keys: list[str] = []
 
     async def list_orders(
         self,
@@ -590,10 +639,11 @@ class _FakeOrdersService:
         }
 
     async def resend_confirmation(
-        self, customer_id: Any, order_id: str, *, holder_token: str
+        self, customer_id: Any, order_id: str, *, holder_token: str, idempotency_key: str
     ) -> dict[str, Any]:
         if self.error:
             raise self.error
+        self.resend_keys.append(idempotency_key)
         return {
             "ok": True,
             "pedidoId": order_id,
@@ -642,19 +692,28 @@ def test_orders_endpoints_contract_and_security_rules() -> None:
     assert r_foreign.status_code == 404
     assert r_foreign.json()["code"] == "RECURSO_NO_ENCONTRADO"
 
-    # 5. Resend confirmation (202 Accepted) and limit exceeded (429)
+    # 5. Resend requires an idempotency key and passes it to the service.
     service.error = None
-    r_resend = client.post(
+    r_missing = client.post(
         "/api/v1/pedidos/PED-2026-00891/reenviar-confirmacion", headers=AUTH_HEADER
+    )
+    assert r_missing.status_code == 400
+    assert r_missing.json()["code"] == "VALIDACION"
+    assert service.resend_keys == []
+
+    resend_headers = {**AUTH_HEADER, "Idempotency-Key": "resend-1"}
+    r_resend = client.post(
+        "/api/v1/pedidos/PED-2026-00891/reenviar-confirmacion", headers=resend_headers
     )
     assert r_resend.status_code == 202
     assert r_resend.json()["reenviosRestantes"] == 1
+    assert service.resend_keys == ["resend-1"]
 
     service.error = OrderError(
         "LIMITE_REENVIOS_EXCEDIDO", "Ya alcanzaste el límite de 2 reenvíos para este pedido."
     )
     r_limit = client.post(
-        "/api/v1/pedidos/PED-2026-00891/reenviar-confirmacion", headers=AUTH_HEADER
+        "/api/v1/pedidos/PED-2026-00891/reenviar-confirmacion", headers=resend_headers
     )
     assert r_limit.status_code == 429
     assert r_limit.json()["code"] == "LIMITE_REENVIOS_EXCEDIDO"
