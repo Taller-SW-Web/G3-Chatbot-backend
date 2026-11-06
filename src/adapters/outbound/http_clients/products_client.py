@@ -32,6 +32,7 @@ from src.ports.outbound.product_repository_port import (
     MAX_SKUS_PER_CALL,
     normalize_sku_list,
 )
+from src.ports.outbound.service_token_port import ServiceTokenProvider
 
 MAX_PRICE_DECIMALS = Decimal("0.01")
 
@@ -78,6 +79,23 @@ class ProductsBaseClient(BaseModuleClient):
 
     module: str = "productos"
 
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: float = 4.0,
+        service_token_provider: ServiceTokenProvider | None = None,
+        client: httpx.AsyncClient | None = None,
+    ):
+        super().__init__(base_url=base_url, timeout_seconds=timeout_seconds, client=client)
+        self._service_tokens = service_token_provider
+
+    async def _request(self, method: str, path: str, correlation_id: str | None = None, **kwargs) -> httpx.Response:
+        headers = dict(kwargs.pop("headers", None) or {})
+        if self._service_tokens and "Authorization" not in headers:
+            token = await self._service_tokens.get_token(correlation_id=correlation_id)
+            headers["Authorization"] = f"Bearer {token}"
+        return await super()._request(method, path, correlation_id=correlation_id, headers=headers, **kwargs)
+
     async def _parse_response(self, response: httpx.Response) -> Any:
         try:
             body = response.json()
@@ -100,9 +118,15 @@ class ProductsClient(ProductsBaseClient):
         self,
         base_url: str,
         timeout_seconds: float = 4.0,
+        service_token_provider: ServiceTokenProvider | None = None,
         client: httpx.AsyncClient | None = None,
     ):
-        super().__init__(base_url=base_url, timeout_seconds=timeout_seconds, client=client)
+        super().__init__(
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+            service_token_provider=service_token_provider,
+            client=client,
+        )
 
     async def search_products(
         self,

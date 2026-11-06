@@ -8,6 +8,8 @@ from typing import Protocol
 
 
 class ServiceTokenProvider(Protocol):
-    async def get_token(self, *, correlation_id: str | None = None) -> str:
+    async def get_token(
+        self, *, correlation_id: str | None = None, scope: str | None = None
+    ) -> str:
         """Returns a cached, non-expired service access token."""
         ...

@@ -858,3 +858,151 @@ async def test_payment_approved_notification_failure_does_not_block_purchase(
     assert f"Failed to enqueue confirmation for order {order_id}" in caplog.text
 
 
+@pytest.mark.asyncio
+async def test_create_checkout_calls_sales_client_and_records_order_id(
+    mock_checkouts, mock_attempts, payment_gateway
+):
+    cust_id = uuid.uuid4()
+    cart_id = uuid.uuid4()
+    mock_carts = MagicMock()
+    mock_carts.obtener_abierto_por_cliente = AsyncMock(
+        return_value=SimpleNamespace(id=cart_id, totals_snapshot={"subtotal": 100.0, "descuentos": []})
+    )
+    mock_carts.cambiar_estado = AsyncMock()
+    mock_cart_items = MagicMock()
+    mock_cart_items.listar_por_cart = AsyncMock(
+        return_value=[
+            SimpleNamespace(sku="SKU-1", name="Prod 1", quantity=1, unit_price_ref=100.0, image_url=None)
+        ]
+    )
+    mock_orders = MagicMock()
+    mock_orders.guardar = AsyncMock()
+
+    mock_sales = MagicMock()
+    mock_sales.create_order = AsyncMock(return_value={"pedidoId": "PED-VENTAS-999"})
+
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=payment_gateway,
+        carts=mock_carts,
+        cart_items=mock_cart_items,
+        orders=mock_orders,
+        sales_client=mock_sales,
+    )
+
+    chk = await use_case.create_checkout(
+        CreateCheckoutInput(
+            customer_id=cust_id,
+            idempotency_key="key-sales-1",
+            contacto=VALID_CONTACT,
+            direccion={"direccion": "Av. Prueba 123", "distrito": "Miraflores"},
+        )
+    )
+
+    assert chk.summary["orderId"] == "PED-VENTAS-999"
+    mock_sales.create_order.assert_awaited_once()
+    saved_order_ref = mock_orders.guardar.call_args[0][0]
+    assert saved_order_ref.order_id == "PED-VENTAS-999"
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_handles_stock_insuficiente_409(
+    mock_checkouts, mock_attempts, payment_gateway
+):
+    from src.ports.outbound.module_errors import ModuleRequestError
+
+    cust_id = uuid.uuid4()
+    cart_id = uuid.uuid4()
+    mock_carts = MagicMock()
+    mock_carts.obtener_abierto_por_cliente = AsyncMock(
+        return_value=SimpleNamespace(id=cart_id, totals_snapshot={"subtotal": 50.0, "descuentos": []})
+    )
+    mock_carts.cambiar_estado = AsyncMock()
+    mock_cart_items = MagicMock()
+    mock_cart_items.listar_por_cart = AsyncMock(
+        return_value=[
+            SimpleNamespace(sku="SKU-NO-STOCK", name="Sin Stock", quantity=1, unit_price_ref=50.0, image_url=None)
+        ]
+    )
+    mock_sales = MagicMock()
+    mock_sales.create_order = AsyncMock(side_effect=ModuleRequestError("sales", 409, "STOCK_INSUFICIENTE"))
+
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=payment_gateway,
+        carts=mock_carts,
+        cart_items=mock_cart_items,
+        sales_client=mock_sales,
+    )
+
+    with pytest.raises(CheckoutError) as exc:
+        await use_case.create_checkout(
+            CreateCheckoutInput(
+                customer_id=cust_id,
+                idempotency_key="key-sales-err",
+                contacto=VALID_CONTACT,
+                direccion={"direccion": "Av. Prueba 123", "distrito": "Miraflores"},
+            )
+        )
+    assert exc.value.code == "STOCK_INSUFICIENTE"
+
+
+@pytest.mark.asyncio
+async def test_process_payment_enqueues_outbox_events(
+    mock_checkouts, mock_attempts, payment_gateway
+):
+    cust_id = uuid.uuid4()
+    checkout_id = uuid.uuid4()
+    row = Checkout(
+        id=checkout_id,
+        cart_id=uuid.uuid4(),
+        customer_id=cust_id,
+        status="PENDING_PAYMENT",
+        total=150.0,
+        payment_attempts=0,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        idempotency_key="chk-outbox",
+        summary={"orderId": "PED-OUTBOX-1"},
+    )
+    mock_checkouts.obtener_por_id.return_value = row
+
+    mock_orders = MagicMock()
+    order_ref = MagicMock()
+    order_ref.order_id = "PED-OUTBOX-1"
+    mock_orders.obtener_por_checkout_id = AsyncMock(return_value=order_ref)
+    mock_orders.actualizar_estado = AsyncMock()
+
+    mock_outbox = MagicMock()
+    mock_outbox.guardar = AsyncMock()
+
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=payment_gateway,
+        orders=mock_orders,
+        outbox=mock_outbox,
+    )
+
+    # 1. Pago aprobado -> NOTIFY_SALES_PAYMENT en outbox
+    attempt = await use_case.process_payment(
+        ProcessPaymentInput(
+            checkout_id=checkout_id,
+            customer_id=cust_id,
+            idempotency_key="pay-outbox-ok",
+            numero_tarjeta="4111 1111 1111 1111",
+            titular="Juan Perez",
+            vencimiento="12/28",
+            cvv="123",
+        )
+    )
+    assert attempt.result == "APPROVED"
+    mock_outbox.guardar.assert_awaited_once()
+    outbox_task = mock_outbox.guardar.call_args[0][0]
+    assert outbox_task.type == "NOTIFY_SALES_PAYMENT"
+    assert outbox_task.payload["order_id"] == "PED-OUTBOX-1"
+    assert outbox_task.payload["payment_data"]["resultado"] == "APROBADO"
+
+
+

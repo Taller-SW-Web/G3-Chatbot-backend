@@ -20,6 +20,7 @@ from src.ports.outbound.product_repository_port import (
     MAX_COMMERCIAL_SKUS,
     normalize_sku_list,
 )
+from src.ports.outbound.service_token_port import ServiceTokenProvider
 
 INVENTORY_TIMEOUT_SECONDS = 3.0
 
@@ -29,9 +30,15 @@ class InventoryClient(ProductsBaseClient):
         self,
         base_url: str,
         timeout_seconds: float = INVENTORY_TIMEOUT_SECONDS,
+        service_token_provider: ServiceTokenProvider | None = None,
         client: httpx.AsyncClient | None = None,
     ):
-        super().__init__(base_url=base_url, timeout_seconds=timeout_seconds, client=client)
+        super().__init__(
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+            service_token_provider=service_token_provider,
+            client=client,
+        )
 
     async def get_availability(
         self,

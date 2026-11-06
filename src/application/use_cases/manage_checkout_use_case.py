@@ -85,6 +85,8 @@ class ManageCheckoutUseCase:
         orders: Any | None = None,
         phone_verifications: Any | None = None,
         notification_service: NotificationService | None = None,
+        sales_client: Any | None = None,
+        outbox: Any | None = None,
     ):
         self.checkouts = checkouts
         self.payment_attempts = payment_attempts
@@ -96,6 +98,8 @@ class ManageCheckoutUseCase:
         self.orders = orders
         self.phone_verifications = phone_verifications
         self.notification_service = notification_service
+        self.sales_client = sales_client
+        self.outbox = outbox
 
     async def create_checkout(self, input_data: CreateCheckoutInput) -> Checkout:
         if not input_data.idempotency_key:
@@ -181,6 +185,83 @@ class ManageCheckoutUseCase:
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(minutes=15)
         order_id = f"PED-{now.year}-{uuid.uuid4().hex[:6].upper()}"
+
+        if self.sales_client:
+            from src.domain.services.snapshot_builder import SnapshotBuilder
+            from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+
+            snapshot_items = [
+                {
+                    "productoId": str(getattr(it, "product_id", "") or it.sku),
+                    "sku": it.sku,
+                    "descripcion": it.name,
+                    "cantidad": it.quantity,
+                    "precioUnitario": float(it.unit_price_ref),
+                }
+                for it in items
+            ]
+            contacto_data = input_data.contacto or {}
+            direccion_data = input_data.direccion or {}
+            snapshot_envio = {
+                "modalidad": "DELIVERY",
+                "costo": float(costo_envio),
+                "destinatario": contacto_data.get("nombreCompleto", ""),
+                "departamento": direccion_data.get("departamento", "Lima"),
+                "provincia": direccion_data.get("provincia", "Lima"),
+                "distrito": direccion_data.get("distrito", ""),
+                "direccion": direccion_data.get("direccionExacta", direccion_data.get("direccion", "")),
+                "referencia": direccion_data.get("referencia", ""),
+            }
+            snapshot_pago = {
+                "metodoPago": "TARJETA_CREDITO",
+                "moneda": "PEN",
+                "subtotal": float(subtotal),
+                "descuentoCupon": float(descuento),
+                "costoEnvio": float(costo_envio),
+                "total": float(total_final),
+            }
+            cupon_data = (
+                {"codigo": "CUPON", "descuento": float(descuento), "aplicado": True}
+                if descuento > 0
+                else None
+            )
+
+            try:
+                snapshot = SnapshotBuilder.build_snapshot(
+                    cliente_id=str(input_data.customer_id),
+                    contacto=contacto_data,
+                    items=snapshot_items,
+                    envio=snapshot_envio,
+                    pago=snapshot_pago,
+                    cupon=cupon_data,
+                )
+                ventas_res = await self.sales_client.create_order(
+                    snapshot,
+                    idempotency_key=input_data.idempotency_key,
+                )
+                if isinstance(ventas_res, dict) and ventas_res.get("pedidoId"):
+                    order_id = str(ventas_res["pedidoId"])
+            except ModuleRequestError as exc:
+                if exc.status == 409:
+                    raise CheckoutError(
+                        "STOCK_INSUFICIENTE",
+                        "Uno o más productos ya no cuentan con stock suficiente",
+                    ) from exc
+                if exc.status == 400:
+                    raise CheckoutError(
+                        "DATO_INVALIDO",
+                        "Los datos del pedido son inválidos según el módulo de Ventas",
+                    ) from exc
+                raise CheckoutError(
+                    "ERROR_VENTAS",
+                    f"Ventas rechazó la creación del pedido: {exc.code}",
+                ) from exc
+            except ModuleUnavailableError as exc:
+                raise CheckoutError(
+                    "MODULO_NO_DISPONIBLE",
+                    "El servicio de Ventas no está disponible en este momento",
+                    {"modulo": "sales"},
+                ) from exc
 
         summary = {
             "lineas": lineas,
@@ -278,6 +359,20 @@ class ManageCheckoutUseCase:
                 ord_row = await _safe_call(self.orders, "obtener_por_checkout_id", row.id)
                 if ord_row and getattr(ord_row, "order_id", None):
                     await _safe_call(self.orders, "actualizar_estado", ord_row.order_id, "CANCELLED")
+                    if self.outbox:
+                        from src.adapters.outbound.persistence.models.outbox import Outbox
+
+                        outbox_entry = Outbox(
+                            type="REQUEST_CANCELLATION",
+                            payload={
+                                "order_id": ord_row.order_id,
+                                "motivo": "PAGO_NO_COMPLETADO",
+                                "comentario": "Checkout expirado por tiempo límite",
+                            },
+                            status="PENDING",
+                            attempts=0,
+                        )
+                        await _safe_call(self.outbox, "guardar", outbox_entry)
                 if self.uow:
                     await _safe_call(self.uow, "commit")
             raise CheckoutError("CHECKOUT_EXPIRADO", "El checkout venció hace más de 15 minutos")
@@ -348,6 +443,32 @@ class ManageCheckoutUseCase:
             )
             saved_attempt = await self.payment_attempts.guardar(attempt)
 
+            # Encolar notificación a Ventas en outbox (SPEC-15 Req. 2)
+            if order_id and self.outbox:
+                from src.adapters.outbound.persistence.models.outbox import Outbox
+
+                payment_payload = {
+                    "transaccionId": payment_res.transaction_id or f"SIM-{uuid.uuid4().hex[:8].upper()}",
+                    "resultado": "APROBADO",
+                    "monto": float(row.total),
+                    "moneda": "PEN",
+                    "metodo": "TARJETA_CREDITO",
+                    "marcaTarjeta": payment_res.brand or "VISA",
+                    "ultimosCuatroDigitos": payment_res.last4 or "••••",
+                    "fechaPago": datetime.now(timezone.utc).isoformat(),
+                    "codigoAutorizacion": f"AUTH-{uuid.uuid4().hex[:6].upper()}",
+                }
+                outbox_entry = Outbox(
+                    type="NOTIFY_SALES_PAYMENT",
+                    payload={
+                        "order_id": order_id,
+                        "payment_data": payment_payload,
+                    },
+                    status="PENDING",
+                    attempts=0,
+                )
+                await _safe_call(self.outbox, "guardar", outbox_entry)
+
             confirmation_res = None
             if order_id:
                 if ord_row and getattr(ord_row, "order_id", None):
@@ -376,6 +497,20 @@ class ManageCheckoutUseCase:
             ord_row = await _safe_call(self.orders, "obtener_por_checkout_id", row.id)
             if ord_row and getattr(ord_row, "order_id", None):
                 await _safe_call(self.orders, "actualizar_estado", ord_row.order_id, "CANCELLED")
+                if self.outbox:
+                    from src.adapters.outbound.persistence.models.outbox import Outbox
+
+                    outbox_entry = Outbox(
+                        type="REQUEST_CANCELLATION",
+                        payload={
+                            "order_id": ord_row.order_id,
+                            "motivo": "PAGO_NO_COMPLETADO",
+                            "comentario": "Intentos de pago con tarjeta agotados (3 rechazos)",
+                        },
+                        status="PENDING",
+                        attempts=0,
+                    )
+                    await _safe_call(self.outbox, "guardar", outbox_entry)
 
         attempt = PaymentAttempt(
             checkout_id=row.id,

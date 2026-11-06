@@ -27,8 +27,8 @@ def _number(name: str, default: str, cast, *, minimum: float):
 MODULE_MODES = ("fake", "http")
 MODULES = ("security", "products", "sales", "dispatch")
 # Modules with an in-process fake or an HTTP adapter wired in the container.
-# Sales and Dispatch have neither yet, so their mode changes nothing today.
-MODULES_WITH_ADAPTERS = ("security", "products")
+# Dispatch has none yet, so its mode changes nothing today.
+MODULES_WITH_ADAPTERS = ("security", "products", "sales")
 PRODUCTION_ENVIRONMENTS = ("production", "prod")
 
 
@@ -174,11 +174,16 @@ def get_settings() -> Settings:
         security_client_secret=os.getenv("SECURITY_CLIENT_SECRET", "").strip(),
         security_client_id=os.getenv("SECURITY_CLIENT_ID", "modulo-chatbot").strip() or "modulo-chatbot",
         products_base_url=os.getenv("PRODUCTS_BASE_URL", "http://localhost:4011").strip().rstrip("/"),
-        sales_base_url=os.getenv("SALES_BASE_URL", "http://localhost:4012").strip().rstrip("/"),
+        sales_base_url=(sales_base := os.getenv("SALES_BASE_URL", "http://localhost:4012").strip().rstrip("/")),
         dispatch_base_url=os.getenv("DISPATCH_BASE_URL", "http://localhost:4013").strip().rstrip("/"),
         security_timeout_seconds=_number("SECURITY_TIMEOUT_SECONDS", "5", float, minimum=0.1),
         products_timeout_seconds=_number("PRODUCTS_TIMEOUT_SECONDS", "4", float, minimum=0.1),
-        sales_timeout_seconds=_number("SALES_TIMEOUT_SECONDS", "5", float, minimum=0.1),
+        sales_timeout_seconds=_number(
+            "SALES_TIMEOUT_SECONDS",
+            "180" if "onrender.com" in sales_base else "5",
+            float,
+            minimum=0.1,
+        ),
         dispatch_timeout_seconds=_number("DISPATCH_TIMEOUT_SECONDS", "4", float, minimum=0.1),
         smtp_host=os.getenv("SMTP_HOST", "").strip(),
         smtp_port=_number("SMTP_PORT", "587", int, minimum=1),

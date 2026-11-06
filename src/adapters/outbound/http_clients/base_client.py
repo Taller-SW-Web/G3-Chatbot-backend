@@ -28,7 +28,7 @@ class BaseModuleClient:
             await self._client.aclose()
 
     def _headers(self, correlation_id: str | None = None, extra: dict[str, str] | None = None) -> dict[str, str]:
-        headers = {"X-Correlation-Id": correlation_id or uuid.uuid4().hex}
+        headers = {"X-Correlation-Id": correlation_id or str(uuid.uuid4())}
         if extra:
             headers.update(extra)
         return headers

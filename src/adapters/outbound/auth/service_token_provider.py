@@ -43,18 +43,23 @@ class SecurityServiceTokenProvider(BaseModuleClient):
         self._token: str | None = None
         self._expires_at = 0.0
 
-    async def get_token(self, *, correlation_id: str | None = None) -> str:
+    async def get_token(
+        self, *, correlation_id: str | None = None, scope: str | None = None
+    ) -> str:
         now = self._clock()
-        if self._token and now < self._expires_at - CLOCK_SKEW_SECONDS:
+        if self._token and now < self._expires_at - CLOCK_SKEW_SECONDS and not scope:
             return self._token
+        data = {
+            "grant_type": "client_credentials",
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+        }
+        if scope:
+            data["scope"] = scope
         response = await self._request(
             "POST",
             "/auth/token",
-            data={
-                "grant_type": "client_credentials",
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-            },
+            data=data,
             correlation_id=correlation_id,
         )
         body = self._parse_token(response)
