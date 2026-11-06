@@ -312,7 +312,7 @@ def provide_checkout_service(
         cart_items=CartItemPostgresAdapter(session),
         orders=OrderRefPostgresAdapter(session),
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
-        session=session,
+        notification_service=build_notification_service(session),
     )
 
 
