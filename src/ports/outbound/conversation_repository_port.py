@@ -40,6 +40,10 @@ class ConversationRepositoryPort(Protocol):
         Callers prove ownership with `find_owned` first; this read is not owner-scoped."""
         ...
 
+    async def get_context_for_update(self, conversation_id: uuid.UUID) -> dict:
+        """Lock the owned conversation memory until UoW completion; no external I/O while held."""
+        ...
+
     async def save_context(self, conversation_id: uuid.UUID, context: dict) -> None:
         """Replace the working memory. Does not commit; the use case commits through its unit of work."""
         ...

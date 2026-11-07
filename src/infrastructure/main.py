@@ -7,6 +7,7 @@ from src.adapters.inbound.http.cart_router import create_cart_router
 from src.adapters.inbound.http.catalog_router import create_catalog_router
 from src.adapters.inbound.http.chatbot_router import ActionScope, TurnScope, create_chatbot_router
 from src.adapters.inbound.http.checkout_router import create_checkout_router
+from src.adapters.inbound.http.correlation import CorrelationMiddleware
 from src.adapters.inbound.http.health_router import router as health_router
 from src.adapters.inbound.http.orders_router import create_orders_router
 from src.adapters.inbound.http.problem import register_problem_handlers
@@ -25,6 +26,7 @@ from src.infrastructure.config.container import (
     provide_turn_scope,
 )
 from src.infrastructure.config.settings import MODULES_WITH_ADAPTERS, get_settings
+from src.infrastructure.worker.outbox_loop import outbox_worker_lifespan
 
 API_PREFIX = "/api/v1"
 
@@ -57,7 +59,8 @@ def create_app(
         "No HTTP adapter exists yet for sales and dispatch (SALES_MODE / DISPATCH_MODE "
         "have no effect); the real modules are not called."
     )
-    app = FastAPI(title="G3 Chatbot backend")
+    app = FastAPI(title="G3 Chatbot backend", lifespan=outbox_worker_lifespan)
+    app.add_middleware(CorrelationMiddleware)
     register_problem_handlers(app)
     app.include_router(health_router)
     app.include_router(

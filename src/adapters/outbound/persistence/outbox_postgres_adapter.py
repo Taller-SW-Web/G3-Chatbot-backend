@@ -3,12 +3,12 @@
 Operaciones minimas derivadas de modelo-datos.md (seccion `outbox`).
 No hace commit: la transaccion la controla el caso de uso (el INSERT del
 outbox comparte transaccion con el intento de pago / checkout). El worker
-de APScheduler usa listar_pendientes con SKIP LOCKED.
+en proceso usa listar_pendientes con SKIP LOCKED y hace commit por trabajo.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.persistence.models.outbox import Outbox
@@ -31,12 +31,21 @@ class OutboxPostgresAdapter:
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 
-    async def listar_pendientes(self, limite: int = 100) -> list[Outbox]:
+    async def listar_pendientes(
+        self, limite: int = 100, email_gracia: timedelta | None = None
+    ) -> list[Outbox]:
         # Polling del worker: PENDING vencidas, ordenadas por intento.
         # El FOR UPDATE SKIP LOCKED permite mas de un worker sin colision.
+        # `email_gracia`: los SEND_EMAIL recien creados se dejan al envio en linea
+        # (NOTIFICATION_SEND_INLINE) para que worker y request no envien dos veces.
+        conditions = [Outbox.status == "PENDING", Outbox.next_attempt_at <= func.now()]
+        if email_gracia:
+            conditions.append(
+                or_(Outbox.type != SEND_EMAIL, Outbox.created_at <= func.now() - email_gracia)
+            )
         stmt = (
             select(Outbox)
-            .where(Outbox.status == "PENDING", Outbox.next_attempt_at <= func.now())
+            .where(*conditions)
             .order_by(Outbox.next_attempt_at)
             .limit(limite)
             .with_for_update(skip_locked=True)

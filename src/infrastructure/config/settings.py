@@ -27,8 +27,7 @@ def _number(name: str, default: str, cast, *, minimum: float):
 MODULE_MODES = ("fake", "http")
 MODULES = ("security", "products", "sales", "dispatch")
 # Modules with an in-process fake or an HTTP adapter wired in the container.
-# Sales still has neither, so its mode changes nothing today.
-MODULES_WITH_ADAPTERS = ("security", "products", "dispatch")
+MODULES_WITH_ADAPTERS = ("security", "products", "sales", "dispatch")
 PRODUCTION_ENVIRONMENTS = ("production", "prod")
 
 
@@ -96,12 +95,15 @@ class Settings:
     # can be switched to the real module one at a time.
     security_mode: str | None = None
     products_mode: str | None = None
+    # Public supplier phase 1 is an explicit opt-in; service authentication stays the default.
+    products_auth_mode: str = "service"
     sales_mode: str | None = None
     dispatch_mode: str | None = None
     # Deployment indicator (`APP_ENV`). In production the fake Seguridad is
     # refused unless `ALLOW_FAKE_SECURITY=true` opts in (e.g. a demo deploy).
     app_env: str = "development"
     allow_fake_security: bool = False
+    allow_public_products: bool = False
     # Per-module timeouts in seconds (DoD: exact timeouts per integration).
     security_timeout_seconds: float = 5.0
     products_timeout_seconds: float = 4.0
@@ -118,10 +120,24 @@ class Settings:
     smtp_timeout_seconds: float = 10.0
     # Base of the deep link in the e-mail (`/pedidos/{pedidoId}`).
     frontend_base_url: str = "http://localhost:3000"
-    # Send right after enqueueing, until the outbox worker (SPEC-15) runs SEND_EMAIL.
+    # Send right after enqueueing; the outbox worker then only closes already sent e-mails.
     notification_send_inline: bool = True
+    # In-process outbox worker (SPEC-15): polled from the FastAPI lifespan.
+    outbox_worker_enabled: bool = True
+    outbox_poll_interval_seconds: float = 5.0
 
     def __post_init__(self) -> None:
+        if self.products_auth_mode not in ("service", "public"):
+            raise ValueError("PRODUCTS_AUTH_MODE must be one of service, public")
+        if (
+            self.app_env in PRODUCTION_ENVIRONMENTS
+            and self.products_auth_mode == "public"
+            and not self.allow_public_products
+        ):
+            raise ValueError(
+                "Public Productos in production requires ALLOW_PUBLIC_PRODUCTS=true. "
+                "Use PRODUCTS_AUTH_MODE=service for authenticated integration."
+            )
         if (
             self.app_env in PRODUCTION_ENVIRONMENTS
             and self.module_mode("security") == "fake"
@@ -165,8 +181,10 @@ def get_settings() -> Settings:
         modules_mode=_modules_mode(),
         app_env=_app_env(),
         allow_fake_security=_flag("ALLOW_FAKE_SECURITY"),
+        allow_public_products=_flag("ALLOW_PUBLIC_PRODUCTS"),
         security_mode=_module_mode_override("security"),
         products_mode=_module_mode_override("products"),
+        products_auth_mode=_choice("PRODUCTS_AUTH_MODE", "service", ("service", "public")),
         sales_mode=_module_mode_override("sales"),
         dispatch_mode=_module_mode_override("dispatch"),
         security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),
@@ -174,11 +192,16 @@ def get_settings() -> Settings:
         security_client_secret=os.getenv("SECURITY_CLIENT_SECRET", "").strip(),
         security_client_id=os.getenv("SECURITY_CLIENT_ID", "modulo-chatbot").strip() or "modulo-chatbot",
         products_base_url=os.getenv("PRODUCTS_BASE_URL", "http://localhost:4011").strip().rstrip("/"),
-        sales_base_url=os.getenv("SALES_BASE_URL", "http://localhost:4012").strip().rstrip("/"),
+        sales_base_url=(sales_base := os.getenv("SALES_BASE_URL", "http://localhost:4012").strip().rstrip("/")),
         dispatch_base_url=os.getenv("DISPATCH_BASE_URL", "http://localhost:4013").strip().rstrip("/"),
         security_timeout_seconds=_number("SECURITY_TIMEOUT_SECONDS", "5", float, minimum=0.1),
         products_timeout_seconds=_number("PRODUCTS_TIMEOUT_SECONDS", "4", float, minimum=0.1),
-        sales_timeout_seconds=_number("SALES_TIMEOUT_SECONDS", "5", float, minimum=0.1),
+        sales_timeout_seconds=_number(
+            "SALES_TIMEOUT_SECONDS",
+            "180" if "onrender.com" in sales_base else "5",
+            float,
+            minimum=0.1,
+        ),
         dispatch_timeout_seconds=_number("DISPATCH_TIMEOUT_SECONDS", "4", float, minimum=0.1),
         smtp_host=os.getenv("SMTP_HOST", "").strip(),
         smtp_port=_number("SMTP_PORT", "587", int, minimum=1),
@@ -189,4 +212,6 @@ def get_settings() -> Settings:
         smtp_timeout_seconds=_number("SMTP_TIMEOUT_SECONDS", "10", float, minimum=0.1),
         frontend_base_url=os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").strip().rstrip("/"),
         notification_send_inline=os.getenv("NOTIFICATION_SEND_INLINE", "true").strip().lower() != "false",
+        outbox_worker_enabled=os.getenv("OUTBOX_WORKER_ENABLED", "true").strip().lower() != "false",
+        outbox_poll_interval_seconds=_number("OUTBOX_POLL_INTERVAL_SECONDS", "5", float, minimum=0.5),
     )

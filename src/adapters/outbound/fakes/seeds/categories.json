@@ -1,1 +1,17 @@
-[{"category_id":"cat-zapatillas","name":"Zapatillas"},{"category_id":"cat-polos","name":"Polos"},{"category_id":"cat-mochilas","name":"Mochilas y morrales"}]
+[
+  {
+    "name": "Zapatillas",
+    "categoria_id": "cat-zapatillas",
+    "status": "ACTIVA"
+  },
+  {
+    "name": "Polos",
+    "categoria_id": "cat-polos",
+    "status": "ACTIVA"
+  },
+  {
+    "name": "Mochilas y morrales",
+    "categoria_id": "cat-mochilas",
+    "status": "ACTIVA"
+  }
+]

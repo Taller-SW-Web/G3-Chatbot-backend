@@ -6,6 +6,7 @@ before `expiresIn`, so concurrent calls reuse one credential instead of
 hammering Seguridad. Real credentials arrive in Hito 4; until then the mock
 answers the same shape.
 """
+import asyncio
 import time
 from typing import Any
 
@@ -16,7 +17,7 @@ from src.adapters.outbound.http_clients.security_client import parse_security_bo
 from src.ports.outbound.module_errors import ModuleUnavailableError
 
 # Renew a little early so a token never expires mid-request.
-CLOCK_SKEW_SECONDS = 30
+CLOCK_SKEW_SECONDS = 60
 
 
 class SecurityServiceTokenProvider(BaseModuleClient):
@@ -40,21 +41,43 @@ class SecurityServiceTokenProvider(BaseModuleClient):
         self.client_id = client_id
         self.client_secret = client_secret
         self._clock = clock
-        self._token: str | None = None
-        self._expires_at = 0.0
+        # One cache entry per requested scope (None = unscoped). A token minted
+        # for a scope must never be served to a call asking for another scope.
+        self._tokens: dict[str | None, tuple[str, float]] = {}
+        self._refresh_lock = asyncio.Lock()
 
-    async def get_token(self, *, correlation_id: str | None = None) -> str:
+    def invalidate(self, rejected_token: str | None = None) -> None:
+        """Drop the rejected token only; do not discard a newer one refreshed by another request."""
+        if rejected_token is None:
+            self._tokens.clear()
+            return
+        for key in [k for k, (token, _) in self._tokens.items() if token == rejected_token]:
+            del self._tokens[key]
+
+    async def get_token(
+        self, *, correlation_id: str | None = None, scope: str | None = None
+    ) -> str:
+        async with self._refresh_lock:
+            return await self._get_token(correlation_id=correlation_id, scope=scope or None)
+
+    async def _get_token(
+        self, *, correlation_id: str | None = None, scope: str | None = None
+    ) -> str:
         now = self._clock()
-        if self._token and now < self._expires_at - CLOCK_SKEW_SECONDS:
-            return self._token
+        cached = self._tokens.get(scope)
+        if cached and now < cached[1] - CLOCK_SKEW_SECONDS:
+            return cached[0]
+        data = {
+            "grant_type": "client_credentials",
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+        }
+        if scope:
+            data["scope"] = scope
         response = await self._request(
             "POST",
             "/auth/token",
-            data={
-                "grant_type": "client_credentials",
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-            },
+            data=data,
             correlation_id=correlation_id,
         )
         body = self._parse_token(response)
@@ -64,9 +87,8 @@ class SecurityServiceTokenProvider(BaseModuleClient):
             raise ModuleUnavailableError(
                 self.module, "service token response has no access token"
             )
-        self._token = str(token)
-        self._expires_at = now + float(expires_in)
-        return self._token
+        self._tokens[scope] = (str(token), now + float(expires_in))
+        return str(token)
 
     def _parse_token(self, response: httpx.Response) -> dict[str, Any]:
         if not response.content:

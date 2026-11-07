@@ -144,9 +144,11 @@ class CountingCatalog(FakeCatalogPort):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.price_calls = 0
+        self.price_batches = []
 
     async def get_prices(self, skus, **kwargs):
         self.price_calls += 1
+        self.price_batches.append(skus)
         return await super().get_prices(skus, **kwargs)
 
 
@@ -170,7 +172,9 @@ async def test_search_batches_prices_and_availability_in_bulk():
 
     assert result["bloques"][0]["tipo"] == "CARRUSEL_PRODUCTOS"
     assert len(result["bloques"][0]["datos"]["productos"]) > 1
-    assert catalog_port.price_calls == 1
+    assert all(len(batch) <= 5 for batch in catalog_port.price_batches)
+    expected = {v["sku"] for row in result["bloques"][0]["datos"]["productos"] for v in row["variants"]}
+    assert {sku for batch in catalog_port.price_batches for sku in batch} == expected
     assert inventory_port.availability_calls == 1
 
 

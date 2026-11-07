@@ -73,13 +73,13 @@ def mock_product_detail_not_found(
 
 def mock_categories(base_url: str = "http://mock:4011"):
     return respx.get(f"{base_url}/categorias").mock(
-        return_value=httpx.Response(200, json=load_fixture("categories.json"))
+        return_value=httpx.Response(200, json={"categories": load_fixture("categories.json")})
     )
 
 
 def mock_brands(base_url: str = "http://mock:4011"):
     return respx.get(f"{base_url}/marcas").mock(
-        return_value=httpx.Response(200, json=load_fixture("brands.json"))
+        return_value=httpx.Response(200, json={"brands": load_fixture("brands.json")})
     )
 
 

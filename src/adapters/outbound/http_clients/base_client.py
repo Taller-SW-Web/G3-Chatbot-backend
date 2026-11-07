@@ -28,7 +28,7 @@ class BaseModuleClient:
             await self._client.aclose()
 
     def _headers(self, correlation_id: str | None = None, extra: dict[str, str] | None = None) -> dict[str, str]:
-        headers = {"X-Correlation-Id": correlation_id or uuid.uuid4().hex}
+        headers = {"X-Correlation-Id": correlation_id or str(uuid.uuid4())}
         if extra:
             headers.update(extra)
         return headers
@@ -47,5 +47,7 @@ class BaseModuleClient:
         except httpx.TransportError as exc:  # timeouts, connect/read/protocol errors
             raise ModuleUnavailableError(self.module, str(exc)) from exc
         if response.status_code >= 500:
-            raise ModuleUnavailableError(self.module, f"HTTP {response.status_code}")
+            error = ModuleUnavailableError(self.module, f"HTTP {response.status_code}")
+            error.retry_after = response.headers.get("Retry-After")
+            raise error
         return response

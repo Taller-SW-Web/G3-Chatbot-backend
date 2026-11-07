@@ -118,7 +118,7 @@ def create_cart_router(cart_provider) -> APIRouter:
             result = await service.add(
                 caller, conversacionId, sku=body.sku,
                 producto_ref=body.productoRef, product_id=body.product_id,
-                size=body.talla, color=body.color, quantity=body.cantidad,
+                size=body.talla, color=body.color, quantity=body.cantidad, deliver_cross_sell=False,
             )
         except CartError as exc:
             raise _problem(exc)

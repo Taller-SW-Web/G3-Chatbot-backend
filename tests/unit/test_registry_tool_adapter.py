@@ -45,6 +45,9 @@ def test_default_wiring_exposes_registration_plus_commercial_tools():
     executor: ToolExecutorPort = provide_tool_executor(object())
     assert [d.name for d in executor.definitions()] == [
         "solicitar_registro",
+        "consultar_promociones",
+        "recomendar_productos",
+        "silenciar_complementos",
         "buscar_productos",
         "ver_detalle_producto",
         "consultar_disponibilidad",

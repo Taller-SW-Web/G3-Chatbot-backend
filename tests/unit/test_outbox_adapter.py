@@ -115,3 +115,17 @@ async def test_quinto_reintento_marca_failed(session):
     assert row.status == "FAILED"
     session.flush.assert_awaited_once_with()
     session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_listar_pendientes_deja_los_emails_recientes_al_envio_en_linea(session):
+    from datetime import timedelta
+
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    session.execute.return_value = result
+    await OutboxPostgresAdapter(session).listar_pendientes(limite=1, email_gracia=timedelta(seconds=30))
+    stmt = session.execute.call_args[0][0]
+    compiled = str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert "outbox.type != 'SEND_EMAIL'" in compiled
+    assert "outbox.created_at <=" in compiled

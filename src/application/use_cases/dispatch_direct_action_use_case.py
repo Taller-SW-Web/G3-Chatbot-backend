@@ -13,6 +13,7 @@ from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
 from src.ports.outbound.conversation_repository_port import ConversationRepositoryPort
 from src.ports.outbound.message_repository_port import MessageRepositoryPort
+from src.ports.outbound.request_context import correlation_id_var
 from src.ports.outbound.unit_of_work_port import UnitOfWorkPort
 
 
@@ -58,6 +59,7 @@ class DispatchDirectActionUseCase:
             cliente_id=str(caller.customer_id) if caller.customer_id is not None else None,
             chat_sid=caller.anonymous_sid,
         )
+        correlation_token = correlation_id_var.set(str(uuid.uuid4()))
         try:
             result = await self._dispatcher.despachar(action, context)
             raw_data = dict(result.data)
@@ -101,3 +103,5 @@ class DispatchDirectActionUseCase:
         except BaseException:
             await self._uow.rollback()
             raise
+        finally:
+            correlation_id_var.reset(correlation_token)
