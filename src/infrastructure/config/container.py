@@ -20,6 +20,7 @@ from src.adapters.outbound.fakes.fake_security import (
     FakeSecurityAdapter,
     FakeServiceTokenProvider,
 )
+from src.adapters.outbound.fakes.fake_ventas import FakeSalesPort
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
 from src.adapters.outbound.http_clients.despacho_api_adapter import DespachoClient
 from src.adapters.outbound.http_clients.inventory_client import (
@@ -28,6 +29,7 @@ from src.adapters.outbound.http_clients.inventory_client import (
 )
 from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.http_clients.security_client import SecurityClient
+from src.adapters.outbound.http_clients.ventas_client import VentasClient
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
 from src.adapters.outbound.notificaciones.smtp_email_adapter import SmtpEmailSender
@@ -78,7 +80,9 @@ from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
+from src.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, OutboxProcessor
 from src.ports.outbound.llm_provider_port import LLMProvider
+from src.ports.outbound.order_repository_port import SalesOrderPort
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
 
 # Categories/brands list cache shared across requests (SPEC-06): created once
@@ -252,6 +256,21 @@ def provide_inventory_client(settings: Settings | None = None) -> InventoryClien
     )
 
 
+_FAKE_SALES_PORT = FakeSalesPort()
+
+
+def provide_sales_port(settings: Settings | None = None) -> SalesOrderPort:
+    """Sales order port (SPEC-15, SPEC-17): fake in-memory or typed HTTP client."""
+    settings = settings or get_settings()
+    if settings.module_mode("sales") == "fake":
+        return _FAKE_SALES_PORT
+    return VentasClient(
+        base_url=settings.sales_base_url,
+        timeout_seconds=settings.sales_timeout_seconds,
+        service_token_provider=provide_service_token_provider(settings),
+    )
+
+
 def provide_despacho_client(settings: Settings | None = None):
     """Despacho port honoring `DISPATCH_MODE` (ADR-0022): in-process fake or HTTP.
 
@@ -321,10 +340,13 @@ def provide_service_token_provider(settings: Settings | None = None):
     settings = settings or get_settings()
     if settings.module_mode("security") == "fake":
         return _FAKE_SERVICE_TOKEN_PROVIDER
+    secret = settings.security_client_secret.strip()
+    if not secret:
+        return None
     return SecurityServiceTokenProvider(
         base_url=settings.security_base_url,
         client_id=settings.security_client_id,
-        client_secret=settings.security_client_secret,
+        client_secret=secret,
         timeout_seconds=settings.security_timeout_seconds,
     )
 
@@ -353,6 +375,8 @@ def provide_checkout_service(
         orders=OrderRefPostgresAdapter(session),
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
         notification_service=build_notification_service(session),
+        sales_client=provide_sales_port(settings),
+        outbox=OutboxPostgresAdapter(session),
         dispatch=provide_despacho_client(settings),
     )
 
@@ -406,25 +430,79 @@ def build_notification_service(session: AsyncSession) -> NotificationService:
 
 
 class OrdersService:
-    """`OrdersServicePort` for the orders router: the confirmation resend (SPEC-16) is
-    implemented; listing, detail and tracking (SPEC-17/18) answer 503 until they exist."""
+    """`OrdersServicePort` for the orders router: confirmation resend (SPEC-16) and
+    customer orders listing / detail (SPEC-17) delegated to Ventas."""
 
-    def __init__(self, notifications: NotificationService):
+    def __init__(
+        self,
+        notifications: NotificationService,
+        sales_client: SalesOrderPort | None = None,
+    ):
         self._notifications = notifications
+        self._sales = sales_client
 
     async def resend_confirmation(self, customer_id, order_id, *, holder_token, idempotency_key):
         return await self._notifications.resend_confirmation(
             customer_id, order_id, idempotency_key=idempotency_key
         )
 
-    async def _pending(self, *args, **kwargs):
+    async def list_orders(
+        self,
+        customer_id,
+        *,
+        holder_token: str,
+        estado: str | None = None,
+        page: int = 1,
+        page_size: int = 10,
+    ):
+        if self._sales:
+            return await self._sales.list_customer_orders(
+                holder_token,
+                estado=estado,
+                page=page,
+                page_size=page_size,
+            )
         raise NotificationError("SERVICIO_NO_DISPONIBLE", "La consulta de pedidos aún no está disponible.")
 
-    list_orders = get_order_detail = get_order_tracking = _pending
+    async def get_order_detail(
+        self,
+        customer_id,
+        order_id: str,
+        *,
+        holder_token: str,
+    ):
+        if self._sales:
+            return await self._sales.get_customer_order(
+                order_id,
+                holder_token,
+            )
+        raise NotificationError("SERVICIO_NO_DISPONIBLE", "La consulta de pedidos aún no está disponible.")
+
+    async def _pending(self, *args, **kwargs):
+        raise NotificationError("SERVICIO_NO_DISPONIBLE", "El seguimiento de pedidos aún no está disponible.")
+
+    get_order_tracking = _pending
 
 
 def provide_orders_service(session: AsyncSession = Depends(get_session)) -> OrdersService:
-    return OrdersService(build_notification_service(session))
+    settings = get_settings()
+    return OrdersService(
+        notifications=build_notification_service(session),
+        sales_client=provide_sales_port(settings),
+    )
+
+
+def provide_outbox_processor(session: AsyncSession) -> OutboxProcessor:
+    settings = get_settings()
+    return OutboxProcessor(
+        outbox_repo=OutboxPostgresAdapter(session),
+        order_ref_repo=OrderRefPostgresAdapter(session),
+        sales_client=provide_sales_port(settings),
+        notification_service=build_notification_service(session),
+        uow=SqlAlchemyUnitOfWork(session),
+        # With inline sending on, fresh SEND_EMAIL jobs are left to the request that created them.
+        email_grace=INLINE_EMAIL_GRACE if settings.notification_send_inline else None,
+    )
 
 
 def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUseCase:
