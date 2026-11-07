@@ -77,6 +77,7 @@ from src.application.use_cases.manage_session_use_case import ManageSessionUseCa
 from src.application.use_cases.manage_shipping_use_case import ManageShippingUseCase
 from src.application.use_cases.notification_service import NotificationError, NotificationService
 from src.domain.services.sensitive_data_filter import SensitiveDataFilter
+from src.domain.services.status_mapper import map_order_status_label
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
@@ -429,6 +430,13 @@ def build_notification_service(session: AsyncSession) -> NotificationService:
     )
 
 
+def _with_status_label(payload: dict, key: str = "estadoEtiqueta") -> dict:
+    """Adds the customer-facing label Ventas does not send (contratos-integracion §2.5.2)."""
+    if payload.get(key):
+        return payload
+    return {**payload, key: map_order_status_label(str(payload.get("estado") or ""))}
+
+
 class OrdersService:
     """`OrdersServicePort` for the orders router: confirmation resend (SPEC-16) and
     customer orders listing / detail (SPEC-17) delegated to Ventas."""
@@ -456,12 +464,13 @@ class OrdersService:
         page_size: int = 10,
     ):
         if self._sales:
-            return await self._sales.list_customer_orders(
+            raw = await self._sales.list_customer_orders(
                 holder_token,
                 estado=estado,
                 page=page,
                 page_size=page_size,
             )
+            return {**raw, "items": [_with_status_label(item) for item in raw.get("items", [])]}
         raise NotificationError("SERVICIO_NO_DISPONIBLE", "La consulta de pedidos aún no está disponible.")
 
     async def get_order_detail(
@@ -472,10 +481,11 @@ class OrdersService:
         holder_token: str,
     ):
         if self._sales:
-            return await self._sales.get_customer_order(
-                order_id,
-                holder_token,
-            )
+            raw = await self._sales.get_customer_order(order_id, holder_token)
+            return {
+                **_with_status_label(raw),
+                "historial": [_with_status_label(m, key="etiqueta") for m in raw.get("historial", [])],
+            }
         raise NotificationError("SERVICIO_NO_DISPONIBLE", "La consulta de pedidos aún no está disponible.")
 
     async def _pending(self, *args, **kwargs):
