@@ -4,8 +4,9 @@ Operaciones minimas derivadas de modelo-datos.md (seccion `conversation`). No ha
 transaccion la controla el caso de uso.
 """
 import uuid
+from typing import Any, cast
 
-from sqlalchemy import func, select, union, update
+from sqlalchemy import CursorResult, func, select, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.persistence.models.conversation import Conversation
@@ -230,7 +231,7 @@ class ConversationPostgresAdapter:
             .where(Conversation.id == conversation_id, Conversation.title.is_(None))
             .values(title=title)
         )
-        res = await self.session.execute(stmt)
+        res = cast(CursorResult[Any], await self.session.execute(stmt))
         return res.rowcount == 1
 
     async def touch(self, conversation_id: uuid.UUID) -> None:

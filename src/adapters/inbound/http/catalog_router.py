@@ -3,6 +3,7 @@
 Thin: no business rules. Anonymous reads need no session; explicit ids
 work without a chat context (carousel ordinals stay unavailable then).
 """
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -33,6 +34,11 @@ ERROR_STATUS = {
     "VALIDACION": 400,
     "SERVICIO_NO_DISPONIBLE": 503,
 }
+
+
+def _decimal(value: float | None) -> Decimal | None:
+    """Los query params llegan como `float`; el dominio usa `Decimal`."""
+    return None if value is None else Decimal(str(value))
 
 
 def _problem(error: CatalogError) -> ProblemError:
@@ -73,13 +79,13 @@ def create_catalog_router(catalog_provider) -> APIRouter:
                 SearchArguments(
                     q=q, categoria=categoria, marca=marca, talla=talla, color=color,
                     soloOfertas=soloOfertas,
-                    precioMin=precioMin, precioMax=precioMax,
+                    precioMin=_decimal(precioMin), precioMax=_decimal(precioMax),
                     pagina=pagina, tamanio=tamanio,
                 ),
                 ExecutionContext(),
             )
         except Exception as exc:
-            raise _problem(_as_catalog_error(exc))
+            raise _problem(_as_catalog_error(exc)) from exc
         bloques = result.get("bloques", [])
         items = bloques[0]["datos"]["productos"] if bloques else []
         return {"items": items, "total": result.get("total", len(items)),
@@ -91,7 +97,7 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         try:
             return {"items": await service.promotions()}
         except Exception as exc:
-            raise _problem(_as_catalog_error(exc))
+            raise _problem(_as_catalog_error(exc)) from exc
 
     @router.get("/productos/{product_id}")
     async def product_detail(
@@ -105,7 +111,7 @@ def create_catalog_router(catalog_provider) -> APIRouter:
                 ProductArguments(product_id=product_id), ExecutionContext()
             )
         except CatalogError as exc:
-            raise _problem(exc)
+            raise _problem(exc) from exc
         bloques = result.get("bloques", [])
         if not bloques:
             raise ProblemError(404, "PRODUCTO_NO_DISPONIBLE",
@@ -122,14 +128,14 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         try:
             rows = await service.inventory.get_availability([sku.strip()])
         except Exception as exc:
-            raise _problem(_as_catalog_error(exc))
+            raise _problem(_as_catalog_error(exc)) from exc
         out = [AvailabilityOut(sku=row["sku"], status=row["status"]) for row in rows]
         if cantidad is not None:
             try:
                 verdicts = await service.inventory.verify_quantities(
                     [{"sku": sku.strip(), "quantity": cantidad}])
             except Exception as exc:
-                raise _problem(_as_catalog_error(exc))
+                raise _problem(_as_catalog_error(exc)) from exc
             by_sku = {v.get("sku"): v.get("veredicto") for v in verdicts}
             out = [row.model_copy(update={"veredicto": by_sku.get(row.sku)})
                    for row in out]

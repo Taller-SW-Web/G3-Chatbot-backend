@@ -100,7 +100,7 @@ def create_cart_router(cart_provider) -> APIRouter:
         try:
             result = await service.view(caller, conversacionId)
         except CartError as exc:
-            raise _problem(exc)
+            raise _problem(exc) from exc
         bloques = result.get("bloques", [])
         if not bloques:
             return {"lineas": [], "subtotal": 0, "descuentos": [],
@@ -121,7 +121,7 @@ def create_cart_router(cart_provider) -> APIRouter:
                 size=body.talla, color=body.color, quantity=body.cantidad, deliver_cross_sell=False,
             )
         except CartError as exc:
-            raise _problem(exc)
+            raise _problem(exc) from exc
         if result.get("requiere_variante"):
             # The line needs talla/color: a problem+json, not a fake cart body.
             raise ProblemError(
@@ -147,7 +147,7 @@ def create_cart_router(cart_provider) -> APIRouter:
             result = await service.update_quantity(
                 caller, conversacionId, item_id=item_id, quantity=body.cantidad)
         except CartError as exc:
-            raise _problem(exc)
+            raise _problem(exc) from exc
         bloques = result.get("bloques", [])
         return {"mensaje": result["texto"],
                 "carrito": bloques[0]["datos"] if bloques else None}
@@ -163,7 +163,7 @@ def create_cart_router(cart_provider) -> APIRouter:
             result = await service.remove_item(
                 caller, conversacionId, item_id=item_id)
         except CartError as exc:
-            raise _problem(exc)
+            raise _problem(exc) from exc
         return {"mensaje": result["texto"]}
 
     @router.delete("")
@@ -179,7 +179,7 @@ def create_cart_router(cart_provider) -> APIRouter:
         try:
             result = await service.clear(caller, conversacionId)
         except CartError as exc:
-            raise _problem(exc)
+            raise _problem(exc) from exc
         return {"mensaje": result["texto"]}
 
     @router.post("/cupon")
@@ -205,7 +205,7 @@ def create_cart_router(cart_provider) -> APIRouter:
                 confirmar_reemplazo=body.confirmarReemplazo,
             )
         except CartError as exc:
-            raise _problem(exc)
+            raise _problem(exc) from exc
         bloques = result.get("bloques", [])
         return {
             "mensaje": result.get("texto", ""),
@@ -230,7 +230,7 @@ def create_cart_router(cart_provider) -> APIRouter:
         try:
             result = await remove_fn(caller, conversacionId)
         except CartError as exc:
-            raise _problem(exc)
+            raise _problem(exc) from exc
         bloques = result.get("bloques", [])
         return {
             "mensaje": result.get("texto", ""),

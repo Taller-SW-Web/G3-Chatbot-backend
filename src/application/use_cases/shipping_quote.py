@@ -47,11 +47,13 @@ def parse_quote(raw: dict[str, Any], distrito: str) -> ShippingQuoteResponse | N
         return None
     try:
         plazo = raw.get("plazoEstimadoDias", raw.get("plazoEstimadoDiasHabiles"))
+        if plazo is None:
+            raise ValueError("quote response without lead time")
         return ShippingQuoteResponse(
             coberturaDisponible=True,
             costoEnvio=raw["costoEnvio"],
             moneda=raw.get("moneda", "PEN"),
-            plazoEstimadoDias=plazo,
+            plazoEstimadoDias=int(plazo),
             fechaEstimadaEntrega=raw.get("fechaEstimadaEntrega"),
             nombreZona=raw.get("nombreZona"),
             modalidad=raw.get("modalidad", "DELIVERY"),

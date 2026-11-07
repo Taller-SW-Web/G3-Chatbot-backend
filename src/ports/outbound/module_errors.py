@@ -12,6 +12,9 @@ class ModuleUnavailableError(Exception):
     use cases and handlers depend on the contract, never on an adapter.
     """
 
+    # `Retry-After` del módulo cuando lo envía; lo rellena el cliente HTTP.
+    retry_after: str | None = None
+
     def __init__(self, module: str, detail: str = ""):
         self.module = module
         self.detail = detail
@@ -25,6 +28,9 @@ class ModuleRequestError(Exception):
     so agent tools can tell "not found / not available" apart from valid
     results (SPEC-09, SPEC-10). Only 2xx bodies are returned as data.
     """
+
+    # `Retry-After` del módulo cuando lo envía; lo rellena el cliente HTTP.
+    retry_after: str | None = None
 
     def __init__(
         self,

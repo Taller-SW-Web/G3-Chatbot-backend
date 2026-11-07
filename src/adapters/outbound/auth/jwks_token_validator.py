@@ -10,10 +10,11 @@ failure surfaces as `ModuleUnavailableError` (503 at the edge).
 """
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import jwt
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 
 from src.ports.outbound.module_errors import ModuleUnavailableError
 from src.ports.outbound.token_validator_port import (
@@ -68,7 +69,7 @@ def decode_with_jwks(token: str, jwks_keys: dict, expected_issuer: str = EXPECTE
         public_key = jwt.algorithms.RSAAlgorithm.from_jwk(key_data)
         claims = jwt.decode(
             token,
-            public_key,
+            cast(RSAPublicKey, public_key),
             algorithms=["RS256"],
             issuer=expected_issuer,
             options={"require": ["exp", "iss", "sub"]},
