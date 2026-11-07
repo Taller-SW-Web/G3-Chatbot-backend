@@ -1,5 +1,8 @@
 """Errors shared by every outbound module port (ADR-0017)."""
 
+# User-facing text for an unexpected failure: never expose exception class names.
+GENERIC_UNAVAILABLE_TEXT = "No pude completar la acción en este momento. Inténtalo de nuevo en unos minutos."
+
 
 class ModuleUnavailableError(Exception):
     """Timeout/connection/transport error/5xx talking to a module.

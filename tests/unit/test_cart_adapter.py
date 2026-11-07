@@ -158,3 +158,13 @@ async def test_cart_item_agregar_mismo_sku_suma_en_caso_de_uso(session):
     compiled = str(session.execute.call_args.args[0])
     assert "cart_item.cart_id" in compiled and "cart_item.sku" in compiled
     session.commit.assert_not_awaited()
+
+
+def test_unexpected_error_never_leaks_exception_name():
+    from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
+    from src.ports.outbound.module_errors import GENERIC_UNAVAILABLE_TEXT
+
+    error = ManageCartUseCase._map_module_error(RuntimeError("boom"))
+    assert error.code == "SERVICIO_NO_DISPONIBLE"
+    assert error.detail == GENERIC_UNAVAILABLE_TEXT
+    assert "RuntimeError" not in error.detail

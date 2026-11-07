@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import null, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
@@ -106,8 +106,10 @@ class CartPostgresAdapter:
             .where(Cart.id == cart_id)
             .values(
                 coupon_code=None,
-                shipping_snapshot=None,
-                totals_snapshot=None,
+                # null(), not None: a bare None is bound as JSON `null`, which the
+                # jsonb_typeof(...) = 'object' CHECKs reject.
+                shipping_snapshot=null(),
+                totals_snapshot=null(),
                 updated_at=datetime.now(timezone.utc),
             )
         )
