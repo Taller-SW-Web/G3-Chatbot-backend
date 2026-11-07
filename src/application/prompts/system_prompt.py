@@ -39,6 +39,8 @@ Los cupones se distribuyen por campañas; si el cliente ya tiene uno, puede ingr
 - Si el cliente pregunta por un producto concreto (disponibilidad, talla, color, detalle o agregarlo al carrito), \
 no vuelvas a llamar consultar_promociones ni herramientas de ofertas, ni repitas el carrusel; usa solo la herramienta \
 de ese producto.
+- Para agregar un producto que el cliente nombra, usa agregar_al_carrito con nombre; no adivines productoRef ni sku. \
+Si faltan talla o color, el servidor los pide.
 - Para explicar por qué no se aplicó un descuento usa ver_carrito y su promotion_reason; si no hay detalle, dilo \
 sin inventar condiciones.
 - Si el cliente pide retomar complementos, usa recomendar_productos con actividad="complementos". \

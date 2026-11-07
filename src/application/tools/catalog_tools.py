@@ -96,6 +96,7 @@ class AddArguments(ToolArguments):
     sku: Text | None = None
     productoRef: Annotated[int, Field(strict=True, ge=1, le=10)] | None = None
     product_id: Text | None = None
+    nombre: Text | None = None
     talla: Text | None = None
     color: Text | None = None
     cantidad: Annotated[int, Field(strict=True, ge=1, le=10)] = 1
@@ -103,11 +104,11 @@ class AddArguments(ToolArguments):
     @model_validator(mode="after")
     def validar_referencia(self) -> Self:
         # An explicit product supplies verified merchandising context for a SKU.
-        # Carousel references remain mutually exclusive with both explicit IDs.
-        if (self.productoRef is not None and (self.sku is not None or self.product_id is not None)) or (
-            self.productoRef is None and self.sku is None and self.product_id is None
-        ):
-            raise ValueError("Indica una referencia de producto o SKU")
+        # Carousel references and names are mutually exclusive with every other reference.
+        has_ids = self.sku is not None or self.product_id is not None
+        exclusive = (self.productoRef is not None) + (self.nombre is not None) + has_ids
+        if exclusive != 1:
+            raise ValueError("Indica una referencia de producto, nombre o SKU")
         return self
 
 
@@ -157,7 +158,11 @@ _TOOLS = (
         "Consultar disponibilidad de un producto o variante (talla, color). Identifica el producto con "
         "`productoRef` (carrusel), `product_id` o `nombre`; no necesita un carrusel previo."
     ), AvailabilityArguments),
-    ("agregar_al_carrito", "Agregar un SKU o resolver un producto y su variante al carrito.", AddArguments),
+    ("agregar_al_carrito", (
+        "Agregar un producto al carrito. Identifícalo con `productoRef` (carrusel), `product_id`, `sku` o `nombre` "
+        "(úsalo cuando el cliente nombra el producto; no adivines `productoRef` ni `sku`). "
+        "Si faltan talla o color, el servidor los pide al cliente."
+    ), AddArguments),
     ("ver_carrito", "Ver el carrito con precios y totales recalculados.", EmptyArguments),
     ("cambiar_cantidad", "Cambiar cantidad de una línea; cero elimina la línea.", QuantityArguments),
     ("quitar_del_carrito", "Quitar una línea del carrito.", ItemArguments),

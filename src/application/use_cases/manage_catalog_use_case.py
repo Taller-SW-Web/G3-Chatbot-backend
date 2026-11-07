@@ -11,10 +11,11 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from src.application.catalog.discovery import DiscoveryMixin, fold
+from src.application.catalog.discovery import DiscoveryMixin
 from src.application.catalog.product_lookup import (
     MEMORY_CAROUSEL_KEY,
     MEMORY_FILTERS_KEY,
+    find_product_by_name,
     resolve_product_id,
 )
 from src.application.tools.catalog_tools import SearchArguments
@@ -358,23 +359,17 @@ class ManageCatalogUseCase(DiscoveryMixin):
         contained in the request (or the reverse); otherwise a short carousel to choose from.
         """
         try:
-            page = await self._catalog.search_products(q=name, size=5)
+            lookup = await find_product_by_name(self._catalog, name)
         except Exception as exc:
             raise self.map_module_error(exc) from exc
-        items = page.get("items", [])
-        if not items:
+        if not lookup.found:
             return None, {
                 "code": "OK",
                 "texto": f"No encontré un producto llamado {name}. ¿Puedes darme más detalle?",
                 "bloques": [],
             }
-        wanted = fold(name).strip()
-        exact = [row for row in items if fold(str(row.get("name", ""))).strip() == wanted]
-        related = [row for row in items if wanted and (
-            fold(str(row.get("name", ""))) in wanted or wanted in fold(str(row.get("name", ""))))]
-        for candidates in (exact, related, items):
-            if len(candidates) == 1:
-                return str(candidates[0]["product_id"]), {}
+        if lookup.product_id is not None:
+            return lookup.product_id, {}
         choices = await self.search(SearchArguments(q=name, tamanio=5), context)
         choices["texto"] = f"Encontré varios productos parecidos a {name}. ¿Cuál te interesa?"
         return None, choices
