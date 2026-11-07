@@ -1,8 +1,8 @@
 """Tests for OutboxProcessor (SPEC-15 Req. 2, 3)."""
-from datetime import datetime, timezone
 import uuid
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 from src.adapters.outbound.persistence.models.outbox import Outbox
 from src.infrastructure.worker.outbox_worker import OutboxProcessor

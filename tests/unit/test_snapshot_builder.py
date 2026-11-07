@@ -1,4 +1,5 @@
 import pytest
+
 from src.domain.services.snapshot_builder import SnapshotBuilder, SnapshotValidationError
 
 

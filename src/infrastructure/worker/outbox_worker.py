@@ -8,8 +8,8 @@ Dispatches transactional outbox events:
 Backoff schedule: 5s, 15s, 45s, 2min, 5min (max 5 attempts).
 Permanent failures (400 Bad Request, 409 Conflict) are immediately marked FAILED.
 """
-from datetime import datetime, timedelta, timezone
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.adapters.outbound.persistence.models.outbox import Outbox

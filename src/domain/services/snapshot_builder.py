@@ -3,7 +3,7 @@
 Validates snapshot math and constructs the exact shape expected by Ventas:
 subtotal - descuentoCupon + costoEnvio == total (tolerance 0.01).
 """
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 TWO_PLACES = Decimal("0.01")
