@@ -1,5 +1,8 @@
-name: Production smoke
+name: Daily production smoke
 
+# Complementa a `verify-production.yml`, que corre al terminar cada despliegue del
+# backend. Este workflow vigila el sistema en el tiempo (diario) y cubre lo que el
+# otro no: el catálogo y el frontend.
 on:
   workflow_dispatch:
   schedule:

@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any
 
 from src.application.catalog.product_lookup import (
+    find_product_by_name,
     resolve_product_id,
 )
 from src.application.services.coupon_attempts import CouponAttempts
@@ -89,7 +90,7 @@ class ManageCartUseCase:
     # -- public operations ----------------------------------------------------
 
     async def add(self, caller, conversation_id: uuid.UUID | None, *, sku=None,
-                  producto_ref=None, product_id=None, size=None, color=None,
+                  producto_ref=None, product_id=None, name=None, size=None, color=None,
                   quantity: int = 1, tool: str = "agregar_al_carrito", deliver_cross_sell: bool = True) -> dict:
         if not 1 <= quantity <= MAX_PER_LINE:
             raise CartError("LIMITE_CANTIDAD", f"quantity {quantity} out of 1..10")
@@ -97,7 +98,7 @@ class ManageCartUseCase:
         result = await self._mutate(
             caller, conversation_id, tool,
             lambda cart: self._add_line(cart, conversation_id, sku, producto_ref,
-                                        product_id, size, color, quantity, added),
+                                        product_id, size, color, quantity, added, name),
         )
         if deliver_cross_sell and added and added[-1] and self._discovery is not None and not result.get("requiere_variante"):
             context = ExecutionContext(
@@ -334,9 +335,9 @@ class ManageCartUseCase:
         return f"{texto} Tu carrito: {len(lineas)} productos · S/ {datos.get('total', 0):.2f}"
 
     async def _add_line(self, cart, conversation_id, sku, producto_ref,
-                        product_id, size, color, quantity, added=None) -> str:
+                        product_id, size, color, quantity, added=None, name=None) -> str:
         resolved = await self._resolve_sku(
-            cart, conversation_id, sku, producto_ref, product_id, size, color
+            cart, conversation_id, sku, producto_ref, product_id, size, color, name
         )
         if resolved is None:
             raise CartError(
@@ -601,13 +602,15 @@ class ManageCartUseCase:
         raise CartError("LINEA_NO_ENCONTRADA", "that cart line does not exist")
 
     async def _resolve_sku(self, cart, conversation_id, sku, producto_ref,
-                           product_id, size, color):
+                           product_id, size, color, name=None):
         if sku:
             return await self._sku_context(sku, size, color, product_id)
         memory = await self._memory(conversation_id)
         resolved_id = resolve_product_id(
             memory, producto_ref=producto_ref, product_id=product_id
         )
+        if resolved_id is None and name:
+            resolved_id = await self._resolve_name(name)
         if resolved_id is None:
             return None
         try:
@@ -623,6 +626,24 @@ class ManageCartUseCase:
                 "seleccion": known_selection(size, color),
             }
         return None, detail, None
+
+    async def _resolve_name(self, name: str) -> str:
+        """Product id for a spoken name; a CartError carries the not-found or ambiguity answer."""
+        try:
+            lookup = await find_product_by_name(self._catalog, name)
+        except Exception as exc:
+            raise self._map_module_error(exc) from exc
+        if lookup.product_id is not None:
+            return lookup.product_id
+        if not lookup.found:
+            raise CartError(
+                "PRODUCTO_NO_DISPONIBLE",
+                f"No encontré un producto llamado {name}. ¿Puedes darme más detalle?",
+            )
+        raise CartError(
+            "PRODUCTO_NO_DISPONIBLE",
+            f"Encontré varios productos parecidos a {name}. ¿Cuál te interesa?",
+        )
 
     async def _sku_context(self, sku, size, color, product_id=None):
         """Hydrate an explicit product, or verify exact SKU matches from bounded search.

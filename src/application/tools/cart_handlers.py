@@ -40,6 +40,7 @@ def build_cart_handlers(cart_use_case) -> dict:
             lambda caller, conversation_id: cart_use_case.add(
                 caller, conversation_id, sku=args.sku,
                 producto_ref=args.productoRef, product_id=args.product_id,
+                name=args.nombre,
                 size=args.talla, color=args.color, quantity=args.cantidad,
             ),
             context,
