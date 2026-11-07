@@ -111,6 +111,30 @@ class ManageCheckoutUseCase:
         self.outbox = outbox
         self.dispatch = dispatch
 
+    @staticmethod
+    def _is_reusable(
+        checkout: Checkout, input_data: CreateCheckoutInput, lineas: list[dict[str, Any]], subtotal: float
+    ) -> bool:
+        """True when a pending checkout still matches the address, contact and cart content."""
+        summary = checkout.summary if isinstance(checkout.summary, dict) else {}
+
+        def signature(lines: Any) -> list[tuple[str, int, Decimal]]:
+            return sorted(
+                (str(line.get("sku")), int(line.get("cantidad", 0)), Decimal(str(line.get("precio", 0))))
+                for line in lines
+                if isinstance(line, dict)
+            )
+
+        try:
+            return (
+                summary.get("direccion") == (input_data.direccion or {})
+                and summary.get("contacto") == (input_data.contacto or {})
+                and signature(summary.get("lineas") or []) == signature(lineas)
+                and Decimal(str(summary.get("subtotal"))) == Decimal(str(round(subtotal, 2)))
+            )
+        except (ArithmeticError, ValueError, TypeError):
+            return False
+
     async def create_checkout(self, input_data: CreateCheckoutInput) -> Checkout:
         if not input_data.idempotency_key:
             raise CheckoutError("VALIDACION", "Se requiere Idempotency-Key", {"campo": "Idempotency-Key"})
@@ -148,6 +172,7 @@ class ManageCheckoutUseCase:
             raise CheckoutError("CARRITO_VACIO", "No se encontró un carrito activo para iniciar checkout")
 
         # 3. Comprobar checkout vivo por carrito garantizando pertenencia
+        pending_checkout: Checkout | None = None
         existing_cart_chk = await _safe_call(
             self.checkouts, "obtener_vivo_por_cart", cart_id, customer_id=input_data.customer_id
         )
@@ -156,20 +181,18 @@ class ManageCheckoutUseCase:
                 raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
             if existing_cart_chk.idempotency_key == input_data.idempotency_key:
                 return existing_cart_chk
-            # A retry under a new key while a checkout is alive: reuse it if nothing changed,
-            # otherwise retire it, because only one live checkout per cart can be stored.
-            existing_summary = existing_cart_chk.summary if isinstance(existing_cart_chk.summary, dict) else {}
-            if (
-                existing_cart_chk.status != CheckoutStatus.PENDING_PAYMENT.value
-                or (
-                    existing_summary.get("direccion") == (input_data.direccion or {})
-                    and existing_summary.get("contacto") == (input_data.contacto or {})
-                )
-            ):
+            # A retry under a new key while a checkout is alive. A paid checkout is always
+            # returned. A pending one is reused only if address, contact and cart content are
+            # unchanged (decided once the lines are computed in step 5); otherwise it is
+            # retired, because only one live checkout per cart can be stored.
+            if existing_cart_chk.status != CheckoutStatus.PENDING_PAYMENT.value:
                 return existing_cart_chk
-            await _safe_call(
-                self.checkouts, "marcar_estado", existing_cart_chk.id, CheckoutStatus.EXPIRED.value
-            )
+            if datetime.now(timezone.utc) > existing_cart_chk.expires_at:
+                await _safe_call(
+                    self.checkouts, "marcar_estado", existing_cart_chk.id, CheckoutStatus.EXPIRED.value
+                )
+            else:
+                pending_checkout = existing_cart_chk
 
         # 4. Validar celular verificado si existe el verificador
         if self.phone_verifications and input_data.contacto and input_data.contacto.get("celular"):
@@ -194,6 +217,12 @@ class ManageCheckoutUseCase:
             }
             for it in items
         ]
+        if pending_checkout is not None:
+            if self._is_reusable(pending_checkout, input_data, lineas, subtotal):
+                return pending_checkout
+            await _safe_call(
+                self.checkouts, "marcar_estado", pending_checkout.id, CheckoutStatus.EXPIRED.value
+            )
         quote = await self._quote_shipping(input_data, items)
         costo_envio = float(quote.costoEnvio)
 
