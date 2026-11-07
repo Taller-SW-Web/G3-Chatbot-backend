@@ -156,6 +156,20 @@ class ManageCheckoutUseCase:
                 raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
             if existing_cart_chk.idempotency_key == input_data.idempotency_key:
                 return existing_cart_chk
+            # A retry under a new key while a checkout is alive: reuse it if nothing changed,
+            # otherwise retire it, because only one live checkout per cart can be stored.
+            existing_summary = existing_cart_chk.summary if isinstance(existing_cart_chk.summary, dict) else {}
+            if (
+                existing_cart_chk.status != CheckoutStatus.PENDING_PAYMENT.value
+                or (
+                    existing_summary.get("direccion") == (input_data.direccion or {})
+                    and existing_summary.get("contacto") == (input_data.contacto or {})
+                )
+            ):
+                return existing_cart_chk
+            await _safe_call(
+                self.checkouts, "marcar_estado", existing_cart_chk.id, CheckoutStatus.EXPIRED.value
+            )
 
         # 4. Validar celular verificado si existe el verificador
         if self.phone_verifications and input_data.contacto and input_data.contacto.get("celular"):
@@ -168,7 +182,8 @@ class ManageCheckoutUseCase:
         items = await _safe_call(self.cart_items, "listar_por_cart", cart_id)
         if not items:
             raise CheckoutError("CARRITO_VACIO", "Tu carrito no tiene productos disponibles para comprar")
-        subtotal = float(sum(float(it.unit_price_ref) * it.quantity for it in items))
+        # Decimal, not float: 329.9 + 79.9 is 409.79999999999995 and would never match the cart snapshot.
+        subtotal = float(sum((Decimal(str(it.unit_price_ref)) * it.quantity for it in items), Decimal("0")))
         lineas = [
             {
                 "sku": it.sku,
