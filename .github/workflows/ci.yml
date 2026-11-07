@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [development, main]
 
+# Least privilege: the workflow only reads the repository.
+permissions:
+  contents: read
+
+# A newer push on the same ref cancels the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   PYTHONPATH: .
 
@@ -13,6 +22,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,6 +36,7 @@ jobs:
   unit-tests:
     name: Unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,11 +46,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run unit tests
-        run: python -m pytest tests/unit
+        run: python -m pytest tests/unit --cov=src --cov-report=xml --cov-report=term
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend
+          path: coverage.xml
+          if-no-files-found: error
 
   openapi:
     name: Export OpenAPI
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -60,6 +78,7 @@ jobs:
   integration-tests:
     name: Migrations and integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         # PostgreSQL 18 for native uuidv7(), as the integration tests require.
@@ -99,6 +118,7 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [lint, unit-tests, openapi, integration-tests]
     if: always()
     steps:

@@ -4,3 +4,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+
+# Coverage artifacts (CI uploads them; never committed)
+.coverage
+coverage.xml
+htmlcov/

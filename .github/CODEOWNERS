@@ -1,0 +1,3 @@
+# Default owner for every change. Branch protection must enable
+# "Require review from Code Owners" for this to block merges (admin).
+* @MathiasTL
