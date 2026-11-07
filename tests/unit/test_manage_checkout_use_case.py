@@ -1118,3 +1118,46 @@ async def test_process_payment_enqueues_outbox_events(
 
 
 
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_maps_snapshot_validation_error_to_409_with_server_summary(
+    mock_checkouts, mock_attempts, payment_gateway
+):
+    cust_id = uuid.uuid4()
+    mock_carts = MagicMock()
+    mock_carts.obtener_abierto_por_cliente = AsyncMock(
+        return_value=SimpleNamespace(id=uuid.uuid4(), totals_snapshot={"subtotal": 100.0, "descuentos": []})
+    )
+    mock_carts.cambiar_estado = AsyncMock()
+    mock_cart_items = MagicMock()
+    # A line without SKU makes SnapshotBuilder raise SnapshotValidationError.
+    mock_cart_items.listar_por_cart = AsyncMock(
+        return_value=[SimpleNamespace(sku=" ", name="Sin SKU", quantity=1, unit_price_ref=100.0, image_url=None)]
+    )
+    mock_sales = MagicMock()
+    mock_sales.create_order = AsyncMock()
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=payment_gateway,
+        carts=mock_carts,
+        cart_items=mock_cart_items,
+        sales_client=mock_sales,
+        dispatch=FakeDispatch(),
+    )
+
+    with pytest.raises(CheckoutError) as exc:
+        await use_case.create_checkout(
+            CreateCheckoutInput(
+                customer_id=cust_id,
+                idempotency_key="key-snapshot-invalid",
+                contacto=VALID_CONTACT,
+                direccion={"direccion": "Av. Prueba 123", "distrito": "Miraflores"},
+            )
+        )
+
+    assert exc.value.code == "CARRITO_DESACTUALIZADO"
+    assert exc.value.extra["summary"]["subtotal"] == 100.0
+    mock_sales.create_order.assert_not_awaited()
+    mock_checkouts.guardar.assert_not_called()

@@ -120,8 +120,11 @@ class Settings:
     smtp_timeout_seconds: float = 10.0
     # Base of the deep link in the e-mail (`/pedidos/{pedidoId}`).
     frontend_base_url: str = "http://localhost:3000"
-    # Send right after enqueueing, until the outbox worker (SPEC-15) runs SEND_EMAIL.
+    # Send right after enqueueing; the outbox worker then only closes already sent e-mails.
     notification_send_inline: bool = True
+    # In-process outbox worker (SPEC-15): polled from the FastAPI lifespan.
+    outbox_worker_enabled: bool = True
+    outbox_poll_interval_seconds: float = 5.0
 
     def __post_init__(self) -> None:
         if self.products_auth_mode not in ("service", "public"):
@@ -209,4 +212,6 @@ def get_settings() -> Settings:
         smtp_timeout_seconds=_number("SMTP_TIMEOUT_SECONDS", "10", float, minimum=0.1),
         frontend_base_url=os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").strip().rstrip("/"),
         notification_send_inline=os.getenv("NOTIFICATION_SEND_INLINE", "true").strip().lower() != "false",
+        outbox_worker_enabled=os.getenv("OUTBOX_WORKER_ENABLED", "true").strip().lower() != "false",
+        outbox_poll_interval_seconds=_number("OUTBOX_POLL_INTERVAL_SECONDS", "5", float, minimum=0.5),
     )

@@ -80,7 +80,7 @@ from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
-from src.infrastructure.worker.outbox_worker import OutboxProcessor
+from src.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, OutboxProcessor
 from src.ports.outbound.llm_provider_port import LLMProvider
 from src.ports.outbound.order_repository_port import SalesOrderPort
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
@@ -499,6 +499,9 @@ def provide_outbox_processor(session: AsyncSession) -> OutboxProcessor:
         order_ref_repo=OrderRefPostgresAdapter(session),
         sales_client=provide_sales_port(settings),
         notification_service=build_notification_service(session),
+        uow=SqlAlchemyUnitOfWork(session),
+        # With inline sending on, fresh SEND_EMAIL jobs are left to the request that created them.
+        email_grace=INLINE_EMAIL_GRACE if settings.notification_send_inline else None,
     )
 
 

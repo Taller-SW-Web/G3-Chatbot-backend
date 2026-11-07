@@ -11,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.adapters.outbound.persistence.models import Attachment, Conversation, Evidence, Message
 from src.infrastructure.db.connection import create_engine
 
+# The in-process outbox worker (lifespan) must never poll a database during tests.
+os.environ.setdefault("OUTBOX_WORKER_ENABLED", "false")
+
 
 @pytest.fixture
 def persistence_metadata():

@@ -207,7 +207,7 @@ class ManageCheckoutUseCase:
         order_id = f"PED-{now.year}-{uuid.uuid4().hex[:6].upper()}"
 
         if self.sales_client:
-            from src.domain.services.snapshot_builder import SnapshotBuilder
+            from src.domain.services.snapshot_builder import SnapshotBuilder, SnapshotValidationError
             from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 
             snapshot_items = [
@@ -261,6 +261,15 @@ class ManageCheckoutUseCase:
                 )
                 if isinstance(ventas_res, dict) and ventas_res.get("pedidoId"):
                     order_id = str(ventas_res["pedidoId"])
+            except SnapshotValidationError as exc:
+                # The lines or amounts we computed cannot form a valid order: the cart must be
+                # reviewed again, so reuse 409 CARRITO_DESACTUALIZADO with the server summary.
+                logger.warning("Order snapshot rejected for cart %s: %s", cart_id, exc)
+                raise CheckoutError(
+                    "CARRITO_DESACTUALIZADO",
+                    "No pudimos validar tu carrito. Revisa el resumen actualizado antes de continuar.",
+                    {"summary": self._stale_summary(items, subtotal, costo_envio)},
+                ) from exc
             except ModuleRequestError as exc:
                 if exc.status == 409:
                     raise CheckoutError(

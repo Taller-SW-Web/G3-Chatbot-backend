@@ -1,7 +1,25 @@
 """Fake in-process Ventas adapter for testing and SALES_MODE=fake."""
+import base64
+import json
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
+from src.adapters.outbound.fakes.fake_security import ACCESS_TOKEN_PREFIX
+from src.ports.outbound.module_errors import ModuleRequestError
 from src.ports.outbound.order_repository_port import SalesOrderPort
+
+
+def _holder_id(holder_token: str) -> str:
+    """Customer id behind a holder token: fake `fake-access-<id>` or the `sub` of a JWT (unverified)."""
+    if holder_token.startswith(ACCESS_TOKEN_PREFIX):
+        return holder_token.removeprefix(ACCESS_TOKEN_PREFIX)
+    try:
+        payload = holder_token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return str(claims.get("sub") or holder_token)
+    except (IndexError, ValueError):
+        return holder_token
 
 
 class FakeSalesPort(SalesOrderPort):
@@ -10,6 +28,8 @@ class FakeSalesPort(SalesOrderPort):
         self.created_calls: list[dict[str, Any]] = []
         self.payment_notifications: list[dict[str, Any]] = []
         self.cancellations: list[dict[str, Any]] = []
+        self._order_by_key: dict[str, str] = {}
+        self._owners: dict[str, str] = {}
 
     async def create_order(
         self,
@@ -18,7 +38,11 @@ class FakeSalesPort(SalesOrderPort):
         idempotency_key: str,
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
-        order_id = f"PED-{len(self.orders) + 1000}"
+        existing_id = self._order_by_key.get(idempotency_key)
+        if existing_id is not None:
+            return self._creation_response(self.orders[existing_id])
+        # Random segment: ids stay unique across restarts (order_ref.order_id is a primary key).
+        order_id = f"PED-{datetime.now(timezone.utc).year}-{uuid.uuid4().hex[:6].upper()}"
         total = snapshot.get("pago", {}).get("total", 0.0)
         order_data = {
             "pedidoId": order_id,
@@ -32,14 +56,20 @@ class FakeSalesPort(SalesOrderPort):
             "contacto": snapshot.get("contacto", {}),
         }
         self.orders[order_id] = order_data
+        self._order_by_key[idempotency_key] = order_id
+        self._owners[order_id] = str(order_data["contacto"].get("clienteId", ""))
         self.created_calls.append({"snapshot": snapshot, "idempotency_key": idempotency_key})
+        return self._creation_response(order_data)
+
+    @staticmethod
+    def _creation_response(order: dict[str, Any]) -> dict[str, Any]:
         return {
-            "pedidoId": order_id,
+            "pedidoId": order["pedidoId"],
             "estado": "CREADO",
-            "total": total,
+            "total": order["total"],
             "moneda": "PEN",
-            "canal": snapshot.get("canal", "CHATBOT"),
-            "fechaCreacion": "2026-11-05T19:00:00Z",
+            "canal": order["canal"],
+            "fechaCreacion": order["fechaCreacion"],
         }
 
     async def notify_payment(
@@ -86,6 +116,7 @@ class FakeSalesPort(SalesOrderPort):
         page_size: int = 10,
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
+        holder = _holder_id(holder_token)
         items = [
             {
                 "pedidoId": o["pedidoId"],
@@ -96,7 +127,7 @@ class FakeSalesPort(SalesOrderPort):
                 "fechaCreacion": o["fechaCreacion"],
             }
             for o in self.orders.values()
-            if not estado or o["estado"] == estado
+            if self._owners.get(o["pedidoId"]) == holder and (not estado or o["estado"] == estado)
         ]
         return {
             "items": items,
@@ -113,8 +144,8 @@ class FakeSalesPort(SalesOrderPort):
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
         order = self.orders.get(order_id)
-        if not order:
-            from src.ports.outbound.module_errors import ModuleRequestError
+        # A foreign order looks the same as an unknown one (SPEC-17 Req. 1).
+        if not order or self._owners.get(order_id) != _holder_id(holder_token):
             raise ModuleRequestError("sales", 404, "RECURSO_NO_ENCONTRADO")
         return {
             "pedidoId": order["pedidoId"],

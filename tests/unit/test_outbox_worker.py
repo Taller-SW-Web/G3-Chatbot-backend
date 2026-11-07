@@ -148,7 +148,7 @@ async def test_process_pending_batch(mock_repos):
         status="PENDING",
         attempts=0,
     )
-    outbox_repo.listar_pendientes.return_value = [job1, job2]
+    outbox_repo.listar_pendientes.side_effect = [[job1], [job2], []]
 
     processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client)
     count = await processor.process_pending_batch(limit=10)
@@ -156,3 +156,77 @@ async def test_process_pending_batch(mock_repos):
     assert sales_client.notify_payment.await_count == 1
     assert sales_client.cancel_order.await_count == 1
 
+
+
+def _job(job_type="NOTIFY_SALES_PAYMENT", payload=None):
+    return Outbox(
+        id=uuid.uuid4(),
+        type=job_type,
+        payload=payload or {"order_id": "PED-C"},
+        status="PENDING",
+        attempts=0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_batch_commits_once_per_job_and_after_marking_state(mock_repos):
+    outbox_repo, order_ref_repo, sales_client = mock_repos
+    events: list[str] = []
+    outbox_repo.marcar_procesado.side_effect = lambda *_: events.append("processed")
+    uow = AsyncMock()
+    uow.commit.side_effect = lambda: events.append("commit")
+    outbox_repo.listar_pendientes.side_effect = [[_job()], [_job("REQUEST_CANCELLATION")], []]
+
+    processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client, uow=uow)
+    assert await processor.process_pending_batch(limit=10) == 2
+
+    assert events == ["processed", "commit", "processed", "commit"]
+    # One job per transaction keeps the SKIP LOCKED row lock until its own commit.
+    assert all(call.kwargs["limite"] == 1 for call in outbox_repo.listar_pendientes.call_args_list)
+
+
+@pytest.mark.asyncio
+async def test_retry_and_permanent_failure_states_are_committed(mock_repos):
+    outbox_repo, order_ref_repo, sales_client = mock_repos
+    sales_client.notify_payment.side_effect = [
+        ModuleUnavailableError("sales", "Timeout"),
+        ModuleRequestError("sales", 409, "ESTADO_INVALIDO"),
+    ]
+    uow = AsyncMock()
+    failing = _job()
+    outbox_repo.listar_pendientes.side_effect = [[_job()], [failing], []]
+
+    processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client, uow=uow)
+    assert await processor.process_pending_batch() == 0
+
+    outbox_repo.marcar_reintento.assert_awaited_once()
+    assert failing.status == "FAILED"
+    assert uow.commit.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_rolls_back_and_propagates(mock_repos):
+    outbox_repo, order_ref_repo, sales_client = mock_repos
+    uow = AsyncMock()
+    outbox_repo.listar_pendientes.side_effect = RuntimeError("connection lost")
+
+    processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client, uow=uow)
+    with pytest.raises(RuntimeError):
+        await processor.process_pending_batch()
+
+    uow.rollback.assert_awaited_once()
+    uow.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_email_grace_is_forwarded_to_the_repository(mock_repos):
+    from datetime import timedelta
+
+    outbox_repo, order_ref_repo, sales_client = mock_repos
+    outbox_repo.listar_pendientes.return_value = []
+    grace = timedelta(seconds=30)
+
+    processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client, uow=AsyncMock(), email_grace=grace)
+    await processor.process_pending_batch()
+
+    outbox_repo.listar_pendientes.assert_awaited_once_with(limite=1, email_gracia=grace)

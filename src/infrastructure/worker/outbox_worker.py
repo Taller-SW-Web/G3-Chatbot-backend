@@ -7,6 +7,10 @@ Dispatches transactional outbox events:
 
 Backoff schedule: 5s, 15s, 45s, 2min, 5min (max 5 attempts).
 Permanent failures (400 Bad Request, 409 Conflict) are immediately marked FAILED.
+
+Transactions: each job is fetched alone (`FOR UPDATE SKIP LOCKED`, limit 1),
+processed and committed, so PROCESSED / retry / FAILED states persist and the
+row lock is held only while that job runs. Two instances never take the same job.
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -17,6 +21,7 @@ from src.adapters.outbound.persistence.order_ref_postgres_adapter import OrderRe
 from src.adapters.outbound.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.ports.outbound.module_errors import ModuleRequestError
 from src.ports.outbound.order_repository_port import SalesOrderPort
+from src.ports.outbound.unit_of_work_port import UnitOfWorkPort
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +34,11 @@ BACKOFF_DELAYS = [
 ]
 
 
+# A SEND_EMAIL job younger than this is still owned by the inline send of the request
+# that enqueued it (SMTP timeout is 10 s); the worker only picks it up afterwards.
+INLINE_EMAIL_GRACE = timedelta(seconds=30)
+
+
 class OutboxProcessor:
     def __init__(
         self,
@@ -36,11 +46,15 @@ class OutboxProcessor:
         order_ref_repo: OrderRefPostgresAdapter,
         sales_client: SalesOrderPort,
         notification_service: Any | None = None,
+        uow: UnitOfWorkPort | None = None,
+        email_grace: timedelta | None = None,
     ):
         self.outbox_repo = outbox_repo
         self.order_ref_repo = order_ref_repo
         self.sales_client = sales_client
         self.notification_service = notification_service
+        self.uow = uow
+        self.email_grace = email_grace
 
     async def process_one(self, job: Outbox) -> bool:
         """Processes a single outbox record. Returns True if processed, False if retry scheduled/failed."""
@@ -84,13 +98,35 @@ class OutboxProcessor:
             return await self._handle_retry(job, str(exc))
 
     async def process_pending_batch(self, limit: int = 20) -> int:
-        jobs = await self.outbox_repo.listar_pendientes(limite=limit)
+        """Processes up to `limit` due jobs, one transaction per job. Returns the number processed.
+
+        An unexpected error (for example a lost DB connection) rolls the current job back,
+        stops the batch and propagates, so the caller can log it and try again later.
+        """
         processed = 0
-        for job in jobs:
-            res = await self.process_one(job)
-            if res:
-                processed += 1
+        for _ in range(limit):
+            try:
+                if self.email_grace:
+                    jobs = await self.outbox_repo.listar_pendientes(limite=1, email_gracia=self.email_grace)
+                else:
+                    jobs = await self.outbox_repo.listar_pendientes(limite=1)
+                if not jobs:
+                    break
+                if await self.process_one(jobs[0]):
+                    processed += 1
+                await self._commit()
+            except Exception:
+                await self._rollback()
+                raise
         return processed
+
+    async def _commit(self) -> None:
+        if self.uow is not None:
+            await self.uow.commit()
+
+    async def _rollback(self) -> None:
+        if self.uow is not None:
+            await self.uow.rollback()
 
     async def _process_notify_sales_payment(self, payload: dict[str, Any]) -> None:
         order_id = str(payload["order_id"])

@@ -1,4 +1,6 @@
 """Seguridad service token provider (A3, `/auth/token` client_credentials)."""
+from urllib.parse import parse_qs
+
 import httpx
 import pytest
 import respx
@@ -70,3 +72,45 @@ async def test_5xx_raises_module_unavailable():
 def test_refuses_to_start_without_a_client_secret():
     with pytest.raises(ValueError, match="SECURITY_CLIENT_SECRET"):
         provider(secret="  ")
+
+
+def _scoped_route():
+    def respond(request):
+        scope = parse_qs(request.content.decode()).get("scope", ["none"])[0]
+        return httpx.Response(200, json={"accessToken": f"svc-{scope}", "expiresIn": 900})
+
+    return respx.post(f"{BASE_URL}/auth/token").mock(side_effect=respond)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_scoped_token_is_never_returned_to_an_unscoped_call():
+    route = _scoped_route()
+    security = provider()
+    assert await security.get_token(scope="ventas:pedidos:crear") == "svc-ventas:pedidos:crear"
+    assert await security.get_token() == "svc-none"
+    assert route.call_count == 2
+    assert b"scope" not in route.calls[1].request.content
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_tokens_are_cached_per_scope():
+    route = _scoped_route()
+    security = provider()
+    for _ in range(2):
+        assert await security.get_token(scope="ventas:pedidos:crear") == "svc-ventas:pedidos:crear"
+        assert await security.get_token(scope="ventas:pagos:webhook") == "svc-ventas:pagos:webhook"
+        assert await security.get_token() == "svc-none"
+    assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_invalidate_drops_only_the_rejected_token():
+    _scoped_route()
+    security = provider()
+    await security.get_token(scope="a")
+    await security.get_token()
+    security.invalidate("svc-a")
+    assert set(security._tokens) == {None}
