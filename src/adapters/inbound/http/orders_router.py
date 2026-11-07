@@ -152,9 +152,9 @@ def create_orders_router(
                 page=page,
                 page_size=pageSize,
             )
+            return OrderListResponse.model_validate(raw)
         except Exception as exc:
             raise _translate_order_error(exc) from exc
-        return OrderListResponse.model_validate(raw)
 
     @router.get("/{pedido_id}", response_model=OrderDetailResponse)
     async def get_order_detail(
@@ -170,9 +170,9 @@ def create_orders_router(
                 pedido_id.strip(),
                 holder_token=holder_token,
             )
+            return OrderDetailResponse.model_validate(raw)
         except Exception as exc:
             raise _translate_order_error(exc) from exc
-        return OrderDetailResponse.model_validate(raw)
 
     @router.get("/{pedido_id}/seguimiento", response_model=OrderTrackingResponse)
     async def get_order_tracking(
@@ -188,11 +188,10 @@ def create_orders_router(
                 pedido_id.strip(),
                 holder_token=holder_token,
             )
+            whitelisted = sanitize_tracking_payload(raw, pedido_id=pedido_id.strip(), for_llm=False)
+            return OrderTrackingResponse.model_validate(whitelisted)
         except Exception as exc:
             raise _translate_order_error(exc) from exc
-
-        whitelisted = sanitize_tracking_payload(raw, pedido_id=pedido_id.strip(), for_llm=False)
-        return OrderTrackingResponse.model_validate(whitelisted)
 
     @router.post(
         "/{pedido_id}/reenviar-confirmacion",
@@ -221,8 +220,8 @@ def create_orders_router(
                 holder_token=holder_token,
                 idempotency_key=idempotency_key,
             )
+            return ResendConfirmationResponse.model_validate(raw)
         except Exception as exc:
             raise _translate_order_error(exc) from exc
-        return ResendConfirmationResponse.model_validate(raw)
 
     return router
