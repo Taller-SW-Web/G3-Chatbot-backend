@@ -117,3 +117,13 @@ def test_seed_images_are_real_unsplash_urls_with_a_two_image_gallery():
     detail = load_seed("product_detail.json")
     first = next(row for row in catalog if row["product_id"] == detail["product_id"])
     assert detail["images"] == first["images"]
+
+
+def test_seed_images_are_never_shared_across_brands_or_categories():
+    from src.adapters.outbound.fakes.fake_products import load_seed
+
+    owner: dict[str, tuple[str, str]] = {}
+    for row in load_seed("products_catalog.json"):
+        group = (row["marca_id"], row["categoria_id"])
+        for url in row["images"]:
+            assert owner.setdefault(url, group) == group, f"{url} is used by {owner[url]} and {group}"
