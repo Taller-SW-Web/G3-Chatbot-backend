@@ -28,9 +28,17 @@ QUOTE = {
 class _Tokens:
     def __init__(self):
         self.calls = 0
+        self.kwargs: list[dict[str, object]] = []
 
-    async def get_token(self, *, correlation_id: str | None = None) -> str:
+    async def get_token(
+        self,
+        *,
+        correlation_id: str | None = None,
+        scope: str | None = None,
+        audience: str | None = None,
+    ) -> str:
         self.calls += 1
+        self.kwargs.append({"scope": scope, "audience": audience})
         return "svc-token"
 
 
@@ -48,8 +56,9 @@ async def test_quote_sends_service_token_lines_and_dashed_correlation():
     route = respx.post(f"{BASE_URL}/cotizaciones").mock(
         return_value=httpx.Response(200, json=QUOTE)
     )
+    tokens = _Tokens()
 
-    result = await make_client().quote_shipping(
+    result = await make_client(tokens).quote_shipping(
         destino={"distrito": "Miraflores", "direccion": "Av. Larco 1234"},
         lineas=[{"sku": "NIK-REV7-42-NEG", "cantidad": 1}],
     )
@@ -63,6 +72,10 @@ async def test_quote_sends_service_token_lines_and_dashed_correlation():
     assert payload["destino"]["distrito"] == "Miraflores"
     assert result["costoEnvio"] == 12.5
     assert result["plazoEstimadoDiasHabiles"] == 1
+    # El token se pide con la audiencia y el scope que exige Despacho.
+    assert tokens.kwargs == [
+        {"scope": "cotizaciones:calcular", "audience": "api-despacho"}
+    ]
 
 
 @respx.mock
@@ -123,3 +136,17 @@ async def test_tracking_returns_body():
 
     assert result is not None
     assert result["estado"] == "EN_CAMINO"
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_tracking_requests_the_tracking_scope():
+    respx.get(f"{BASE_URL}/seguimientos/pedidos/PED-1").mock(
+        return_value=httpx.Response(200, json={"pedidoId": "PED-1"})
+    )
+    tokens = _Tokens()
+
+    await make_client(tokens).get_order_tracking("PED-1")
+
+    assert tokens.kwargs == [
+        {"scope": "seguimientos:leer", "audience": "api-despacho"}
+    ]

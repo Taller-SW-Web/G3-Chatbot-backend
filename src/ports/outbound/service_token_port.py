@@ -9,7 +9,15 @@ from typing import Protocol
 
 class ServiceTokenProvider(Protocol):
     async def get_token(
-        self, *, correlation_id: str | None = None, scope: str | None = None
+        self,
+        *,
+        correlation_id: str | None = None,
+        scope: str | None = None,
+        audience: str | None = None,
     ) -> str:
-        """Returns a cached, non-expired service access token."""
+        """Returns a cached, non-expired service access token.
+
+        `scope` and `audience` select the credential for one module: Seguridad
+        must mint a token that carries them (`aud=api-despacho`, etc.).
+        """
         ...

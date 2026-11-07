@@ -25,6 +25,9 @@ from src.ports.outbound.service_token_port import ServiceTokenProvider
 
 class DespachoClient(BaseModuleClient):
     module = "dispatch"
+    audience = "api-despacho"
+    quote_scope = "cotizaciones:calcular"
+    tracking_scope = "seguimientos:leer"
 
     def __init__(
         self,
@@ -51,7 +54,7 @@ class DespachoClient(BaseModuleClient):
             "POST",
             "/cotizaciones",
             json={"destino": destino, "lineas": lineas},
-            headers=await self._authorization(correlation_id),
+            headers=await self._authorization(correlation_id, self.quote_scope),
             correlation_id=correlation_id,
         )
         return self._parse_body(response)
@@ -71,15 +74,21 @@ class DespachoClient(BaseModuleClient):
         response = await self._request(
             "GET",
             f"/seguimientos/pedidos/{quote(order_id, safe='')}",
-            headers=await self._authorization(correlation_id),
+            headers=await self._authorization(correlation_id, self.tracking_scope),
             correlation_id=correlation_id,
         )
         if response.status_code == 404:
             return None
         return self._parse_body(response)
 
-    async def _authorization(self, correlation_id: str | None) -> dict[str, str]:
-        token = await self._tokens.get_token(correlation_id=correlation_id)
+    async def _authorization(
+        self, correlation_id: str | None, scope: str
+    ) -> dict[str, str]:
+        token = await self._tokens.get_token(
+            correlation_id=correlation_id,
+            scope=scope,
+            audience=self.audience,
+        )
         return {"Authorization": f"Bearer {token}"}
 
     def _parse_body(self, response: httpx.Response) -> dict[str, Any]:
