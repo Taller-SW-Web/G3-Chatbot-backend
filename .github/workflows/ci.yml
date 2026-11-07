@@ -186,9 +186,8 @@ jobs:
       - name: Build image (equivalente al build del frontend)
         run: docker build --tag g3-chatbot-backend:ci .
 
-  # Análisis de SonarCloud con la cobertura del job de unitarias. Por ahora NO está
-  # en `needs` del gate: primero se valida que el proyecto existe y que el token
-  # de la organización funciona. Después se añade al gate.
+  # Análisis de SonarCloud con la cobertura del job de unitarias. El proyecto espera
+  # el Quality Gate (`sonar.qualitygate.wait`), así que un gate rojo tumba el job.
   sonar:
     name: SonarCloud
     runs-on: ubuntu-latest
@@ -215,7 +214,7 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [lint, types, unit-tests, openapi, integration-tests, security, docker]
+    needs: [lint, types, unit-tests, openapi, integration-tests, security, docker, sonar]
     if: always()
     steps:
       - name: Require every job to succeed
