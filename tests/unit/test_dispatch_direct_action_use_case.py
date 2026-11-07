@@ -117,3 +117,31 @@ async def test_direct_action_reports_unregistered_tools_without_fabricating_resu
         "mensaje": "No se pudo completar la acción.",
     }
     assert messages.rows[-1]["blocks"] == {"blocks": list(result.blocks)}
+
+
+@pytest.mark.asyncio
+async def test_confirmed_click_clears_the_cart_but_unconfirmed_actions_do_not():
+    from unittest.mock import AsyncMock
+
+    from src.application.tools.tool_registry import ToolResult
+
+    caller = CallerIdentity(customer_id=uuid.uuid4())
+    handler = AsyncMock(return_value=ToolResult("OK", {"texto": "Vaciamos tu carrito."}))
+    conversations, messages, uow = FakeConversations(caller), FakeMessages(), FakeUow()
+    use_case = DispatchDirectActionUseCase(
+        conversations, messages, uow,
+        ActionDispatcher(build_tool_registry({"vaciar_carrito": handler})),
+        sanitize_text=lambda text: text,
+    )
+
+    pending = await use_case.execute(
+        caller, conversations.id, {"tipo": "VACIAR_CARRITO", "payload": {}})
+    assert pending.code == "REQUIERE_CONFIRMACION" and handler.await_count == 0
+
+    falsy = await use_case.execute(
+        caller, conversations.id, {"tipo": "VACIAR_CARRITO", "payload": {"confirmado": "true"}})
+    assert falsy.code == "ARGUMENTOS_INVALIDOS" and handler.await_count == 0
+
+    confirmed = await use_case.execute(
+        caller, conversations.id, {"tipo": "VACIAR_CARRITO", "payload": {"confirmado": True}})
+    assert confirmed.code == "OK" and handler.await_count == 1

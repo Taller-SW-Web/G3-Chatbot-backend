@@ -103,7 +103,8 @@ async def test_confirmed_action_clears_through_dispatcher():
         "vaciar_carrito", {}, context, confirmacion_ui=True)
     assert result.code == "OK"
     view = await registry.ejecutar("ver_carrito", {}, context)
-    assert view.data["bloques"] == []
+    [block] = view.data["bloques"]
+    assert block["tipo"] == "CARRITO" and block["datos"]["lineas"] == []
 
 
 @pytest.mark.asyncio

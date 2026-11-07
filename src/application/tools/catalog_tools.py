@@ -78,10 +78,11 @@ class SearchArguments(ToolArguments):
 class ProductArguments(ToolArguments):
     productoRef: Annotated[int, Field(strict=True, ge=1, le=10)] | None = None
     product_id: Text | None = None
+    nombre: Text | None = None
 
     @model_validator(mode="after")
     def validar_referencia(self) -> Self:
-        if (self.productoRef is None) == (self.product_id is None):
+        if sum(value is not None for value in (self.productoRef, self.product_id, self.nombre)) != 1:
             raise ValueError("Indica una referencia de producto")
         return self
 
@@ -130,6 +131,9 @@ async def solicitar_registro(
     argumentos: BaseModel, contexto: ExecutionContext,
 ) -> ToolResult:
     """Abre el formulario; no recoge datos ni crea una cuenta en Seguridad."""
+    if contexto.cliente_id:
+        # The UI renders nothing for a logged-in customer; answer in text instead.
+        return ToolResult("OK", {"texto": "Ya tienes una sesión iniciada con tu cuenta."})
     return ToolResult("OK", {
         "texto": "Puedes crear tu cuenta completando este formulario.",
         "bloques": [{"tipo": "FORMULARIO", "formulario": "REGISTRO"}],
@@ -140,9 +144,19 @@ _TOOLS = (
     ("consultar_promociones", "Consultar promociones y productos en oferta sin revelar cupones.", PromotionArguments),
     ("recomendar_productos", "Seleccionar productos por actividad y necesidad; razones verificadas por servidor.", RecommendationArguments),
     ("silenciar_complementos", "No sugerir más complementos durante esta conversación.", EmptyArguments),
-    ("buscar_productos", "Buscar productos activos con filtros para el canal Chatbot.", SearchArguments),
-    ("ver_detalle_producto", "Consultar el detalle de un producto o referencia del carrusel.", ProductArguments),
-    ("consultar_disponibilidad", "Consultar disponibilidad de un producto o variante.", AvailabilityArguments),
+    ("buscar_productos", (
+        "Buscar productos activos. `q` lleva SOLO palabras clave del producto (tipo, uso, modelo; "
+        "ej. \"zapatillas running\"); nunca precios, monedas ni frases como \"menos de\". "
+        "El precio va en `precioMin`/`precioMax` (soles) y la marca en `marca`."
+    ), SearchArguments),
+    ("ver_detalle_producto", (
+        "Consultar el detalle de un producto. Indica exactamente una referencia: `productoRef` "
+        "(número del carrusel), `product_id` o `nombre` (nombre del producto mencionado por el cliente)."
+    ), ProductArguments),
+    ("consultar_disponibilidad", (
+        "Consultar disponibilidad de un producto o variante (talla, color). Identifica el producto con "
+        "`productoRef` (carrusel), `product_id` o `nombre`; no necesita un carrusel previo."
+    ), AvailabilityArguments),
     ("agregar_al_carrito", "Agregar un SKU o resolver un producto y su variante al carrito.", AddArguments),
     ("ver_carrito", "Ver el carrito con precios y totales recalculados.", EmptyArguments),
     ("cambiar_cantidad", "Cambiar cantidad de una línea; cero elimina la línea.", QuantityArguments),

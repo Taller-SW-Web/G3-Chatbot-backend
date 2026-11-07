@@ -1,8 +1,8 @@
 {
   "description": "Zapatillas de running con amortiguación diaria",
   "images": [
-    "https://cdn.example.com/p/prod-001-1.jpg",
-    "https://cdn.example.com/p/prod-001-2.jpg"
+    "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&q=80",
+    "https://images.unsplash.com/photo-1606107557195-0e29a4b5b4aa?w=800&q=80"
   ],
   "marca": {
     "marca_id": "brand-nike",

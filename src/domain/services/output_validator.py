@@ -78,6 +78,19 @@ def _decimal(texto: str) -> Decimal | None:
     return Decimal(normalizado)
 
 
+def extract_pen_amounts(texto: str) -> set[Decimal]:
+    """PEN amounts mentioned in server-authored text (e.g. a tool's `texto`)."""
+    amounts: set[Decimal] = set()
+    for match in _AMOUNT.finditer(texto):
+        currency = (match["moneda_antes"] or match["moneda_despues"] or "").upper().strip()
+        if currency in {"$", "US$"}:
+            continue
+        value = _decimal(match["antes"] or match["despues"])
+        if value is not None:
+            amounts.add(value)
+    return amounts
+
+
 class OutputValidator:
     def validar_recomendaciones(self, texto: str, *, productos: list[dict]) -> ValidatedOutput:
         """Replace model-authored factual reasons with server-derived evidence."""

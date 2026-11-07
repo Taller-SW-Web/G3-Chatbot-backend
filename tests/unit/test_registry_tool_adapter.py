@@ -157,7 +157,6 @@ def test_registration_tool_description_restricts_it_to_account_creation():
     [
         ("no_existe", {}, ANA, "HERRAMIENTA_DESCONOCIDA"),
         ("ver_carrito", {"extra": 1}, ANA, "ARGUMENTOS_INVALIDOS"),
-        ("vaciar_carrito", {}, ANA, "REQUIERE_CONFIRMACION"),
     ],
 )
 async def test_registry_rejections_are_errors_and_never_reach_the_handler(name, arguments, context, code):
@@ -165,6 +164,28 @@ async def test_registry_rejections_are_errors_and_never_reach_the_handler(name, 
     result = await adapter_with(**handlers).execute(name, arguments, context)
     assert result.code == code and result.is_error and result.blocks == ()
     assert all(h.await_count == 0 for h in handlers.values())
+
+
+@pytest.mark.asyncio
+async def test_vaciar_carrito_asks_for_confirmation_with_buttons_and_never_runs():
+    handler = AsyncMock()
+    result = await adapter_with(vaciar_carrito=handler).execute("vaciar_carrito", {}, ANA)
+    assert result.code == "REQUIERE_CONFIRMACION" and not result.is_error
+    assert handler.await_count == 0
+    (block,) = result.blocks
+    assert block["tipo"] == "ACCIONES_RAPIDAS" and block["pregunta"]
+    confirm, cancel = block["acciones"]
+    assert confirm == {"id": "VACIAR_CARRITO", "etiqueta": "Sí, vaciar", "payload": {"confirmado": True}}
+    assert cancel["id"] == "VER_CARRITO" and cancel["etiqueta"] == "Cancelar"
+    assert block["datos"]["acciones"] == block["acciones"]
+    assert "bloques" not in result.data and "accionPendiente" not in result.data
+
+
+@pytest.mark.asyncio
+async def test_registration_for_a_logged_in_customer_is_text_only():
+    result = await adapter_with().execute("solicitar_registro", {}, ANA)
+    assert result.code == "OK" and result.blocks == ()
+    assert "sesión iniciada" in result.data["texto"]
 
 
 @pytest.mark.asyncio
