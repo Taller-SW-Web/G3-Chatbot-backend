@@ -13,8 +13,9 @@ def test_customer_devuelve_el_id_autenticado():
 
 
 def test_customer_falla_para_un_anonimo():
+    anonimo = CallerIdentity(anonymous_sid="hash")
     with pytest.raises(ValueError):
-        CallerIdentity(anonymous_sid="hash").customer
+        _ = anonimo.customer
 
 
 @pytest.mark.parametrize(
