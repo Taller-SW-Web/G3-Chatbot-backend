@@ -32,7 +32,11 @@ from src.ports.outbound.cart_repository_port import (
     CartConflictError,
     StaleCartError,
 )
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.ports.outbound.module_errors import (
+    GENERIC_UNAVAILABLE_TEXT,
+    ModuleRequestError,
+    ModuleUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -775,4 +779,4 @@ class ManageCartUseCase:
             return CartError(exc.code, exc.detail)
         if isinstance(exc, ModuleUnavailableError):
             return CartError("SERVICIO_NO_DISPONIBLE", exc.module)
-        return CartError("SERVICIO_NO_DISPONIBLE", type(exc).__name__)
+        return CartError("SERVICIO_NO_DISPONIBLE", GENERIC_UNAVAILABLE_TEXT)
