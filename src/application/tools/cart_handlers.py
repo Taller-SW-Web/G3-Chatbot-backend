@@ -31,7 +31,7 @@ def build_cart_handlers(cart_use_case) -> dict:
         data = {"texto": result["texto"], "bloques": result["bloques"]}
         cart_data = next((item.get("datos", {}) for item in result["bloques"]
                           if item.get("tipo") == "CARRITO"), None)
-        if cart_data is not None:
+        if cart_data is not None and cart_data.get("lineas"):
             data["promotion_reason"] = cart_data.get("promotion_reason") or "No tengo el detalle de las condiciones de la promoción."
         return ToolResult(result["code"], data)
 

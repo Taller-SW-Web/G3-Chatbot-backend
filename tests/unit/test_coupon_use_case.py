@@ -124,8 +124,9 @@ async def test_quitar_el_cupon_recalcula_sin_descuento():
 
     assert resultado["cupon"] is None
     datos = resultado["bloques"][0]["datos"]
-    assert datos["descuentos"] == []
-    assert datos["total"] == pytest.approx(datos["subtotal"], abs=0.01)
+    # Only the price offer remains (regular - offer); the coupon discount is gone.
+    assert [d["nombre"] for d in datos["descuentos"]] == ["Descuento"]
+    assert datos["total"] == pytest.approx(datos["subtotal"] - datos["descuentos"][0]["monto"], abs=0.01)
     assert carts.rows[cart.id].coupon_code is None
 
 
@@ -225,7 +226,7 @@ def test_router_aplica_y_quita_el_cupon():
 
     quitado = client.delete("/api/v1/carrito/cupon")
     assert quitado.status_code == 200, quitado.text
-    assert quitado.json()["carrito"]["descuentos"] == []
+    assert [d["nombre"] for d in quitado.json()["carrito"]["descuentos"]] == ["Descuento"]
 
 
 def test_router_traduce_el_cupon_invalido_y_el_reemplazo():

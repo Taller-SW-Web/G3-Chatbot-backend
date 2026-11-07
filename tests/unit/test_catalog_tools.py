@@ -29,7 +29,8 @@ def tools():
 
 @pytest.mark.asyncio
 async def test_intencion_de_registro_muestra_formulario_sin_datos(tools):
-    registry, _, context = tools
+    registry, _, _ = tools
+    context = ExecutionContext("conv-1", None, "anon-1")
     result = await registry.ejecutar("solicitar_registro", {}, context)
     assert result.code == "OK"
     assert result.data["texto"] == "Puedes crear tu cuenta completando este formulario."
@@ -37,6 +38,14 @@ async def test_intencion_de_registro_muestra_formulario_sin_datos(tools):
     rejected = await registry.ejecutar("solicitar_registro", {"contrasena": "no-al-llm"}, context)
     assert rejected.code == "ARGUMENTOS_INVALIDOS"
     assert "no-al-llm" not in repr(rejected)
+
+
+@pytest.mark.asyncio
+async def test_registro_con_sesion_iniciada_responde_solo_texto(tools):
+    registry, _, context = tools
+    result = await registry.ejecutar("solicitar_registro", {}, context)
+    assert result.code == "OK"
+    assert result.data == {"texto": "Ya tienes una sesión iniciada con tu cuenta."}
 
 
 @pytest.mark.asyncio

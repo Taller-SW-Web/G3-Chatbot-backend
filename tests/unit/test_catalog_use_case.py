@@ -213,3 +213,92 @@ async def test_option_cache_is_not_shared_between_use_cases():
 
     assert first._option_cache.get("categories") is not None
     assert make_catalog()._option_cache.get("categories") is None
+
+
+def make_seeded_catalog():
+    from src.adapters.outbound.fakes import fake_products
+
+    return ManageCatalogUseCase(
+        fake_products.FakeCatalogPort(),
+        fake_products.FakeInventoryPort(),
+        FakeConversations(),
+        FakeUow(),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("q", ["zapatillas Nike correr", "zapatillas para correr"])
+async def test_search_with_use_brand_and_max_price_finds_nike_revolution(q):
+    catalog = owned_catalog(make_seeded_catalog())
+    result = await catalog.search(
+        SearchArguments(q=q, marca="Nike", precioMax=350), customer_context()
+    )
+    products = result["bloques"][0]["datos"]["productos"]
+    assert "prod-001" in [p["product_id"] for p in products]
+
+
+@pytest.mark.asyncio
+async def test_search_uso_is_applied_to_the_query():
+    catalog = owned_catalog(make_seeded_catalog())
+    result = await catalog.search(
+        SearchArguments(q="zapatillas", uso="correr"), customer_context()
+    )
+    names = [p["name"] for p in result["bloques"][0]["datos"]["productos"]]
+    assert names == ["Nike Revolution 7"]
+
+
+@pytest.mark.asyncio
+async def test_search_unmatched_uso_falls_back_to_plain_query():
+    catalog = owned_catalog(make_seeded_catalog())
+    result = await catalog.search(
+        SearchArguments(q="zapatillas", uso="uso diario zzz"), customer_context()
+    )
+    assert result["total"] == 34
+
+
+@pytest.mark.asyncio
+async def test_plain_zapatillas_still_returns_every_shoe():
+    catalog = owned_catalog(make_seeded_catalog())
+    result = await catalog.search(SearchArguments(q="zapatillas"), customer_context())
+    assert result["total"] == 34
+
+
+@pytest.mark.asyncio
+async def test_availability_by_product_name_without_a_carousel():
+    catalog = owned_catalog(make_seeded_catalog())
+    result = await catalog.availability(
+        AvailabilityArguments(nombre="Nike Revolution 7", talla="42", color="negro"),
+        customer_context(),
+    )
+    assert result["texto"] == "Sí, hay stock disponible."
+
+
+@pytest.mark.asyncio
+async def test_detail_by_product_name_returns_the_product():
+    catalog = owned_catalog(make_seeded_catalog())
+    result = await catalog.detail(ProductArguments(nombre="la nike revolution 7"), customer_context())
+    assert result["bloques"][0]["datos"]["producto"]["product_id"] == "prod-001"
+
+
+@pytest.mark.asyncio
+async def test_detail_by_ambiguous_name_offers_a_carousel_and_keeps_ordinals():
+    catalog = owned_catalog(make_seeded_catalog())
+    result = await catalog.detail(ProductArguments(nombre="Nike"), customer_context())
+    assert result["bloques"][0]["tipo"] == "CARRUSEL_PRODUCTOS"
+    assert "varios" in result["texto"]
+    assert catalog._conversations.rows[CONVERSATION_ID].context["ultimoCarrusel"]
+
+
+@pytest.mark.asyncio
+async def test_detail_by_unknown_name_asks_for_more_detail():
+    catalog = owned_catalog(make_seeded_catalog())
+    result = await catalog.detail(ProductArguments(nombre="zzz inexistente"), customer_context())
+    assert result["bloques"] == []
+    assert "No encontré" in result["texto"]
+
+
+def test_product_arguments_require_exactly_one_reference():
+    with pytest.raises(ValueError):
+        ProductArguments()
+    with pytest.raises(ValueError):
+        ProductArguments(nombre="Nike", productoRef=1)

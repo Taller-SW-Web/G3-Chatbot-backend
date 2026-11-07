@@ -115,7 +115,10 @@ async def test_update_to_zero_removes_line():
         make_caller(), CONVERSATION_ID, item_id=item_id, quantity=0)
     assert "Quité" in result["texto"]
     empty = await cart_uc.view(make_caller(), CONVERSATION_ID)
-    assert empty["bloques"] == []
+    [block] = empty["bloques"]
+    assert block["tipo"] == "CARRITO"
+    assert block["datos"]["lineas"] == []
+    assert block["datos"]["subtotal"] == 0 and block["datos"]["total"] == 0
 
 
 @pytest.mark.asyncio
@@ -156,7 +159,8 @@ async def test_anonymous_cart_is_per_conversation():
     owned(cart_uc, conversations, second, customer=False)
     caller = make_caller(customer=False)
     await cart_uc.add(caller, first, sku="NIK-REV7-42-NEG", quantity=1)
-    assert (await cart_uc.view(caller, second))["bloques"] == []
+    [empty] = (await cart_uc.view(caller, second))["bloques"]
+    assert empty["tipo"] == "CARRITO" and empty["datos"]["lineas"] == []
 
 
 @pytest.mark.asyncio

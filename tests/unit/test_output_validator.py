@@ -106,3 +106,11 @@ def test_detecta_formas_naturales_de_anunciar_descuento(texto):
     result = OutputValidator().validar(texto, montos=[], porcentajes=[])
     assert "[descuento no verificado]" in result.texto
     assert result.corregido
+
+
+def test_extract_pen_amounts_reads_soles_and_ignores_usd():
+    from src.domain.services.output_validator import extract_pen_amounts
+
+    assert extract_pen_amounts("Cuesta S/ 279.90, antes 329,90 soles o US$ 80") == {
+        Decimal("279.90"), Decimal("329.90"),
+    }
