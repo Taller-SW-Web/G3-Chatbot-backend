@@ -1,0 +1,36 @@
+name: Production smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily check of the deployed services (06:00 America/Lima ≈ 11:00 UTC).
+    - cron: "0 11 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-production
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Production health
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Backend /health
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 20 \
+            https://g3-chatbot-backend.up.railway.app/health
+      - name: Backend catalog API
+        run: |
+          curl -fsS --retry 3 --retry-delay 5 --max-time 30 \
+            "https://g3-chatbot-backend.up.railway.app/api/v1/catalogo/productos?pagina=1&tamanio=1" \
+            > /dev/null
+      - name: Frontend
+        run: |
+          code=$(curl -sS -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 5 --max-time 20 \
+            https://g3-chatbot-frontend.vercel.app/)
+          echo "frontend HTTP $code"
+          test "$code" = "200"

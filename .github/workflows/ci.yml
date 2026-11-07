@@ -145,6 +145,16 @@ jobs:
           dockerfile: Dockerfile
           # Solo bloquea errores; los estilos se revisan sin frenar el gate.
           failure-threshold: error
+      - name: Trivy (vulnerabilidades y configuración)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          format: table
 
   # `test` is the required status check of the protected branches, so it stays as the
   # single gate. It runs even when a job fails, because a skipped required check counts as passed.
