@@ -54,13 +54,19 @@ class DiscoveryMixin:
         return promotion_summaries(rows)
 
     async def offers(self, args, context):
-        promotions = await self.promotions()
-        products = await self.search(SearchArguments(
-            categoria=args.categoria, marca=args.marca, soloOfertas=True), context)
+        # Bound this entire optional discovery below the frontend's 12-second budget.
+        try:
+            async with asyncio.timeout(10):
+                promotions = await self.promotions()
+                products = await self.search(SearchArguments(
+                    categoria=args.categoria, marca=args.marca, soloOfertas=True),
+                    context, discover_offers=True)
+        except TimeoutError as exc:
+            raise self.map_module_error(exc) from exc
         for item in products["bloques"]:
             item["datos"]["variant"] = "ofertas"
-        return {"code": "OK", "texto": "Promociones vigentes." if promotions else
-                "Por ahora no tenemos promociones activas. Puedes explorar el catálogo.",
+        headline = "Promociones vigentes." if promotions else "No hay campañas de promoción vigentes."
+        return {**products, "texto": f"{headline} {products['texto']}",
                 "bloques": [block("LISTA_PROMOCIONES", {"promociones": promotions}),
                             *products["bloques"]]}
 
@@ -152,7 +158,7 @@ class DiscoveryMixin:
                          row["price"] <= Decimal(str(profile["presupuestoMax"])))]
         if profile.get("talla"):
             eligible = [row for row in eligible if any(
-                str(v.get("talla")) == profile["talla"] for v in row["variants"])]
+                str(v.get("talla")).casefold() == profile["talla"].casefold() for v in row["variants"])]
         preferred = normalizer.normalize_brand(profile["marcaPreferida"]) if profile.get("marcaPreferida") else None
         preferred_id = (preferred.get("brand_id") or preferred.get("marca_id")) if preferred else None
         def fit_score(row):

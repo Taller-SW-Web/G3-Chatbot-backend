@@ -32,6 +32,39 @@ def test_default_is_service_and_explicit_fake_stays_fake():
     assert isinstance(provide_product_inventory(settings), FakeInventoryPort)
 
 
+@pytest.mark.parametrize("environment", ["prod", "production"])
+@pytest.mark.parametrize("allowed", [False, True])
+def test_production_public_requires_explicit_allowance(environment, allowed):
+    if not allowed:
+        with pytest.raises(ValueError, match="ALLOW_PUBLIC_PRODUCTS=true"):
+            Settings(app_env=environment, products_auth_mode="public")
+    else:
+        assert Settings(app_env=environment, products_auth_mode="public",
+                        allow_public_products=True).products_auth_mode == "public"
+    assert Settings(app_env=environment).products_auth_mode == "service"
+
+
+@pytest.mark.parametrize("value,allowed", [(None, False), ("false", False), ("0", False),
+                                        ("true", True), (" TRUE ", True), ("yes", True), ("1", True)])
+def test_public_allowance_environment_parsing(monkeypatch, value, allowed):
+    monkeypatch.setenv("APP_ENV", " Production ")
+    monkeypatch.setenv("SECURITY_MODE", "http")
+    monkeypatch.setenv("PRODUCTS_AUTH_MODE", " PUBLIC ")
+    if value is None:
+        monkeypatch.delenv("ALLOW_PUBLIC_PRODUCTS", raising=False)
+    else:
+        monkeypatch.setenv("ALLOW_PUBLIC_PRODUCTS", value)
+    get_settings.cache_clear()
+    try:
+        if allowed:
+            assert get_settings().allow_public_products is True
+        else:
+            with pytest.raises(ValueError, match="ALLOW_PUBLIC_PRODUCTS"):
+                get_settings()
+    finally:
+        get_settings.cache_clear()
+
+
 @pytest.mark.asyncio
 @respx.mock
 @pytest.mark.parametrize("auth_mode", ["public", "service"])

@@ -40,6 +40,8 @@ PRICE_BATCH_SIZE = 5
 PRICE_CONCURRENCY = 4
 INVENTORY_BATCH_SIZE = 20
 COMMERCIAL_BUDGET_SECONDS = 8.0
+OFFER_DISCOVERY_PAGES = 5
+OFFER_DISCOVERY_SECONDS = 8.0
 
 
 class OptionCache:
@@ -106,7 +108,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
 
     # -- public orchestration -------------------------------------------------
 
-    async def search(self, args, context) -> dict[str, Any]:
+    async def search(self, args, context, *, discover_offers: bool = False) -> dict[str, Any]:
         conversation_id = await self._owned_conversation(context)
         memory = await self._read_memory(conversation_id)
         categories = await self._cached_list("categories", self._catalog.list_categories)
@@ -121,37 +123,51 @@ class ManageCatalogUseCase(DiscoveryMixin):
                 "texto": self._clarifying_question(filters),
                 "bloques": [],
             }
-        page = await self._catalog.search_products(
-            q=filters.q,
-            category_id=args.categoriaId or filters.category_id,
-            brand_id=args.marcaId or filters.brand_id,
-            channel=args.canal,
-            page=args.pagina,
-            size=args.tamanio,
-            state=args.estado,
-            min_price=args.precioMin,
-            max_price=args.precioMax,
-        )
-        items = page.get("items", [])
-        if not items:
-            return {
-                "code": "OK",
-                "total": 0,
-                "total_scope": "page" if args.soloOfertas or args.talla or args.color else "catalog",
-                "texto": (
-                    "No encontré productos con esos filtros. "
-                    "Prueba quitando un filtro o buscando por categoría."
-                ),
-                "bloques": [],
-            }
-        local_filter = args.talla is not None or args.color is not None
-        summaries = await self._summarize(
-            items[:10], requested_size=args.talla, requested_color=args.color,
-        )
-        if local_filter:
-            summaries = [row for row in summaries if row["variants"]]
-        if args.soloOfertas:
-            summaries = [row for row in summaries if row["offer_price"] is not None]
+        if discover_offers:
+            summaries, total, exhausted, pages_scanned = await self._discover_offer_products(args, filters)
+            scope = "catalog" if exhausted else "scanned_pages"
+            text = (f"Encontré {total} productos en oferta en el catálogo con esos filtros."
+                    if exhausted else
+                    f"Encontré {total} productos en oferta en las páginas consultadas. "
+                    "La búsqueda es parcial; puede haber más ofertas en el catálogo.")
+            if total > len(summaries):
+                text += f" Te muestro {len(summaries)} de esos productos."
+        else:
+            page = await self._catalog.search_products(
+                q=filters.q,
+                category_id=args.categoriaId or filters.category_id,
+                brand_id=args.marcaId or filters.brand_id,
+                channel=args.canal,
+                page=args.pagina,
+                size=args.tamanio,
+                state=args.estado,
+                min_price=args.precioMin,
+                max_price=args.precioMax,
+            )
+            items = page.get("items", [])
+            if not items:
+                return {
+                    "code": "OK",
+                    "total": 0,
+                    "total_scope": "page" if args.soloOfertas or args.talla or args.color else "catalog",
+                    "texto": (
+                        "No encontré productos con esos filtros. "
+                        "Prueba quitando un filtro o buscando por categoría."
+                    ),
+                    "bloques": [],
+                }
+            local_filter = args.talla is not None or args.color is not None
+            summaries = await self._summarize(
+                items[:10], requested_size=args.talla, requested_color=args.color,
+            )
+            if local_filter:
+                summaries = [row for row in summaries if row["variants"]]
+            if args.soloOfertas:
+                summaries = [row for row in summaries if row["offer_price"] is not None]
+            total = len(summaries) if args.soloOfertas or local_filter else page.get("total", len(summaries))
+            scope = "page" if args.soloOfertas or local_filter else "catalog"
+            text = (f"Encontré {total} productos en esta página." if scope == "page" else
+                    f"Encontré {total} productos. Te muestro los primeros:")
         for index, row in enumerate(summaries, 1):
             row["ref"] = index
         memory[MEMORY_CAROUSEL_KEY] = [s["product_id"] for s in summaries]
@@ -161,18 +177,63 @@ class ManageCatalogUseCase(DiscoveryMixin):
             "brand_id": filters.brand_id,
         }
         await self._save_memory(conversation_id, memory)
-        total = len(summaries) if args.soloOfertas or local_filter else page.get("total", len(summaries))
         return {
             "code": "OK",
-            "texto": f"Encontré {total} productos. Te muestro los primeros:",
+            "texto": text,
             "bloques": [{
                 "id": uuid.uuid4().hex,
                 "tipo": "CARRUSEL_PRODUCTOS",
                 "datos": {"productos": summaries},
             }],
             "total": total,
-            "total_scope": "page" if args.soloOfertas or args.talla or args.color else "catalog",
+            "total_scope": scope,
+            **({"complete": exhausted, "pages_scanned": pages_scanned} if discover_offers else {}),
         }
+
+    async def _discover_offer_products(self, args, filters):
+        """Scan bounded pages only for chat discovery; REST retains upstream pagination.
+
+        At most 50 unique products, ten concurrent detail reads per page and the
+        existing per-product commercial caps. Never suppress supplier failures.
+        """
+        summaries = []
+        seen = set()
+        exhausted = False
+        pages_scanned = 0
+        deadline = asyncio.timeout(OFFER_DISCOVERY_SECONDS)
+        try:
+            async with deadline:
+                for number in range(1, OFFER_DISCOVERY_PAGES + 1):
+                    page = await self._catalog.search_products(
+                        q=filters.q, category_id=args.categoriaId or filters.category_id,
+                        brand_id=args.marcaId or filters.brand_id, channel=args.canal,
+                        page=number, size=10, state=args.estado,
+                        min_price=args.precioMin, max_price=args.precioMax,
+                    )
+                    items = page.get("items", [])
+                    unique = []
+                    for item in items[:10]:
+                        pid = str(item["product_id"])
+                        if pid not in seen:
+                            seen.add(pid)
+                            unique.append(item)
+                    rows = await self._summarize(unique, requested_size=args.talla, requested_color=args.color)
+                    summaries.extend(row for row in rows if row["offer_price"] is not None
+                                     and (not (args.talla or args.color) or row["variants"]))
+                    pages_scanned += 1
+                    total = page.get("total")
+                    exhausted = not items or (isinstance(total, int) and number * 10 >= total)
+                    if exhausted or len(summaries) >= args.tamanio:
+                        break
+        except TimeoutError as exc:
+            if not deadline.expired():
+                raise self.map_module_error(exc) from exc
+            # Only completed, validated pages are counted. Unknown is never no-offers.
+            pass
+        except Exception as exc:
+            raise self.map_module_error(exc) from exc
+        # Count every validated match, including those beyond the carousel size.
+        return summaries[:args.tamanio], len(summaries), exhausted, pages_scanned
 
     async def detail(self, args, context) -> dict[str, Any]:
         conversation_id = await self._owned_conversation(context)

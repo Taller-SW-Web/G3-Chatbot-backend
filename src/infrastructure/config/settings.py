@@ -104,6 +104,7 @@ class Settings:
     # refused unless `ALLOW_FAKE_SECURITY=true` opts in (e.g. a demo deploy).
     app_env: str = "development"
     allow_fake_security: bool = False
+    allow_public_products: bool = False
     # Per-module timeouts in seconds (DoD: exact timeouts per integration).
     security_timeout_seconds: float = 5.0
     products_timeout_seconds: float = 4.0
@@ -126,6 +127,15 @@ class Settings:
     def __post_init__(self) -> None:
         if self.products_auth_mode not in ("service", "public"):
             raise ValueError("PRODUCTS_AUTH_MODE must be one of service, public")
+        if (
+            self.app_env in PRODUCTION_ENVIRONMENTS
+            and self.products_auth_mode == "public"
+            and not self.allow_public_products
+        ):
+            raise ValueError(
+                "Public Productos in production requires ALLOW_PUBLIC_PRODUCTS=true. "
+                "Use PRODUCTS_AUTH_MODE=service for authenticated integration."
+            )
         if (
             self.app_env in PRODUCTION_ENVIRONMENTS
             and self.module_mode("security") == "fake"
@@ -169,6 +179,7 @@ def get_settings() -> Settings:
         modules_mode=_modules_mode(),
         app_env=_app_env(),
         allow_fake_security=_flag("ALLOW_FAKE_SECURITY"),
+        allow_public_products=_flag("ALLOW_PUBLIC_PRODUCTS"),
         security_mode=_module_mode_override("security"),
         products_mode=_module_mode_override("products"),
         products_auth_mode=_choice("PRODUCTS_AUTH_MODE", "service", ("service", "public")),
