@@ -130,6 +130,7 @@ def create_cart_router(cart_provider) -> APIRouter:
                 extra={
                     "product_id": result.get("product_id"),
                     "faltantes": result.get("faltantes", []),
+                    "seleccion": result.get("seleccion", {}),
                 },
             )
         return {"mensaje": result["texto"], "carrito": result["bloques"][0]["datos"]}

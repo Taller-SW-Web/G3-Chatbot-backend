@@ -189,6 +189,20 @@ async def test_add_requires_variant_when_attributes_are_missing():
     assert result["product_id"] == "prod-001"
     assert set(result["faltantes"]) == {"talla", "color"}
     assert result["bloques"][0]["tipo"] == "SELECTOR_VARIANTE"
+    assert result["bloques"][0]["datos"]["seleccion"] == {}
+
+
+@pytest.mark.asyncio
+async def test_add_selector_keeps_known_size():
+    cart_uc, conversations = make_cart_use_case(
+        {"NIK-REV7-42-NEG": "DISPONIBLE"})
+    owned(cart_uc, conversations)
+    result = await cart_uc.add(
+        make_caller(), CONVERSATION_ID, product_id="prod-001", size="42",
+        quantity=1)
+    assert result["faltantes"] == ["color"]
+    assert result["seleccion"] == {"talla": "42"}
+    assert result["bloques"][0]["datos"]["seleccion"] == {"talla": "42"}
 
 
 @pytest.mark.asyncio

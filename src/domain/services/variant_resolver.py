@@ -19,6 +19,18 @@ def _fold(text: str) -> str:
     return text.strip().lower()
 
 
+def known_selection(
+    size: str | None = None, color: str | None = None
+) -> dict[str, str]:
+    """Attributes the customer already gave (non-empty), as the resolver reads them."""
+    selection = {"talla": size, "color": color}
+    return {
+        key: str(value).strip()
+        for key, value in selection.items()
+        if value is not None and str(value).strip()
+    }
+
+
 class VariantResolver:
     def resolve(
         self,
