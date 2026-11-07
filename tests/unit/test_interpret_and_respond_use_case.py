@@ -98,7 +98,7 @@ class FakeMessages:
     async def list_dialogue(self, conversation_id, *, limit):
         rows = [r for r in self.rows if r["role"] is not MessageRole.TOOL]
         return [Message(id=r["id"], conversation_id=conversation_id, role=r["role"], text=r["text"],
-                        blocks=None, created_at=NOW) for r in rows[-limit:]]
+                        blocks=r.get("blocks"), created_at=NOW) for r in rows[-limit:]]
 
     def by_role(self, role):
         return [r for r in self.rows if r["role"] is role]
@@ -198,6 +198,86 @@ async def test_final_output_only_keeps_amounts_authorized_by_successful_tools():
     events = await run(uc, conv)
 
     assert events[-1].message.text == "Total S/ 199.90; envío [importe no verificado]"
+
+
+@pytest.mark.asyncio
+async def test_amounts_in_tool_blocks_and_texto_are_authorized_in_the_same_turn():
+    detail = {"id": "d1", "tipo": "DETALLE_PRODUCTO", "datos": {"producto": {
+        "price": 279.9, "regular_price": "329.90", "offer_price": "279.90"}}}
+    tools = FakeToolExecutor({
+        "ver_detalle_producto": ToolResult(
+            "OK", {"texto": "Nike Revolution 7: S/ 279.90"}, blocks=(detail,)),
+    })
+    uc, conv, _, _, _, _ = build(
+        [tool_turn("c1", "ver_detalle_producto", {"productoRef": 1}),
+         reply("Cuesta S/ 279.90 (antes S/ 329.90), no S/ 99.00")],
+        tools=tools,
+    )
+
+    events = await run(uc, conv)
+
+    assert events[-1].message.text == (
+        "Cuesta S/ 279.90 (antes S/ 329.90), no [importe no verificado]")
+
+
+@pytest.mark.asyncio
+async def test_cart_block_totals_and_line_products_are_authorized():
+    cart = {"id": "k1", "tipo": "CARRITO", "datos": {
+        "lineas": [{"nombre": "Nike", "cantidad": 2, "precio": 279.9}],
+        "subtotal": 659.8, "descuentos": [{"nombre": "Oferta", "monto": 100.0}], "total": 559.8}}
+    tools = FakeToolExecutor({"ver_carrito": ToolResult("OK", {"texto": "Tu carrito"}, blocks=(cart,))})
+    uc, conv, _, _, _, _ = build(
+        [tool_turn("c1", "ver_carrito", {}),
+         reply("El total es S/ 559.80: 2 x S/ 279.90 = S/ 559.80, descuento S/ 100.00; envío S/ 12.00")],
+        tools=tools,
+    )
+
+    events = await run(uc, conv)
+
+    assert events[-1].message.text == (
+        "El total es S/ 559.80: 2 x S/ 279.90 = S/ 559.80, descuento S/ 100.00; envío [importe no verificado]")
+
+
+@pytest.mark.asyncio
+async def test_amounts_from_recent_persisted_blocks_stay_quotable_in_later_turns():
+    uc, conv, messages, _, _, _ = build([reply("Sigue en S/ 279.90 y no en S/ 1.11")])
+    await messages.add(conv.id, MessageRole.ASSISTANT, "Mira esta",
+                       blocks={"blocks": [{"tipo": "DETALLE_PRODUCTO",
+                                           "datos": {"producto": {"offer_price": "279.90"}}}]})
+
+    events = await run(uc, conv, "¿cuánto cuesta?")
+
+    assert events[-1].message.text == "Sigue en S/ 279.90 y no en [importe no verificado]"
+
+
+@pytest.mark.asyncio
+async def test_never_seen_amount_is_still_replaced_with_history_present():
+    uc, conv, messages, _, _, _ = build([reply("Cuesta S/ 500.00")])
+    await messages.add(conv.id, MessageRole.ASSISTANT, "Antes S/ 279.90")
+
+    events = await run(uc, conv)
+
+    assert events[-1].message.text == "Cuesta [importe no verificado]"
+
+
+@pytest.mark.asyncio
+async def test_last_cart_block_of_the_turn_replaces_earlier_snapshots():
+    full = {"id": "k1", "tipo": "CARRITO", "datos": {"lineas": [{"nombre": "Nike", "cantidad": 2}]}}
+    empty = {"id": "k2", "tipo": "CARRITO", "datos": {"lineas": []}}
+    tools = FakeToolExecutor({
+        "ver_carrito": ToolResult("OK", {"texto": "Tu carrito"}, blocks=(full,)),
+        "quitar_del_carrito": ToolResult("OK", {"texto": "Quité Nike"}, blocks=(empty,)),
+    })
+    uc, conv, messages, _, _, _ = build(
+        [tool_turn("c1", "ver_carrito", {}), tool_turn("c2", "quitar_del_carrito", {"itemRef": 1}),
+         reply("Listo")],
+        tools=tools,
+    )
+
+    events = await run(uc, conv)
+
+    assert [e.block for e in events if isinstance(e, BlockEvent)] == [empty]
+    assert messages.by_role(MessageRole.ASSISTANT)[0]["blocks"] == {"blocks": [empty]}
 
 
 @pytest.mark.asyncio

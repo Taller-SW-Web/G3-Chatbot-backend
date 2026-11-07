@@ -136,7 +136,7 @@ class ManageCartUseCase:
     async def view(self, caller, conversation_id: uuid.UUID) -> dict:
         cart = await self._open_cart(caller, conversation_id, create=False)
         if cart is None:
-            return {"code": "OK", "texto": "Tu carrito está vacío", "bloques": []}
+            return self._empty_cart_view()
         return await self._cart_view(cart, conversation_id)
 
     async def apply_coupon(
@@ -414,12 +414,29 @@ class ManageCartUseCase:
 
     # -- reads ----------------------------------------------------------------
 
+    @staticmethod
+    def _empty_cart_view() -> dict:
+        """An empty cart still emits a CARRITO block so the UI replaces any earlier snapshot."""
+        return {
+            "code": "OK",
+            "texto": "Tu carrito está vacío",
+            "bloques": [{
+                "id": uuid.uuid4().hex,
+                "tipo": "CARRITO",
+                "datos": {
+                    "lineas": [], "subtotal": 0.0, "descuentos": [], "costoEnvio": None,
+                    "envio": "se calcula al elegir la dirección", "total": 0.0, "avisos": [],
+                    "promociones_ok": True, "promotion_reason": None,
+                },
+            }],
+        }
+
     async def _cart_view(
         self, cart, conversation_id, *, touch=True, coupon_code=_COUPON_SIN_CAMBIAR
     ) -> dict:
         rows = await self._items.listar_por_cart(cart.id)
         if not rows:
-            return {"code": "OK", "texto": "Tu carrito está vacío", "bloques": []}
+            return self._empty_cart_view()
         skus = [row.sku for row in rows]
         price_rows = {}
         prices, (evaluation, promotions_ok) = await asyncio.gather(

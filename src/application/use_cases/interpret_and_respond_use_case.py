@@ -33,7 +33,7 @@ from src.application.tools.action_dispatcher import QUICK_ACTIONS as QUICK_ACTIO
 from src.domain.entities.conversation import Conversation
 from src.domain.entities.message import Message, MessageRole
 from src.domain.services.degraded_mode import DegradedMode
-from src.domain.services.output_validator import OutputValidator
+from src.domain.services.output_validator import OutputValidator, extract_pen_amounts
 from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
 from src.ports.outbound.conversation_repository_port import ConversationRepositoryPort
@@ -91,13 +91,15 @@ INVALID_ARGUMENTS_TEXT = "No entendí bien lo que necesitas, ¿puedes darme más
 
 _MONEY_EVIDENCE_KEYS = frozenset({
     "amount", "coupon_discount", "descuento", "descuento_monto", "discount_amount",
-    "line_total", "list_price", "monto", "price", "precio", "precio_lista",
-    "precio_total", "precio_unitario", "regular_price", "shipping_cost", "subtotal", "total",
-    "unit_price",
+    "line_total", "list_price", "monto", "offer_price", "price", "precio", "precio_lista",
+    "precio_oferta", "precio_regular", "precio_total", "precio_unitario", "regular_price",
+    "shipping_cost", "subtotal", "total", "unit_price",
 })
+_UNIT_PRICE_KEYS = frozenset({"precio", "price", "unit_price", "precio_unitario"})
+_QUANTITY_KEYS = frozenset({"cantidad", "quantity"})
 _PERCENT_EVIDENCE_KEYS = frozenset({
     "discount_percent", "discount_percentage", "percent", "percentage", "porcentaje",
-    "porcentaje_descuento",
+    "porcentaje_descuento", "savings_pct",
 })
 
 _WHITESPACE = re.compile(r"\s+")
@@ -201,6 +203,7 @@ class InterpretAndRespondUseCase:
         try:
             dialogue = await self._messages.list_dialogue(conversation.id, limit=CONTEXT_MESSAGES)
             context = self._build_context(conversation, dialogue)
+            turn.authorize_history(dialogue)
             tool_definitions = self._tools.definitions()
             execution = ToolExecutionContext(
                 conversation_id=conversation.id,
@@ -264,8 +267,6 @@ class InterpretAndRespondUseCase:
                     )
                     for call in calls:
                         result = await self._execute_tool(call, execution, turn, conversation.id)
-                        if result.code == "OK":
-                            turn.authorize_commercial_values(result.data)
                         context.append(
                             LLMMessage(
                                 role=LLMRole.TOOL,
@@ -275,8 +276,9 @@ class InterpretAndRespondUseCase:
                         )
                         for tool_block in result.blocks:
                             block = dict(tool_block)
-                            turn.blocks.append(block)
-                            yield BlockEvent(block)
+                            turn.add_block(block)
+                            if block.get("tipo") != "CARRITO":
+                                yield BlockEvent(block)  # carts stream once, after the last tool ran
                     if turn.validation_failures > MAX_VALIDATION_FAILURES:
                         degraded = "invalid_arguments"
                         break
@@ -284,6 +286,10 @@ class InterpretAndRespondUseCase:
                 degraded = "timeout"
             except LLMError:
                 degraded = "unavailable"
+
+            final_cart = next((b for b in reversed(turn.blocks) if b.get("tipo") == "CARRITO"), None)
+            if final_cart is not None:
+                yield BlockEvent(final_cart)
 
             if degraded is not None:
                 reply, fallback_blocks, search_query = self._degraded_reply(
@@ -302,7 +308,6 @@ class InterpretAndRespondUseCase:
                         search_call, execution, turn, conversation.id,
                     )
                     if search_result.code == "OK":
-                        turn.authorize_commercial_values(search_result.data)
                         turn.blocks.extend(dict(b) for b in search_result.blocks)
                         for search_block in search_result.blocks:
                             yield BlockEvent(dict(search_block))
@@ -382,6 +387,8 @@ class InterpretAndRespondUseCase:
             # Unexpected tool failure: the model hears a generic error; details stay in the log.
             logger.exception("tool %s failed in conversation %s", call.name, conversation_id)
             result = ToolResult(code="ERROR_INTERNO", is_error=True)
+        if result.code == "OK":
+            turn.authorize_result(result)
         if result.code == INVALID_ARGUMENTS:
             turn.validation_failures += 1
         turn.tool_names.append(call.name)
@@ -480,16 +487,47 @@ class _Turn:
         self.authorized_amounts: set[Decimal] = set()
         self.authorized_percentages: set[Decimal] = set()
 
+    def add_block(self, block: dict[str, Any]) -> None:
+        """Keep one CARRITO block per turn: the latest tool result replaces earlier snapshots."""
+        if block.get("tipo") == "CARRITO":
+            self.blocks[:] = [b for b in self.blocks if b.get("tipo") != "CARRITO"]
+        self.blocks.append(block)
+
     def authorize_commercial_values(self, payload: Any) -> None:
         """Collect only allowlisted numeric evidence from successful tool data."""
         self._collect_values(payload)
 
+    def authorize_result(self, result: ToolResult) -> None:
+        """Tool data and the UI blocks it produced are both server-side evidence.
+
+        The tool adapter strips blocks from `data` before the model sees them, so prices that
+        only travel in blocks (carousel, detail, cart) must be collected from `result.blocks`.
+        """
+        self._collect_values(result.data)
+        self._collect_values(list(result.blocks))
+
+    def authorize_history(self, dialogue: Sequence[Message]) -> None:
+        """Amounts already shown to the customer in the recent dialogue stay quotable.
+
+        Bounded by the dialogue window the caller loaded. Blocks come from tools and assistant
+        text was already validated when it was persisted.
+        """
+        for message in dialogue:
+            if message.role is not MessageRole.ASSISTANT:
+                continue
+            self._collect_values(message.blocks)
+            self.authorized_amounts.update(extract_pen_amounts(message.text or ""))
+
     def _collect_values(self, value: Any, *, currency: str | None = None) -> None:
         if isinstance(value, Mapping):
             current_currency = str(value.get("currency", currency or "PEN")).upper()
+            self._authorize_line_total(value, current_currency)
             for key, child in value.items():
                 normalized_key = re.sub(r"(?<!^)(?=[A-Z])", "_", str(key)).casefold()
-                if normalized_key in _MONEY_EVIDENCE_KEYS and current_currency in {"PEN", "S/"}:
+                if normalized_key == "texto" and isinstance(child, str):
+                    # Server-authored copy such as "Nike Revolution 7: S/ 279.90".
+                    self.authorized_amounts.update(extract_pen_amounts(child))
+                elif normalized_key in _MONEY_EVIDENCE_KEYS and current_currency in {"PEN", "S/"}:
                     number = _as_decimal(child)
                     if number is not None:
                         self.authorized_amounts.add(number)
@@ -501,6 +539,20 @@ class _Turn:
         elif isinstance(value, (list, tuple)):
             for child in value:
                 self._collect_values(child, currency=currency)
+
+
+    def _authorize_line_total(self, line: Mapping[str, Any], currency: str) -> None:
+        """A cart line quoted as unit price x quantity is derived from tool data."""
+        if currency not in {"PEN", "S/"}:
+            return
+        quantity = next((line[k] for k in line if str(k).casefold() in _QUANTITY_KEYS), None)
+        if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 1:
+            return
+        for key, child in line.items():
+            if re.sub(r"(?<!^)(?=[A-Z])", "_", str(key)).casefold() in _UNIT_PRICE_KEYS:
+                unit = _as_decimal(child)
+                if unit is not None:
+                    self.authorized_amounts.add(unit * quantity)
 
 
 class _Persisted:

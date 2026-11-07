@@ -11,12 +11,13 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from src.application.catalog.discovery import DiscoveryMixin
+from src.application.catalog.discovery import DiscoveryMixin, fold
 from src.application.catalog.product_lookup import (
     MEMORY_CAROUSEL_KEY,
     MEMORY_FILTERS_KEY,
     resolve_product_id,
 )
+from src.application.tools.catalog_tools import SearchArguments
 from src.application.tools.tool_context import (
     caller_from_context,
     conversation_id_from_context,
@@ -133,17 +134,10 @@ class ManageCatalogUseCase(DiscoveryMixin):
             if total > len(summaries):
                 text += f" Te muestro {len(summaries)} de esos productos."
         else:
-            page = await self._catalog.search_products(
-                q=filters.q,
-                category_id=args.categoriaId or filters.category_id,
-                brand_id=args.marcaId or filters.brand_id,
-                channel=args.canal,
-                page=args.pagina,
-                size=args.tamanio,
-                state=args.estado,
-                min_price=args.precioMin,
-                max_price=args.precioMax,
-            )
+            page = await self._search_page(args, filters, use=args.uso)
+            if args.uso and not page.get("items"):
+                # `uso` is a soft hint: never let it alone empty the results.
+                page = await self._search_page(args, filters)
             items = page.get("items", [])
             if not items:
                 return {
@@ -189,6 +183,20 @@ class ManageCatalogUseCase(DiscoveryMixin):
             "total_scope": scope,
             **({"complete": exhausted, "pages_scanned": pages_scanned} if discover_offers else {}),
         }
+
+    async def _search_page(self, args, filters, *, use: str | None = None) -> dict[str, Any]:
+        query = " ".join(part for part in (filters.q, use) if part) or None
+        return await self._catalog.search_products(
+            q=query,
+            category_id=args.categoriaId or filters.category_id,
+            brand_id=args.marcaId or filters.brand_id,
+            channel=args.canal,
+            page=args.pagina,
+            size=args.tamanio,
+            state=args.estado,
+            min_price=args.precioMin,
+            max_price=args.precioMax,
+        )
 
     async def _discover_offer_products(self, args, filters):
         """Scan bounded pages only for chat discovery; REST retains upstream pagination.
@@ -241,6 +249,10 @@ class ManageCatalogUseCase(DiscoveryMixin):
         product_id = resolve_product_id(
             memory, producto_ref=args.productoRef, product_id=args.product_id
         )
+        if product_id is None and args.nombre:
+            product_id, answer = await self._resolve_by_name(args.nombre, context)
+            if product_id is None:
+                return answer
         if product_id is None:
             return {
                 "code": "OK",
@@ -272,6 +284,10 @@ class ManageCatalogUseCase(DiscoveryMixin):
         product_id = resolve_product_id(
             memory, producto_ref=args.productoRef, product_id=args.product_id
         )
+        if product_id is None and args.nombre:
+            product_id, answer = await self._resolve_by_name(args.nombre, context)
+            if product_id is None:
+                return answer
         if product_id is None:
             return {
                 "code": "OK",
@@ -330,6 +346,34 @@ class ManageCatalogUseCase(DiscoveryMixin):
         }
 
     # -- internals ------------------------------------------------------------
+
+    async def _resolve_by_name(self, name: str, context) -> tuple[str | None, dict[str, Any]]:
+        """Product id for a product name, or a ready answer when it is missing or ambiguous.
+
+        Exact (accent-insensitive) name wins; otherwise a single candidate whose name is
+        contained in the request (or the reverse); otherwise a short carousel to choose from.
+        """
+        try:
+            page = await self._catalog.search_products(q=name, size=5)
+        except Exception as exc:
+            raise self.map_module_error(exc) from exc
+        items = page.get("items", [])
+        if not items:
+            return None, {
+                "code": "OK",
+                "texto": f"No encontré un producto llamado {name}. ¿Puedes darme más detalle?",
+                "bloques": [],
+            }
+        wanted = fold(name).strip()
+        exact = [row for row in items if fold(str(row.get("name", ""))).strip() == wanted]
+        related = [row for row in items if wanted and (
+            fold(str(row.get("name", ""))) in wanted or wanted in fold(str(row.get("name", ""))))]
+        for candidates in (exact, related, items):
+            if len(candidates) == 1:
+                return str(candidates[0]["product_id"]), {}
+        choices = await self.search(SearchArguments(q=name, tamanio=5), context)
+        choices["texto"] = f"Encontré varios productos parecidos a {name}. ¿Cuál te interesa?"
+        return None, choices
 
     async def _owned_conversation(self, context):
         """Id of the owned conversation, or None for memory-less direct reads.

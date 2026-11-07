@@ -42,6 +42,17 @@ class DispatchDirectActionUseCase:
         self._dispatcher = dispatcher
         self._sanitize = sanitize_text
 
+    @staticmethod
+    def _split_confirmation(action: Mapping[str, Any]) -> tuple[Mapping[str, Any], bool]:
+        """A click on a confirmation button sends `confirmado: true`: it is the explicit human
+        confirmation. The flag is consumed here and never reaches the tool arguments; the LLM
+        path never goes through this method."""
+        payload = action.get("payload") if isinstance(action, Mapping) else None
+        if not isinstance(payload, Mapping) or payload.get("confirmado") is not True:
+            return action, False
+        rest = {key: value for key, value in payload.items() if key != "confirmado"}
+        return {**action, "payload": rest}, True
+
     async def execute(
         self,
         caller: CallerIdentity | None,
@@ -61,7 +72,10 @@ class DispatchDirectActionUseCase:
         )
         correlation_token = correlation_id_var.set(str(uuid.uuid4()))
         try:
-            result = await self._dispatcher.despachar(action, context)
+            dispatched, confirmed = self._split_confirmation(action)
+            result = await self._dispatcher.despachar(
+                dispatched, context, confirmacion_ui=confirmed,
+            )
             raw_data = dict(result.data)
             raw_blocks = raw_data.pop("bloques", ())
             text = self._sanitize(str(raw_data.pop("texto", "")))

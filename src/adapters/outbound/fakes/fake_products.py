@@ -8,20 +8,31 @@ demo data stays deterministic. No network, no database.
 import json
 import re
 import unicodedata
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from src.domain.services.offer_policy import price_projection
 from src.ports.outbound.module_errors import ModuleRequestError
 
 SEEDS = Path(__file__).resolve().parent / "seeds"
 
 # Words the LLM adds around the actual search terms ("aver productos nike").
+# Price phrasing ("menos de 350 soles") is filtered by price arguments, never by text.
 FILLER_WORDS = frozenset({
-    "a", "al", "aver", "busco", "buscar", "con", "de", "del", "el", "en", "hay",
-    "la", "las", "lo", "los", "me", "mostrar", "muestra", "muestrame", "para",
-    "por", "producto", "productos", "que", "quiero", "tiene", "tienen", "tienes",
-    "un", "una", "unas", "unos", "ver", "y",
+    "a", "al", "algo", "aver", "busca", "buscame", "busco", "buscar", "con", "dame",
+    "de", "del", "desde", "dime", "el", "en", "entre", "hasta", "hay", "la", "las",
+    "lo", "los", "mas", "maximo", "me", "menor", "menos", "minimo", "mostrar",
+    "muestra", "muestrame", "necesito", "para", "pen", "por", "precio", "producto",
+    "productos", "que", "quiero", "quisiera", "s", "sol", "soles", "tiene",
+    "tienen", "tienes", "un", "una", "unas", "unos", "ver", "y",
 })
+
+# Colloquial terms mapped to the words the seed descriptions use.
+SEARCH_SYNONYMS = {
+    "corre": "running", "correr": "running", "corriendo": "running",
+    "trotar": "running", "trote": "running",
+}
 
 
 def load_seed(name: str):
@@ -36,7 +47,10 @@ def _fold_accents(text: str) -> str:
 
 def _search_words(q: str) -> list[str]:
     words = re.findall(r"[a-z0-9]+", _fold_accents(q))
-    return [word for word in words if word not in FILLER_WORDS]
+    return [
+        SEARCH_SYNONYMS.get(word, word) for word in words
+        if word not in FILLER_WORDS and not word.isdigit()
+    ]
 
 
 def _commercial_product(row):
@@ -88,6 +102,25 @@ class FakeCatalogPort:
         )
         return _fold_accents(" ".join(part for part in parts if part))
 
+    def _effective_price(self, item: dict) -> Decimal | None:
+        """Offer price when the offer is valid, else the regular price."""
+        row = self._prices.get(str(item.get("sku_base") or ""))
+        if row is None:
+            return None
+        try:
+            return price_projection(row)["price"]
+        except ValueError:
+            return None
+
+    def _within_price(self, item: dict, min_price, max_price) -> bool:
+        if min_price is None and max_price is None:
+            return True
+        price = self._effective_price(item)
+        if price is None:
+            return False
+        return ((min_price is None or price >= Decimal(str(min_price)))
+                and (max_price is None or price <= Decimal(str(max_price))))
+
     def _sku_product(self, sku: str) -> dict | None:
         """Product owning a SKU: exact variant match, else sku_base prefix."""
         if self._sku_index is None:
@@ -124,6 +157,7 @@ class FakeCatalogPort:
             and all(word in self._searchable_text(item) for word in words)
             and (category_id is None or (item.get("categoria_id") or item.get("category_id")) == category_id)
             and (brand_id is None or (item.get("marca_id") or item.get("brand_id")) == brand_id)
+            and self._within_price(item, min_price, max_price)
         ]
         start = (page - 1) * size
         return {
@@ -188,19 +222,30 @@ class FakeCatalogPort:
     async def evaluate_promotions(self, lines, *, channel_id="CHATBOT",
                                   coupon_code=None, customer_ref=None,
                                   correlation_id=None):
-        total = 0
+        total = Decimal("0")
+        offer_discount = Decimal("0")
         for line in lines:
             try:
                 row = await self.get_price(line["sku"])
             except ModuleRequestError:
                 continue
-            amount = float(row.get("precio_regular") or 0)
-            total += amount * line.get("quantity", 1)
-        discount = round(total * 0.1, 2) if coupon_code == "SPORT10" else 0
+            quantity = line.get("quantity", 1)
+            regular = Decimal(str(row.get("precio_regular") or 0))
+            total += regular * quantity
+            # Subtotal is the regular price; a valid offer comes back as a discount.
+            try:
+                effective = price_projection(row)["price"]
+            except ValueError:
+                effective = None
+            if effective is not None and effective < regular:
+                offer_discount += (regular - effective) * quantity
+        coupon_discount = round(total * Decimal("0.1"), 2) if coupon_code == "SPORT10" else Decimal("0")
+        discount = offer_discount + coupon_discount
+        promotion_id = "promo-10" if coupon_discount else None  # offers are plain price discounts
         return {
-            "currency": "PEN", "original_amount": round(total, 2),
-            "result_amount": round(total - discount, 2), "discount_amount": discount,
-            "promotion_id": "promo-10" if discount else None,
+            "currency": "PEN", "original_amount": float(round(total, 2)),
+            "result_amount": float(round(total - discount, 2)), "discount_amount": float(discount),
+            "promotion_id": promotion_id,
             "coupon_applied": coupon_code in (None, "SPORT10"),
         }
 
