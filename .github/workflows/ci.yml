@@ -134,9 +134,9 @@ jobs:
             || echo "::warning::pip-audit encontró vulnerabilidades (advisory durante la Fase 2)"
 
   docker:
-    name: Dockerfile lint
+    name: Dockerfile + Trivy
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: hadolint
