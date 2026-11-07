@@ -1161,3 +1161,104 @@ async def test_create_checkout_maps_snapshot_validation_error_to_409_with_server
     assert exc.value.extra["summary"]["subtotal"] == 100.0
     mock_sales.create_order.assert_not_awaited()
     mock_checkouts.guardar.assert_not_called()
+
+
+# --- Retry with a new idempotency key while a checkout is alive ---
+
+
+def _item(sku, quantity, price):
+    return SimpleNamespace(sku=sku, name=sku, quantity=quantity, unit_price_ref=price, image_url=None)
+
+
+async def _first_checkout(use_case, mock_checkouts, key="key-1"):
+    """Creates a checkout and makes it the live one returned for the cart."""
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    checkout = await use_case.create_checkout(CreateCheckoutInput(
+        customer_id=cart.customer_id,
+        idempotency_key=key,
+        cart_id=cart.id,
+        contacto=VALID_CONTACT,
+        direccion=VALID_ADDRESS,
+    ))
+    mock_checkouts.obtener_vivo_por_cart.return_value = checkout
+    mock_checkouts.guardar.reset_mock()
+    return cart, checkout
+
+
+async def _retry(use_case, cart, direccion=VALID_ADDRESS, key="key-2"):
+    return await use_case.create_checkout(CreateCheckoutInput(
+        customer_id=cart.customer_id,
+        idempotency_key=key,
+        cart_id=cart.id,
+        contacto=VALID_CONTACT,
+        direccion=direccion,
+    ))
+
+
+@pytest.mark.asyncio
+async def test_retry_with_new_key_and_same_data_reuses_checkout(use_case, mock_checkouts):
+    cart, first = await _first_checkout(use_case, mock_checkouts)
+    res = await _retry(use_case, cart)
+    assert res is first
+    mock_checkouts.guardar.assert_not_called()
+    mock_checkouts.marcar_estado.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_retry_with_changed_address_expires_old_and_creates_new(use_case, mock_checkouts):
+    cart, first = await _first_checkout(use_case, mock_checkouts)
+    res = await _retry(use_case, cart, direccion={**VALID_ADDRESS, "distrito": "Surco"})
+    assert res is not first
+    assert res.idempotency_key == "key-2"
+    mock_checkouts.marcar_estado.assert_awaited_once_with(first.id, CheckoutStatus.EXPIRED.value)
+    mock_checkouts.guardar.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_retry_after_adding_item_expires_old_and_creates_new_with_new_subtotal(use_case, mock_checkouts):
+    cart, first = await _first_checkout(use_case, mock_checkouts)
+    use_case.cart_items.listar_por_cart.return_value = [_item("SKU-1", 2, 50), _item("SKU-2", 1, 20)]
+    res = await _retry(use_case, cart)
+    assert res is not first
+    assert res.summary["subtotal"] == 120.0
+    assert len(res.summary["lineas"]) == 2
+    mock_checkouts.marcar_estado.assert_awaited_once_with(first.id, CheckoutStatus.EXPIRED.value)
+    mock_checkouts.guardar.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_retry_after_price_change_creates_new_checkout(use_case, mock_checkouts):
+    cart, first = await _first_checkout(use_case, mock_checkouts)
+    use_case.cart_items.listar_por_cart.return_value = [_item("SKU-1", 2, 55)]
+    res = await _retry(use_case, cart)
+    assert res is not first
+    assert res.summary["subtotal"] == 110.0
+    mock_checkouts.marcar_estado.assert_awaited_once_with(first.id, CheckoutStatus.EXPIRED.value)
+
+
+@pytest.mark.asyncio
+async def test_retry_after_expires_at_passed_creates_new_checkout(use_case, mock_checkouts):
+    cart, first = await _first_checkout(use_case, mock_checkouts)
+    first.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    res = await _retry(use_case, cart)
+    assert res is not first
+    mock_checkouts.marcar_estado.assert_awaited_once_with(first.id, CheckoutStatus.EXPIRED.value)
+    mock_checkouts.guardar.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_retry_with_approved_checkout_returns_it_even_if_data_changed(use_case, mock_checkouts):
+    cart, first = await _first_checkout(use_case, mock_checkouts)
+    first.status = CheckoutStatus.PAYMENT_APPROVED.value
+    res = await _retry(use_case, cart, direccion={**VALID_ADDRESS, "distrito": "Surco"})
+    assert res is first
+    mock_checkouts.guardar.assert_not_called()
+    mock_checkouts.marcar_estado.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_subtotal_sums_prices_with_decimal_precision(use_case):
+    use_case.cart_items.listar_por_cart.return_value = [_item("SKU-1", 1, 329.9), _item("SKU-2", 1, 79.9)]
+    _, checkout = await _create(use_case, "decimal-key")
+    assert checkout.summary["subtotal"] == 409.8
+    assert checkout.summary["lineas"][0]["precio"] == 329.9
