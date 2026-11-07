@@ -71,7 +71,7 @@ async def test_a_whole_turn_over_sse_is_persisted_and_ends_with_fin(postgres_ses
 
     assert res.status_code == 200 and res.headers["content-type"].startswith("text/event-stream")
     events = frames(res.text)
-    assert [name for name, _ in events] == ["aceptado", "bloque", "token", "token", "fin"]
+    assert [name for name, _ in events] == ["aceptado", "bloque", "token", "fin"]
     assert events[1][1] == {"bloque": block}
     stored = await messages.list_recent(cid, limit=50)
     assert [m.role for m in stored] == [MessageRole.CUSTOMER, MessageRole.TOOL, MessageRole.ASSISTANT]

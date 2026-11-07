@@ -36,14 +36,15 @@ ERROR_STATUS = {
 
 
 def _problem(error: CatalogError) -> ProblemError:
-    status = ERROR_STATUS.get(error.code, 503)
+    status = error.status or ERROR_STATUS.get(error.code, 503)
     title = {
         404: "Resource not found",
         409: "Product unavailable",
         400: "Invalid request",
         503: "Service unavailable",
-    }[status]
-    return ProblemError(status, error.code, title, error.detail or None)
+    }.get(status, "Upstream request rejected")
+    headers = [("Retry-After", error.retry_after)] if error.retry_after else []
+    return ProblemError(status, error.code, title, error.detail or None, headers=headers)
 
 
 def create_catalog_router(catalog_provider) -> APIRouter:
@@ -54,6 +55,9 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         q: str | None = Query(default=None),
         categoria: str | None = Query(default=None),
         marca: str | None = Query(default=None),
+        talla: str | None = Query(default=None),
+        color: str | None = Query(default=None),
+        soloOfertas: bool = Query(default=False),
         precioMin: float | None = Query(default=None, ge=0),
         precioMax: float | None = Query(default=None, ge=0),
         orden: str | None = Query(default=None),
@@ -67,18 +71,27 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         try:
             result = await service.search(
                 SearchArguments(
-                    q=q, categoria=categoria, marca=marca,
+                    q=q, categoria=categoria, marca=marca, talla=talla, color=color,
+                    soloOfertas=soloOfertas,
                     precioMin=precioMin, precioMax=precioMax,
                     pagina=pagina, tamanio=tamanio,
                 ),
                 ExecutionContext(),
             )
-        except CatalogError as exc:
-            raise _problem(exc)
+        except Exception as exc:
+            raise _problem(_as_catalog_error(exc))
         bloques = result.get("bloques", [])
         items = bloques[0]["datos"]["productos"] if bloques else []
         return {"items": items, "total": result.get("total", len(items)),
+                "total_scope": result.get("total_scope", "catalog"),
                 "mensaje": result.get("texto", "")}
+
+    @router.get("/promociones")
+    async def promotions(service: ManageCatalogUseCase = Depends(catalog_provider)):
+        try:
+            return {"items": await service.promotions()}
+        except Exception as exc:
+            raise _problem(_as_catalog_error(exc))
 
     @router.get("/productos/{product_id}")
     async def product_detail(
@@ -135,7 +148,9 @@ def _as_catalog_error(exc: Exception) -> CatalogError:
     if isinstance(exc, Error):
         return exc
     if isinstance(exc, ModuleRequestError):
-        return Error(exc.code, exc.detail)
+        return Error(exc.code, exc.detail, status=exc.status,
+                     retry_after=getattr(exc, "retry_after", None))
     if isinstance(exc, ModuleUnavailableError):
-        return Error("SERVICIO_NO_DISPONIBLE", exc.module)
+        return Error("SERVICIO_NO_DISPONIBLE", exc.module,
+                     retry_after=getattr(exc, "retry_after", None))
     return Error("SERVICIO_NO_DISPONIBLE", type(exc).__name__)

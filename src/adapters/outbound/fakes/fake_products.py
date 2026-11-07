@@ -39,6 +39,19 @@ def _search_words(q: str) -> list[str]:
     return [word for word in words if word not in FILLER_WORDS]
 
 
+def _commercial_product(row):
+    data = {key: value for key, value in row.items()
+            if key not in {"precio_regular", "precio_oferta", "currency", "stock", "category_id"}}
+    data["categoria_id"] = row.get("categoria_id") or row.get("category_id")
+    if "variants" in row:
+        data["variants"] = [
+            {key: value for key, value in variant.items()
+             if key not in {"precio_regular", "precio_oferta", "currency", "stock"}}
+            for variant in row["variants"]
+        ]
+    return data
+
+
 class FakeCatalogPort:
     """Catalog fake over the seed catalog (100 products)."""
 
@@ -57,15 +70,10 @@ class FakeCatalogPort:
         if prices is not None:
             self._prices = prices
         else:
-            self._prices = {
-                "NIK-REV7-42-NEG": {
-                    "sku": "NIK-REV7-42-NEG", "precio_regular": 329.9,
-                    "precio_oferta": 279.9, "currency": "PEN",
-                }
-            }
+            self._prices = load_seed("catalog_prices.json") if products is None and details is None else {}
         self._sku_index: dict[str, dict] | None = None
         self._category_names = {
-            category["category_id"]: category["name"]
+            category["categoria_id"]: category["name"]
             for category in load_seed("categories.json")
         }
 
@@ -75,8 +83,8 @@ class FakeCatalogPort:
         A word matches as a substring, so "zapatilla" also finds "zapatillas".
         """
         parts = (
-            item.get("name"), item.get("description"), item.get("brand"),
-            self._category_names.get(item.get("category_id")),
+            item.get("name"), item.get("description"), (item.get("marca") or {}).get("name"),
+            self._category_names.get((item.get("categoria_id") or item.get("category_id"))),
         )
         return _fold_accents(" ".join(part for part in parts if part))
 
@@ -108,33 +116,39 @@ class FakeCatalogPort:
     async def search_products(self, *, q=None, category_id=None, brand_id=None,
                               channel="CHATBOT", page=1, size=10, state="ACTIVO",
                               min_price=None, max_price=None, correlation_id=None):
-        words = _search_words(q) if q else []
+        sku_owner = self._sku_product(q) if q else None
+        words = _search_words(q) if q and not sku_owner else []
         items = [
             item for item in self._products
-            if all(word in self._searchable_text(item) for word in words)
-            and (category_id is None or item.get("category_id") == category_id)
-            and (brand_id is None or item.get("brand_id") == brand_id)
+            if (not sku_owner or item.get("product_id") == sku_owner.get("product_id"))
+            and all(word in self._searchable_text(item) for word in words)
+            and (category_id is None or (item.get("categoria_id") or item.get("category_id")) == category_id)
+            and (brand_id is None or (item.get("marca_id") or item.get("brand_id")) == brand_id)
         ]
         start = (page - 1) * size
         return {
-            "items": items[start:start + size], "pagina": page,
+            "items": [_commercial_product(row) for row in items[start:start + size]], "pagina": page,
             "tamanio": size, "total": len(items),
         }
 
     async def get_product_detail(self, product_id, *, correlation_id=None):
         if product_id in self._details:
-            return self._details[product_id]
+            return _commercial_product(self._details[product_id])
         for item in self._products:
             if item.get("product_id") == product_id:
                 base = item.get("sku_base") or product_id
                 return {
                     "product_id": product_id, "name": item.get("name"),
+                    "slug": item.get("slug") or product_id,
+                    "tipo_producto_id": item.get("tipo_producto_id") or "tipo-demo",
                     "description": item.get("description"),
-                    "brand_id": item.get("brand_id"),
-                    "category_id": item.get("category_id"),
+                    "marca_id": item.get("marca_id") or item.get("brand_id"),
+                    "marca": item.get("marca") or {"name": item.get("brand_name")},
+                    "categoria_id": (item.get("categoria_id") or item.get("category_id")),
                     "images": item.get("images", []),
                     "tiene_variantes": False,
-                    "variants": [{"sku": f"{base}-STD"}],
+                    "variants": [{"sku": f"{base}-STD", "variant_id": f"{base}-STD", "identifying_attributes": [],
+                                  "non_identifying_attributes": []}],
                 }
         raise ModuleRequestError("productos", 404, "RECURSO_NO_ENCONTRADO")
 
@@ -146,15 +160,20 @@ class FakeCatalogPort:
 
     async def get_price(self, sku, *, correlation_id=None):
         if sku in self._prices:
-            return self._prices[sku]
+            return {**self._prices[sku], "sku": sku}
+        base = next((key for key in self._prices if sku.startswith(key + "-")), None)
+        if base is not None:
+            return {**self._prices[base], "sku": sku}
         item = self._sku_product(sku)
         if item is None:
             raise ModuleRequestError("productos", 404, "RECURSO_NO_ENCONTRADO")
         return {
             "sku": sku,
-            "precio_regular": item.get("precio_regular", 0),
+            "precio_regular": item.get("precio_regular"),
             "precio_oferta": item.get("precio_oferta"),
             "currency": "PEN",
+            "valid_from": "2020-01-01T00:00:00Z", "valid_until": None,
+            "channel_id": "CHATBOT",
         }
 
     async def get_prices(self, skus, *, channel="CHATBOT", correlation_id=None):
@@ -175,17 +194,24 @@ class FakeCatalogPort:
                 row = await self.get_price(line["sku"])
             except ModuleRequestError:
                 continue
-            amount = row.get("precio_oferta") or row.get("precio_regular", 0)
+            amount = float(row.get("precio_regular") or 0)
             total += amount * line.get("quantity", 1)
         discount = round(total * 0.1, 2) if coupon_code == "SPORT10" else 0
         return {
-            "discount_amount": discount,
+            "currency": "PEN", "original_amount": round(total, 2),
+            "result_amount": round(total - discount, 2), "discount_amount": discount,
             "promotion_id": "promo-10" if discount else None,
             "coupon_applied": coupon_code in (None, "SPORT10"),
         }
 
     async def list_promotions(self, *, correlation_id=None):
-        return [{"promotion_id": "promo-10", "name": "Cyber 10%"}]
+        return [{"promotion_id": "promo-10", "name": "Cyber 10%", "status": "ACTIVA",
+                 "valid_from": "2020-01-01T00:00:00Z", "valid_until": None, "channels": ["CHATBOT"]}]
+
+    async def get_recommendations(self, product_id, *, correlation_id=None):
+        # Explicit fake merchandising candidates, never used as HTTP fallback.
+        return [{"product_id": row["product_id"], "type": "CROSS_SELL"}
+                for row in self._products if row["product_id"] != product_id][:3]
 
 
 class FakeInventoryPort:

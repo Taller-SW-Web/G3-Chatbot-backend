@@ -6,6 +6,7 @@ before `expiresIn`, so concurrent calls reuse one credential instead of
 hammering Seguridad. Real credentials arrive in Hito 4; until then the mock
 answers the same shape.
 """
+import asyncio
 import time
 from typing import Any
 
@@ -16,7 +17,7 @@ from src.adapters.outbound.http_clients.security_client import parse_security_bo
 from src.ports.outbound.module_errors import ModuleUnavailableError
 
 # Renew a little early so a token never expires mid-request.
-CLOCK_SKEW_SECONDS = 30
+CLOCK_SKEW_SECONDS = 60
 
 
 class SecurityServiceTokenProvider(BaseModuleClient):
@@ -42,8 +43,19 @@ class SecurityServiceTokenProvider(BaseModuleClient):
         self._clock = clock
         self._token: str | None = None
         self._expires_at = 0.0
+        self._refresh_lock = asyncio.Lock()
+
+    def invalidate(self, rejected_token: str | None = None) -> None:
+        """Do not discard a newer token refreshed by another request."""
+        if rejected_token is None or self._token == rejected_token:
+            self._token = None
+            self._expires_at = 0.0
 
     async def get_token(self, *, correlation_id: str | None = None) -> str:
+        async with self._refresh_lock:
+            return await self._get_token(correlation_id=correlation_id)
+
+    async def _get_token(self, *, correlation_id: str | None = None) -> str:
         now = self._clock()
         if self._token and now < self._expires_at - CLOCK_SKEW_SECONDS:
             return self._token

@@ -62,6 +62,8 @@ class TotalsCalculator:
             promotions_available = False
             notices.append("No pudimos calcular promociones en este momento")
         else:
+            if evaluation.get("original_amount") is not None:
+                subtotal = _money(evaluation["original_amount"])
             amount = evaluation.get("discount_amount") or 0
             discount_total = _money(amount)
             if discount_total > 0:
@@ -75,6 +77,8 @@ class TotalsCalculator:
                 })
         shipping_cost = _money(shipping) if shipping is not None else None
         total = subtotal - discount_total + (shipping_cost or Decimal("0"))
+        if evaluation is not None and evaluation.get("result_amount") is not None:
+            total = _money(evaluation["result_amount"]) + (shipping_cost or Decimal("0"))
         return CartTotals(
             subtotal=subtotal,
             discounts=tuple(discounts),

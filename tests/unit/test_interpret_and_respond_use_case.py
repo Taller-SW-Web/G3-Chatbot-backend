@@ -51,6 +51,16 @@ class FakeConversations:
         self.title = title
         self.summary = summary
         self.touches = 0
+        self.context = {}
+
+    async def get_context(self, conversation_id):
+        return dict(self.context)
+
+    async def save_context(self, conversation_id, context):
+        self.context = dict(context)
+
+    async def get_context_for_update(self, conversation_id):
+        return dict(self.context)
 
     async def find_owned(self, conversation_id, owner):
         if conversation_id == self.id and owner == self.owner:
@@ -140,8 +150,8 @@ async def test_plain_reply_is_streamed_and_persisted():
     """SPEC-05 Req. 4 · Scenario: Envío y streaming normal."""
     uc, conv, messages, uow, _, _ = build([reply("Hola, ", "te ayudo", usage=TokenUsage(30, 7))])
     events = await run(uc, conv, "  quiero zapatillas ")
-    assert kinds(events) == [MessageAcceptedEvent, TokenEvent, TokenEvent, FinalEvent]
-    assert [e.text for e in events if isinstance(e, TokenEvent)] == ["Hola, ", "te ayudo"]
+    assert kinds(events) == [MessageAcceptedEvent, TokenEvent, FinalEvent]
+    assert [e.text for e in events if isinstance(e, TokenEvent)] == ["Hola, te ayudo"]
     final = events[-1].message
     assert final.role is MessageRole.ASSISTANT and final.text == "Hola, te ayudo"
     assert [(r["role"], r["text"]) for r in messages.rows] == [
@@ -327,8 +337,8 @@ async def test_failure_mid_stream_replaces_the_partial_text_with_the_fallback():
     uc, conv, messages, _, _, _ = build([])
     uc._llm = Breaking([])
     events = await run(uc, conv)
-    assert kinds(events)[:4] == [MessageAcceptedEvent, TokenEvent, DegradedEvent, TokenEvent]
-    assert events[3] == TokenEvent(DEGRADED_NO_ACTIONS_TEXT)
+    assert kinds(events)[:3] == [MessageAcceptedEvent, DegradedEvent, TokenEvent]
+    assert events[2] == TokenEvent(DEGRADED_NO_ACTIONS_TEXT)
     assert messages.by_role(MessageRole.ASSISTANT)[0]["text"] == DEGRADED_NO_ACTIONS_TEXT
 
 

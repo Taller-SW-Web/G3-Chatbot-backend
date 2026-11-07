@@ -6,6 +6,9 @@ from typing import Any
 from src.application.tools.tool_registry import ExecutionContext, ToolRegistry, ToolResult
 
 QUICK_ACTIONS = {
+    "VER_OFERTAS": "consultar_promociones",
+    "RECOMENDAR_PRODUCTOS": "recomendar_productos",
+    "SILENCIAR_COMPLEMENTOS": "silenciar_complementos",
     "SOLICITAR_REGISTRO": "solicitar_registro",
     "BUSCAR_PRODUCTOS": "buscar_productos",
     "BUSCAR_POR_CATEGORIA": "buscar_productos",

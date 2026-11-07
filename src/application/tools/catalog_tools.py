@@ -31,6 +31,24 @@ class EmptyArguments(ToolArguments):
     pass
 
 
+class PromotionArguments(ToolArguments):
+    categoria: Text | None = None
+    marca: Text | None = None
+
+
+class RecommendationArguments(ToolArguments):
+    actividad: Text
+    uso: Text | None = None
+    nivel: Text | None = None
+    destinatario: Text | None = None
+    talla: Text | None = None
+    edad: Annotated[int, Field(strict=True, ge=0, le=120)] | None = None
+    superficie: Text | None = None
+    presupuestoMax: Annotated[float, Field(ge=0, allow_inf_nan=False, strict=True)] | None = None
+    marcaPreferida: Text | None = None
+    omitirPreguntas: bool = Field(default=False, strict=True)
+
+
 class SearchArguments(ToolArguments):
     q: Text | None = None
     categoria: Text | None = None
@@ -83,7 +101,11 @@ class AddArguments(ToolArguments):
 
     @model_validator(mode="after")
     def validar_referencia(self) -> Self:
-        if sum(value is not None for value in (self.sku, self.productoRef, self.product_id)) != 1:
+        # An explicit product supplies verified merchandising context for a SKU.
+        # Carousel references remain mutually exclusive with both explicit IDs.
+        if (self.productoRef is not None and (self.sku is not None or self.product_id is not None)) or (
+            self.productoRef is None and self.sku is None and self.product_id is None
+        ):
             raise ValueError("Indica una referencia de producto o SKU")
         return self
 
@@ -115,6 +137,9 @@ async def solicitar_registro(
 
 
 _TOOLS = (
+    ("consultar_promociones", "Consultar promociones y productos en oferta sin revelar cupones.", PromotionArguments),
+    ("recomendar_productos", "Seleccionar productos por actividad y necesidad; razones verificadas por servidor.", RecommendationArguments),
+    ("silenciar_complementos", "No sugerir más complementos durante esta conversación.", EmptyArguments),
     ("buscar_productos", "Buscar productos activos con filtros para el canal Chatbot.", SearchArguments),
     ("ver_detalle_producto", "Consultar el detalle de un producto o referencia del carrusel.", ProductArguments),
     ("consultar_disponibilidad", "Consultar disponibilidad de un producto o variante.", AvailabilityArguments),
