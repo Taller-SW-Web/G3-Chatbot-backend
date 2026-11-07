@@ -27,7 +27,7 @@ from src.domain.services.offer_policy import amount, instant, price_projection
 from src.domain.services.product_projection import normalize_detail
 from src.domain.services.stock_validator import StockValidator
 from src.domain.services.totals_calculator import PricedLine, TotalsCalculator
-from src.domain.services.variant_resolver import VariantResolver
+from src.domain.services.variant_resolver import VariantResolver, known_selection
 from src.ports.outbound.cart_repository_port import (
     CartConflictError,
     StaleCartError,
@@ -311,6 +311,7 @@ class ManageCartUseCase:
                         "requiere_variante": True,
                         "faltantes": list(exc.data.get("faltantes", [])),
                         "product_id": exc.data.get("product_id"),
+                        "seleccion": exc.data.get("seleccion", {}),
                         "bloques": [{
                             "id": uuid.uuid4().hex,
                             "tipo": "SELECTOR_VARIANTE",
@@ -348,7 +349,8 @@ class ManageCartUseCase:
                     "VARIANTE_REQUERIDA",
                     f"¿En qué {' y '.join(variant['faltantes'])} lo buscas?",
                     {"product_id": detail.get("product_id"),
-                     "faltantes": variant["faltantes"]},
+                     "faltantes": variant["faltantes"],
+                     "seleccion": variant.get("seleccion", {})},
                 )
             raise CartError(
                 "PRODUCTO_NO_DISPONIBLE", "could not resolve a sellable SKU"
@@ -616,7 +618,10 @@ class ManageCartUseCase:
         if match.sku is not None:
             return match.sku, detail, {"sku": match.sku, "talla": size, "color": color}
         if match.missing:
-            return None, detail, {"faltantes": list(match.missing)}
+            return None, detail, {
+                "faltantes": list(match.missing),
+                "seleccion": known_selection(size, color),
+            }
         return None, detail, None
 
     async def _sku_context(self, sku, size, color, product_id=None):

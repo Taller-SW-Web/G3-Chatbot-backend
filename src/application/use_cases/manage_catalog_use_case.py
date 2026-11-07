@@ -27,7 +27,7 @@ from src.domain.services.product_normalizer import ProductNormalizer
 from src.domain.services.product_projection import normalize_detail
 from src.domain.services.similar_products import SimilarProducts
 from src.domain.services.stock_validator import StockValidator
-from src.domain.services.variant_resolver import VariantResolver
+from src.domain.services.variant_resolver import VariantResolver, known_selection
 from src.ports.outbound.module_errors import (
     ModuleRequestError,
     ModuleUnavailableError,
@@ -313,6 +313,10 @@ class ManageCatalogUseCase(DiscoveryMixin):
                         "datos": {
                             "product_id": product_id,
                             "faltantes": list(match.missing),
+                            "seleccion": known_selection(
+                                getattr(args, "talla", None),
+                                getattr(args, "color", None),
+                            ),
                         },
                     }],
                 }

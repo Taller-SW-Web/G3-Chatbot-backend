@@ -138,6 +138,20 @@ async def test_availability_missing_size_asks_for_it():
         AvailabilityArguments(product_id="prod-001"), customer_context()
     )
     assert result["bloques"][0]["tipo"] == "SELECTOR_VARIANTE"
+    assert result["bloques"][0]["datos"]["seleccion"] == {}
+
+
+@pytest.mark.asyncio
+async def test_availability_keeps_known_size_in_selector():
+    catalog = owned_catalog(make_catalog())
+
+    result = await catalog.availability(
+        AvailabilityArguments(product_id="prod-001", talla=" 42 "),
+        customer_context(),
+    )
+    datos = result["bloques"][0]["datos"]
+    assert datos["faltantes"] == ["color"]
+    assert datos["seleccion"] == {"talla": "42"}
 
 
 class CountingCatalog(FakeCatalogPort):
