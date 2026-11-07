@@ -79,6 +79,13 @@ def _decimal(texto: str) -> Decimal | None:
 
 
 class OutputValidator:
+    def validar_recomendaciones(self, texto: str, *, productos: list[dict]) -> ValidatedOutput:
+        """Replace model-authored factual reasons with server-derived evidence."""
+        if not productos:
+            return ValidatedOutput(texto, False)
+        safe = "Opciones para ti: " + "; ".join(row["recommendation_reason"] for row in productos)
+        return ValidatedOutput(safe, safe != texto)
+
     def validar(
         self, texto: str, *, montos: Iterable[Decimal],
         porcentajes: Iterable[Decimal] = (),

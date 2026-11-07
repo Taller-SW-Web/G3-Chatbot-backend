@@ -33,6 +33,9 @@ def build_catalog_handlers(catalog_use_case) -> dict:
             return ToolResult(exc.code, {"texto": exc.detail})
         except ModuleUnavailableError as exc:
             return ToolResult("SERVICIO_NO_DISPONIBLE", {"modulo": exc.module})
+        except Exception as exc:
+            error = catalog_use_case.map_module_error(exc)
+            return ToolResult(error.code, {"texto": error.detail})
         return ToolResult(result["code"], {
             "texto": result["texto"], "bloques": result["bloques"],
         })
@@ -44,6 +47,9 @@ def build_catalog_handlers(catalog_use_case) -> dict:
             return ToolResult(exc.code, {"texto": exc.detail})
         except ModuleUnavailableError as exc:
             return ToolResult("SERVICIO_NO_DISPONIBLE", {"modulo": exc.module})
+        except Exception as exc:
+            error = catalog_use_case.map_module_error(exc)
+            return ToolResult(error.code, {"texto": error.detail})
         return ToolResult(result["code"], {
             "texto": result["texto"], "bloques": result["bloques"],
         })
@@ -55,11 +61,27 @@ def build_catalog_handlers(catalog_use_case) -> dict:
             return ToolResult(exc.code, {"texto": exc.detail})
         except ModuleUnavailableError as exc:
             return ToolResult("SERVICIO_NO_DISPONIBLE", {"modulo": exc.module})
+        except Exception as exc:
+            error = catalog_use_case.map_module_error(exc)
+            return ToolResult(error.code, {"texto": error.detail})
         return ToolResult(result["code"], {
             "texto": result["texto"], "bloques": result["bloques"],
         })
 
+    def discovery_handler(method):
+        async def handler(args, context):
+            try:
+                result = await method(args, context)
+                return ToolResult(result["code"], {"texto": result["texto"], "bloques": result["bloques"]})
+            except Exception as exc:
+                error = catalog_use_case.map_module_error(exc)
+                return ToolResult(error.code, {"texto": error.detail})
+        return handler
+
     return {
+        "consultar_promociones": discovery_handler(catalog_use_case.offers),
+        "recomendar_productos": discovery_handler(catalog_use_case.recommend),
+        "silenciar_complementos": discovery_handler(catalog_use_case.silence),
         "buscar_productos": buscar_productos,
         "ver_detalle_producto": ver_detalle_producto,
         "consultar_disponibilidad": consultar_disponibilidad,

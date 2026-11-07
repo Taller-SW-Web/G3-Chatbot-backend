@@ -38,6 +38,8 @@ def normalize_sku_list(skus: list[str], *, limit: int = MAX_SKUS_PER_CALL) -> li
 
 
 class ProductCatalogPort(Protocol):
+    async def get_recommendations(self, product_id: str, *, correlation_id: str | None = None) -> list[dict[str, Any]]: ...
+
     async def search_products(
         self,
         *,

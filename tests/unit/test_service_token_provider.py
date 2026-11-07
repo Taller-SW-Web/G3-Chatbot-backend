@@ -39,10 +39,10 @@ async def test_caches_the_token_until_the_skew_before_expiry():
     )
     security = provider(clock=lambda: now[0])
     assert await security.get_token() == "svc-1"
-    now[0] = 800  # still > 30 s before expiry
+    now[0] = 800  # still > 60 s before expiry
     assert await security.get_token() == "svc-1"
     assert route.call_count == 1
-    now[0] = 880  # inside the 30 s skew: renew
+    now[0] = 880  # inside the 60 s skew: renew
     assert await security.get_token() == "svc-1"
     assert route.call_count == 2
 

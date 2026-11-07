@@ -1,0 +1,3079 @@
+{
+  "components": {
+    "schemas": {
+      "AddItemIn": {
+        "additionalProperties": false,
+        "properties": {
+          "cantidad": {
+            "default": 1,
+            "title": "Cantidad",
+            "type": "integer"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "productoRef": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Productoref"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku"
+          },
+          "talla": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Talla"
+          }
+        },
+        "title": "AddItemIn",
+        "type": "object"
+      },
+      "ApplyCouponRequest": {
+        "additionalProperties": false,
+        "description": "Input for `POST /api/v1/carrito/cupon` (`SPEC-13` Req. 1).",
+        "properties": {
+          "codigo": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Codigo",
+            "type": "string"
+          },
+          "confirmarReemplazo": {
+            "default": false,
+            "title": "Confirmarreemplazo",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "codigo"
+        ],
+        "title": "ApplyCouponRequest",
+        "type": "object"
+      },
+      "AvailabilityOut": {
+        "additionalProperties": false,
+        "properties": {
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "veredicto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Veredicto"
+          }
+        },
+        "required": [
+          "sku",
+          "status"
+        ],
+        "title": "AvailabilityOut",
+        "type": "object"
+      },
+      "BuyerContactDTO": {
+        "description": "Buyer contact and identity document snapshot (`SPEC-12` Req. 1, `SPEC-15` Req. 1).",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "nombreCompleto": {
+            "maxLength": 150,
+            "minLength": 1,
+            "title": "Nombrecompleto",
+            "type": "string"
+          },
+          "numeroDocumento": {
+            "title": "Numerodocumento",
+            "type": "string"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefono"
+          },
+          "tipoDocumento": {
+            "title": "Tipodocumento",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nombreCompleto",
+          "tipoDocumento",
+          "numeroDocumento"
+        ],
+        "title": "BuyerContactDTO",
+        "type": "object"
+      },
+      "ClearCartIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmado": {
+            "default": false,
+            "title": "Confirmado",
+            "type": "boolean"
+          }
+        },
+        "title": "ClearCartIn",
+        "type": "object"
+      },
+      "ConversationCreatedOut": {
+        "properties": {
+          "conversacionId": {
+            "format": "uuid",
+            "title": "Conversacionid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversacionId"
+        ],
+        "title": "ConversationCreatedOut",
+        "type": "object"
+      },
+      "ConversationSearchResultOut": {
+        "description": "Search row: the list shape plus `resaltado` (SPEC-05 Req. 1 · Buscar chats). Segments are plain\ntext; the client marks the ones with `coincide` and must not render them as HTML.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "preview": {
+            "title": "Preview",
+            "type": "string"
+          },
+          "resaltado": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchHighlightOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "titulo": {
+            "title": "Titulo",
+            "type": "string"
+          },
+          "ultimoMensajeEn": {
+            "format": "date-time",
+            "title": "Ultimomensajeen",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "titulo",
+          "preview",
+          "ultimoMensajeEn"
+        ],
+        "title": "ConversationSearchResultOut",
+        "type": "object"
+      },
+      "ConversationSummaryOut": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "preview": {
+            "title": "Preview",
+            "type": "string"
+          },
+          "titulo": {
+            "title": "Titulo",
+            "type": "string"
+          },
+          "ultimoMensajeEn": {
+            "format": "date-time",
+            "title": "Ultimomensajeen",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "titulo",
+          "preview",
+          "ultimoMensajeEn"
+        ],
+        "title": "ConversationSummaryOut",
+        "type": "object"
+      },
+      "CreateCheckoutRequest": {
+        "additionalProperties": false,
+        "description": "Input for `POST /api/v1/checkout` (`SPEC-14` Req. 2).",
+        "properties": {
+          "cartId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cartid"
+          },
+          "contacto": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuyerContactDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "conversacionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversacionid"
+          },
+          "direccion": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direccion"
+          },
+          "guardarDireccion": {
+            "default": false,
+            "title": "Guardardireccion",
+            "type": "boolean"
+          }
+        },
+        "title": "CreateCheckoutRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HighlightSegmentOut": {
+        "properties": {
+          "coincide": {
+            "title": "Coincide",
+            "type": "boolean"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          }
+        },
+        "required": [
+          "texto",
+          "coincide"
+        ],
+        "title": "HighlightSegmentOut",
+        "type": "object"
+      },
+      "LoginIn": {
+        "additionalProperties": false,
+        "properties": {
+          "canal": {
+            "default": "EMAIL",
+            "pattern": "^(EMAIL|SMS)$",
+            "title": "Canal",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginIn",
+        "type": "object"
+      },
+      "MessageOut": {
+        "properties": {
+          "bloques": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bloques"
+          },
+          "conversacionId": {
+            "format": "uuid",
+            "title": "Conversacionid",
+            "type": "string"
+          },
+          "creadoEn": {
+            "format": "date-time",
+            "title": "Creadoen",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "rol": {
+            "title": "Rol",
+            "type": "string"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "conversacionId",
+          "rol",
+          "texto",
+          "creadoEn"
+        ],
+        "title": "MessageOut",
+        "type": "object"
+      },
+      "MfaChallenge": {
+        "properties": {
+          "canal": {
+            "default": "EMAIL",
+            "title": "Canal",
+            "type": "string"
+          },
+          "mfaRequerido": {
+            "default": true,
+            "title": "Mfarequerido",
+            "type": "boolean"
+          }
+        },
+        "title": "MfaChallenge",
+        "type": "object"
+      },
+      "OkResponse": {
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "OkResponse",
+        "type": "object"
+      },
+      "OpenedSession": {
+        "properties": {
+          "accessToken": {
+            "title": "Accesstoken",
+            "type": "string"
+          },
+          "expiresIn": {
+            "default": 900,
+            "title": "Expiresin",
+            "type": "integer"
+          },
+          "usuario": {
+            "additionalProperties": true,
+            "title": "Usuario",
+            "type": "object"
+          }
+        },
+        "required": [
+          "accessToken"
+        ],
+        "title": "OpenedSession",
+        "type": "object"
+      },
+      "OrderDetailResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "canal": {
+            "default": "CHATBOT",
+            "title": "Canal",
+            "type": "string"
+          },
+          "envio": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Envio"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "estadoEtiqueta": {
+            "title": "Estadoetiqueta",
+            "type": "string"
+          },
+          "fechaCreacion": {
+            "title": "Fechacreacion",
+            "type": "string"
+          },
+          "historial": {
+            "items": {
+              "$ref": "#/components/schemas/OrderHistoryMilestoneDTO"
+            },
+            "title": "Historial",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderLineItemDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "moneda": {
+            "default": "PEN",
+            "title": "Moneda",
+            "type": "string"
+          },
+          "pedidoId": {
+            "title": "Pedidoid",
+            "type": "string"
+          },
+          "seguimientoDisponible": {
+            "default": false,
+            "title": "Seguimientodisponible",
+            "type": "boolean"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "pedidoId",
+          "estado",
+          "estadoEtiqueta",
+          "total",
+          "fechaCreacion"
+        ],
+        "title": "OrderDetailResponse",
+        "type": "object"
+      },
+      "OrderHistoryMilestoneDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "completado": {
+            "default": true,
+            "title": "Completado",
+            "type": "boolean"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "etiqueta": {
+            "title": "Etiqueta",
+            "type": "string"
+          },
+          "fecha": {
+            "title": "Fecha",
+            "type": "string"
+          }
+        },
+        "required": [
+          "estado",
+          "etiqueta",
+          "fecha"
+        ],
+        "title": "OrderHistoryMilestoneDTO",
+        "type": "object"
+      },
+      "OrderLineItemDTO": {
+        "properties": {
+          "cantidad": {
+            "minimum": 1.0,
+            "title": "Cantidad",
+            "type": "integer"
+          },
+          "descripcion": {
+            "title": "Descripcion",
+            "type": "string"
+          },
+          "precioUnitario": {
+            "minimum": 0.0,
+            "title": "Preciounitario",
+            "type": "number"
+          },
+          "productoId": {
+            "title": "Productoid",
+            "type": "string"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "productoId",
+          "sku",
+          "descripcion",
+          "cantidad",
+          "precioUnitario"
+        ],
+        "title": "OrderLineItemDTO",
+        "type": "object"
+      },
+      "OrderListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderSummaryItemDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "default": 10,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "total": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "OrderListResponse",
+        "type": "object"
+      },
+      "OrderSummaryItemDTO": {
+        "properties": {
+          "canal": {
+            "default": "CHATBOT",
+            "title": "Canal",
+            "type": "string"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "estadoEtiqueta": {
+            "title": "Estadoetiqueta",
+            "type": "string"
+          },
+          "fechaCreacion": {
+            "title": "Fechacreacion",
+            "type": "string"
+          },
+          "moneda": {
+            "default": "PEN",
+            "title": "Moneda",
+            "type": "string"
+          },
+          "pedidoId": {
+            "title": "Pedidoid",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "pedidoId",
+          "estado",
+          "estadoEtiqueta",
+          "total",
+          "fechaCreacion"
+        ],
+        "title": "OrderSummaryItemDTO",
+        "type": "object"
+      },
+      "OrderTrackingResponse": {
+        "additionalProperties": false,
+        "description": "Whitelisted tracking projection (`SPEC-18` Req. 3 & RNF Privacy).",
+        "properties": {
+          "detalleDisponible": {
+            "default": true,
+            "title": "Detalledisponible",
+            "type": "boolean"
+          },
+          "distrito": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distrito"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "estadoEtiqueta": {
+            "title": "Estadoetiqueta",
+            "type": "string"
+          },
+          "fechaProgramada": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fechaprogramada"
+          },
+          "hitos": {
+            "items": {
+              "$ref": "#/components/schemas/TrackingMilestoneDTO"
+            },
+            "title": "Hitos",
+            "type": "array"
+          },
+          "mensaje": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mensaje"
+          },
+          "pedidoId": {
+            "title": "Pedidoid",
+            "type": "string"
+          },
+          "recibidoPor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recibidopor"
+          }
+        },
+        "required": [
+          "pedidoId",
+          "estado",
+          "estadoEtiqueta"
+        ],
+        "title": "OrderTrackingResponse",
+        "type": "object"
+      },
+      "ProcessPaymentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "cvv": {
+            "title": "Cvv",
+            "type": "string"
+          },
+          "numeroTarjeta": {
+            "title": "Numerotarjeta",
+            "type": "string"
+          },
+          "titular": {
+            "title": "Titular",
+            "type": "string"
+          },
+          "vencimiento": {
+            "title": "Vencimiento",
+            "type": "string"
+          }
+        },
+        "required": [
+          "numeroTarjeta",
+          "titular",
+          "vencimiento",
+          "cvv"
+        ],
+        "title": "ProcessPaymentRequest",
+        "type": "object"
+      },
+      "ReenviarVerificacionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "minLength": 5,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ReenviarVerificacionIn",
+        "type": "object"
+      },
+      "RegistroIn": {
+        "additionalProperties": false,
+        "description": "SPEC-01 Req. 1: the chatbot collects these fields before the BFF call.",
+        "properties": {
+          "acceptTerms": {
+            "title": "Acceptterms",
+            "type": "boolean"
+          },
+          "email": {
+            "maxLength": 254,
+            "minLength": 5,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "firstName": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Firstname",
+            "type": "string"
+          },
+          "lastName": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Lastname",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "phone": {
+            "pattern": "^(\\+51)?[0-9]{9}$",
+            "title": "Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "phone",
+          "firstName",
+          "lastName",
+          "acceptTerms"
+        ],
+        "title": "RegistroIn",
+        "type": "object"
+      },
+      "RegistroOut": {
+        "description": "The chat turns this into its confirmation message; the phone is not echoed back.",
+        "properties": {
+          "correoEnmascarado": {
+            "title": "Correoenmascarado",
+            "type": "string"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          }
+        },
+        "required": [
+          "estado",
+          "correoEnmascarado"
+        ],
+        "title": "RegistroOut",
+        "type": "object"
+      },
+      "RequestMfaIn": {
+        "additionalProperties": false,
+        "properties": {
+          "canal": {
+            "default": "EMAIL",
+            "pattern": "^(EMAIL|SMS)$",
+            "title": "Canal",
+            "type": "string"
+          }
+        },
+        "title": "RequestMfaIn",
+        "type": "object"
+      },
+      "ResendConfirmationResponse": {
+        "additionalProperties": false,
+        "description": "Output of `POST /api/v1/pedidos/{pedidoId}/reenviar-confirmacion` (`SPEC-16` Req. 3).",
+        "properties": {
+          "correoEnmascarado": {
+            "title": "Correoenmascarado",
+            "type": "string"
+          },
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "pedidoId": {
+            "title": "Pedidoid",
+            "type": "string"
+          },
+          "reenviosRestantes": {
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Reenviosrestantes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pedidoId",
+          "reenviosRestantes",
+          "correoEnmascarado"
+        ],
+        "title": "ResendConfirmationResponse",
+        "type": "object"
+      },
+      "SavedAddressDTO": {
+        "description": "Saved address returned by `GET /api/v1/direcciones` (Seguridad proxy).",
+        "properties": {
+          "departamento": {
+            "default": "Lima",
+            "title": "Departamento",
+            "type": "string"
+          },
+          "destinatario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destinatario"
+          },
+          "direccion": {
+            "title": "Direccion",
+            "type": "string"
+          },
+          "distrito": {
+            "title": "Distrito",
+            "type": "string"
+          },
+          "etiqueta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etiqueta"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "predeterminada": {
+            "default": false,
+            "title": "Predeterminada",
+            "type": "boolean"
+          },
+          "provincia": {
+            "default": "Lima",
+            "title": "Provincia",
+            "type": "string"
+          },
+          "referencia": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referencia"
+          }
+        },
+        "required": [
+          "id",
+          "distrito",
+          "direccion"
+        ],
+        "title": "SavedAddressDTO",
+        "type": "object"
+      },
+      "SavedAddressesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "direcciones": {
+            "items": {
+              "$ref": "#/components/schemas/SavedAddressDTO"
+            },
+            "title": "Direcciones",
+            "type": "array"
+          }
+        },
+        "title": "SavedAddressesResponse",
+        "type": "object"
+      },
+      "SearchHighlightOut": {
+        "properties": {
+          "fragmento": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/HighlightSegmentOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fragmento"
+          },
+          "titulo": {
+            "items": {
+              "$ref": "#/components/schemas/HighlightSegmentOut"
+            },
+            "title": "Titulo",
+            "type": "array"
+          }
+        },
+        "required": [
+          "titulo",
+          "fragmento"
+        ],
+        "title": "SearchHighlightOut",
+        "type": "object"
+      },
+      "SendMessageIn": {
+        "additionalProperties": false,
+        "properties": {
+          "accion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolAction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "adjuntoIds": {
+            "title": "Adjuntoids"
+          },
+          "texto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texto"
+          }
+        },
+        "title": "SendMessageIn",
+        "type": "object"
+      },
+      "SetQuantityIn": {
+        "additionalProperties": false,
+        "properties": {
+          "cantidad": {
+            "title": "Cantidad",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cantidad"
+        ],
+        "title": "SetQuantityIn",
+        "type": "object"
+      },
+      "ShippingQuoteRequest": {
+        "additionalProperties": false,
+        "description": "Input for `POST /api/v1/envio/cotizar` (`SPEC-12` Req. 2 & Req. 4).\n\nAccepts both the Ventas field names (`destinatario`, `direccion`) and the\nCheckout UI aliases (`nombreCompleto`, `direccionExacta`).",
+        "properties": {
+          "conversacionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversacionid"
+          },
+          "departamento": {
+            "default": "Lima",
+            "title": "Departamento",
+            "type": "string"
+          },
+          "destinatario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destinatario"
+          },
+          "direccion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direccion"
+          },
+          "direccionExacta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direccionexacta"
+          },
+          "distrito": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Distrito",
+            "type": "string"
+          },
+          "nombreCompleto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombrecompleto"
+          },
+          "provincia": {
+            "default": "Lima",
+            "title": "Provincia",
+            "type": "string"
+          },
+          "referencia": {
+            "anyOf": [
+              {
+                "maxLength": 250,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referencia"
+          }
+        },
+        "required": [
+          "distrito"
+        ],
+        "title": "ShippingQuoteRequest",
+        "type": "object"
+      },
+      "ShippingQuoteResponse": {
+        "additionalProperties": false,
+        "description": "Output of `POST /api/v1/envio/cotizar` (`SPEC-12` Req. 4).",
+        "properties": {
+          "coberturaDisponible": {
+            "default": true,
+            "title": "Coberturadisponible",
+            "type": "boolean"
+          },
+          "costoEnvio": {
+            "minimum": 0.0,
+            "title": "Costoenvio",
+            "type": "number"
+          },
+          "distrito": {
+            "title": "Distrito",
+            "type": "string"
+          },
+          "fechaEstimadaEntrega": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fechaestimadaentrega"
+          },
+          "modalidad": {
+            "default": "DELIVERY",
+            "title": "Modalidad",
+            "type": "string"
+          },
+          "moneda": {
+            "default": "PEN",
+            "title": "Moneda",
+            "type": "string"
+          },
+          "nombreZona": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombrezona"
+          },
+          "plazoEstimadoDias": {
+            "minimum": 0.0,
+            "title": "Plazoestimadodias",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "costoEnvio",
+          "plazoEstimadoDias",
+          "distrito"
+        ],
+        "title": "ShippingQuoteResponse",
+        "type": "object"
+      },
+      "ToolAction": {
+        "additionalProperties": false,
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "tipo": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo"
+        ],
+        "title": "ToolAction",
+        "type": "object"
+      },
+      "TrackingMilestoneDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "completado": {
+            "default": true,
+            "title": "Completado",
+            "type": "boolean"
+          },
+          "fecha": {
+            "title": "Fecha",
+            "type": "string"
+          },
+          "titulo": {
+            "title": "Titulo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "titulo",
+          "fecha"
+        ],
+        "title": "TrackingMilestoneDTO",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VerificarCorreoIn": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "maxLength": 512,
+            "minLength": 8,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "VerificarCorreoIn",
+        "type": "object"
+      },
+      "VerifyMfaIn": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^\\d{6}$",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "VerifyMfaIn",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "G3 Chatbot backend",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/carrito": {
+      "delete": {
+        "operationId": "clear_cart_api_v1_carrito_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "conversacionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversacionid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearCartIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Clear Cart Api V1 Carrito Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Cart",
+        "tags": [
+          "carrito"
+        ]
+      },
+      "get": {
+        "operationId": "view_cart_api_v1_carrito_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "conversacionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversacionid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response View Cart Api V1 Carrito Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "View Cart",
+        "tags": [
+          "carrito"
+        ]
+      }
+    },
+    "/api/v1/carrito/cupon": {
+      "delete": {
+        "operationId": "remove_coupon_api_v1_carrito_cupon_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "conversacionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversacionid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Coupon Api V1 Carrito Cupon Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Coupon",
+        "tags": [
+          "carrito"
+        ]
+      },
+      "post": {
+        "operationId": "apply_coupon_api_v1_carrito_cupon_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "conversacionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversacionid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyCouponRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Apply Coupon Api V1 Carrito Cupon Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Coupon",
+        "tags": [
+          "carrito"
+        ]
+      }
+    },
+    "/api/v1/carrito/items": {
+      "post": {
+        "operationId": "add_item_api_v1_carrito_items_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "conversacionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversacionid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddItemIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Item Api V1 Carrito Items Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Item",
+        "tags": [
+          "carrito"
+        ]
+      }
+    },
+    "/api/v1/carrito/items/{item_id}": {
+      "delete": {
+        "operationId": "remove_item_api_v1_carrito_items__item_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversacionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversacionid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Item Api V1 Carrito Items  Item Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Item",
+        "tags": [
+          "carrito"
+        ]
+      },
+      "patch": {
+        "operationId": "set_quantity_api_v1_carrito_items__item_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversacionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversacionid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetQuantityIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Quantity Api V1 Carrito Items  Item Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Quantity",
+        "tags": [
+          "carrito"
+        ]
+      }
+    },
+    "/api/v1/catalogo/disponibilidad": {
+      "get": {
+        "operationId": "availability_api_v1_catalogo_disponibilidad_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sku",
+            "required": true,
+            "schema": {
+              "title": "Sku",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cantidad",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cantidad"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AvailabilityOut"
+                  },
+                  "title": "Response Availability Api V1 Catalogo Disponibilidad Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Availability",
+        "tags": [
+          "catalogo"
+        ]
+      }
+    },
+    "/api/v1/catalogo/productos": {
+      "get": {
+        "operationId": "search_products_api_v1_catalogo_productos_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "categoria",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Categoria"
+            }
+          },
+          {
+            "in": "query",
+            "name": "marca",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Marca"
+            }
+          },
+          {
+            "in": "query",
+            "name": "precioMin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Preciomin"
+            }
+          },
+          {
+            "in": "query",
+            "name": "precioMax",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Preciomax"
+            }
+          },
+          {
+            "in": "query",
+            "name": "orden",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Orden"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pagina",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Pagina",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tamanio",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 10,
+              "minimum": 1,
+              "title": "Tamanio",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Search Products Api V1 Catalogo Productos Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Products",
+        "tags": [
+          "catalogo"
+        ]
+      }
+    },
+    "/api/v1/catalogo/productos/{product_id}": {
+      "get": {
+        "operationId": "product_detail_api_v1_catalogo_productos__product_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "title": "Product Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Product Detail Api V1 Catalogo Productos  Product Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Product Detail",
+        "tags": [
+          "catalogo"
+        ]
+      }
+    },
+    "/api/v1/chat/conversaciones": {
+      "get": {
+        "operationId": "list_conversations_api_v1_chat_conversaciones_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pagina",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Pagina",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationSummaryOut"
+                  },
+                  "title": "Response List Conversations Api V1 Chat Conversaciones Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Conversations",
+        "tags": [
+          "conversaciones"
+        ]
+      },
+      "post": {
+        "operationId": "create_conversation_api_v1_chat_conversaciones_post",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Conversation",
+        "tags": [
+          "conversaciones"
+        ]
+      }
+    },
+    "/api/v1/chat/conversaciones/buscar": {
+      "get": {
+        "operationId": "search_conversations_api_v1_chat_conversaciones_buscar_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pagina",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Pagina",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationSearchResultOut"
+                  },
+                  "title": "Response Search Conversations Api V1 Chat Conversaciones Buscar Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Conversations",
+        "tags": [
+          "conversaciones"
+        ]
+      }
+    },
+    "/api/v1/chat/conversaciones/{conversation_id}/mensajes": {
+      "get": {
+        "operationId": "get_history_api_v1_chat_conversaciones__conversation_id__mensajes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MessageOut"
+                  },
+                  "title": "Response Get History Api V1 Chat Conversaciones  Conversation Id  Mensajes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get History",
+        "tags": [
+          "conversaciones"
+        ]
+      },
+      "post": {
+        "description": "Phase 1 (validation, ownership, persisting the message) finishes before the response starts, so\nits errors are ordinary problem+json. The turn then streams as Server-Sent Events (see sse.py).",
+        "operationId": "send_message_api_v1_chat_conversaciones__conversation_id__mensajes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Message",
+        "tags": [
+          "conversaciones"
+        ]
+      }
+    },
+    "/api/v1/checkout": {
+      "post": {
+        "operationId": "create_checkout_api_v1_checkout_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCheckoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Checkout Api V1 Checkout Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Checkout",
+        "tags": [
+          "checkout"
+        ]
+      }
+    },
+    "/api/v1/checkout/{checkout_id}": {
+      "get": {
+        "operationId": "get_checkout_api_v1_checkout__checkout_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "checkout_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Checkout Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Checkout Api V1 Checkout  Checkout Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Checkout",
+        "tags": [
+          "checkout"
+        ]
+      }
+    },
+    "/api/v1/checkout/{checkout_id}/pago": {
+      "post": {
+        "operationId": "process_payment_api_v1_checkout__checkout_id__pago_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "checkout_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Checkout Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessPaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Process Payment Api V1 Checkout  Checkout Id  Pago Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Process Payment",
+        "tags": [
+          "checkout"
+        ]
+      }
+    },
+    "/api/v1/direcciones": {
+      "get": {
+        "operationId": "list_saved_addresses_api_v1_direcciones_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedAddressesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Saved Addresses",
+        "tags": [
+          "envio"
+        ]
+      }
+    },
+    "/api/v1/envio/cotizar": {
+      "post": {
+        "operationId": "quote_shipping_api_v1_envio_cotizar_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShippingQuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShippingQuoteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Quote Shipping",
+        "tags": [
+          "envio"
+        ]
+      }
+    },
+    "/api/v1/pedidos": {
+      "get": {
+        "operationId": "list_orders_api_v1_pedidos_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "estado",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estado"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Orders",
+        "tags": [
+          "pedidos"
+        ]
+      }
+    },
+    "/api/v1/pedidos/{pedido_id}": {
+      "get": {
+        "operationId": "get_order_detail_api_v1_pedidos__pedido_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pedido_id",
+            "required": true,
+            "schema": {
+              "title": "Pedido Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Order Detail",
+        "tags": [
+          "pedidos"
+        ]
+      }
+    },
+    "/api/v1/pedidos/{pedido_id}/reenviar-confirmacion": {
+      "post": {
+        "operationId": "resend_confirmation_api_v1_pedidos__pedido_id__reenviar_confirmacion_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pedido_id",
+            "required": true,
+            "schema": {
+              "title": "Pedido Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResendConfirmationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend Confirmation",
+        "tags": [
+          "pedidos"
+        ]
+      }
+    },
+    "/api/v1/pedidos/{pedido_id}/seguimiento": {
+      "get": {
+        "operationId": "get_order_tracking_api_v1_pedidos__pedido_id__seguimiento_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pedido_id",
+            "required": true,
+            "schema": {
+              "title": "Pedido Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderTrackingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Order Tracking",
+        "tags": [
+          "pedidos"
+        ]
+      }
+    },
+    "/api/v1/sesion/login": {
+      "post": {
+        "operationId": "login_api_v1_sesion_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OpenedSession"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MfaChallenge"
+                    }
+                  ],
+                  "title": "Response Login Api V1 Sesion Login Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "sesion"
+        ]
+      }
+    },
+    "/api/v1/sesion/logout": {
+      "post": {
+        "operationId": "logout_api_v1_sesion_logout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "sesion"
+        ]
+      }
+    },
+    "/api/v1/sesion/mfa/solicitar": {
+      "post": {
+        "operationId": "request_mfa_api_v1_sesion_mfa_solicitar_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestMfaIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Mfa",
+        "tags": [
+          "sesion"
+        ]
+      }
+    },
+    "/api/v1/sesion/mfa/verificar": {
+      "post": {
+        "operationId": "verify_mfa_api_v1_sesion_mfa_verificar_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyMfaIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenedSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Mfa",
+        "tags": [
+          "sesion"
+        ]
+      }
+    },
+    "/api/v1/sesion/perfil": {
+      "get": {
+        "operationId": "profile_api_v1_sesion_perfil_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Profile",
+        "tags": [
+          "sesion"
+        ]
+      }
+    },
+    "/api/v1/sesion/politica-contrasena": {
+      "get": {
+        "description": "Password rules the chat renders before asking for one (SPEC-01 Req. 2).",
+        "operationId": "password_policy_api_v1_sesion_politica_contrasena_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Password Policy",
+        "tags": [
+          "sesion"
+        ]
+      }
+    },
+    "/api/v1/sesion/refresh": {
+      "post": {
+        "operationId": "refresh_api_v1_sesion_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenedSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "sesion"
+        ]
+      }
+    },
+    "/api/v1/sesion/registro": {
+      "post": {
+        "description": "Creates a `PENDIENTE_VERIFICACION` account; it never opens a session (SPEC-01).",
+        "operationId": "register_api_v1_sesion_registro_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistroIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistroOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register",
+        "tags": [
+          "sesion"
+        ]
+      }
+    },
+    "/api/v1/sesion/verificar-correo": {
+      "post": {
+        "description": "Consumes the single-use link; expired/used links answer 410 with a code (SPEC-02).",
+        "operationId": "verify_email_api_v1_sesion_verificar_correo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerificarCorreoIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Email",
+        "tags": [
+          "sesion"
+        ]
+      }
+    },
+    "/api/v1/sesion/verificar-correo/reenviar": {
+      "post": {
+        "description": "Always neutral: the same 202 whether or not the account exists (SPEC-02 Req. 2).",
+        "operationId": "resend_verification_api_v1_sesion_verificar_correo_reenviar_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReenviarVerificacionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend Verification",
+        "tags": [
+          "sesion"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  }
+}

@@ -20,7 +20,6 @@ from src.ports.outbound.product_repository_port import (
     MAX_COMMERCIAL_SKUS,
     normalize_sku_list,
 )
-from src.ports.outbound.service_token_port import ServiceTokenProvider
 
 INVENTORY_TIMEOUT_SECONDS = 3.0
 
@@ -30,15 +29,11 @@ class InventoryClient(ProductsBaseClient):
         self,
         base_url: str,
         timeout_seconds: float = INVENTORY_TIMEOUT_SECONDS,
-        service_token_provider: ServiceTokenProvider | None = None,
         client: httpx.AsyncClient | None = None,
+        service_token_provider=None,
     ):
-        super().__init__(
-            base_url=base_url,
-            timeout_seconds=timeout_seconds,
-            service_token_provider=service_token_provider,
-            client=client,
-        )
+        super().__init__(base_url=base_url, timeout_seconds=timeout_seconds, client=client)
+        self._service_token_provider = service_token_provider
 
     async def get_availability(
         self,
@@ -72,21 +67,22 @@ class InventoryClient(ProductsBaseClient):
     ) -> list[dict[str, Any]]:
         """Non-binding per-line verdicts for requested quantities.
 
-        `channel_id` follows validacion-stock/design.md; provisional until
-        Productos confirms (A5/A16).
+        G6 OpenAPI a7778ec requires the delivery fulfillment context.
+        Wire `result` is projected to the internal `veredicto` field.
         """
         clean = self._check_lines(lines)
         response = await self._request(
             "POST",
             "/inventario/disponibilidad/comercial/verificar",
-            json={"channel_id": channel_id, "lines": clean},
+            json={"channel_id": channel_id, "fulfillment": {"mode": "ENVIO_DOMICILIO"}, "lines": clean},
             correlation_id=correlation_id,
         )
         verdicts = await self._parse_response(response)
         if isinstance(verdicts, list):
             return verdicts
         if isinstance(verdicts, dict) and isinstance(verdicts.get("items"), list):
-            return verdicts["items"]
+            return [{**row, "veredicto": row.get("result", row.get("veredicto"))}
+                    for row in verdicts["items"]]
         raise ValueError(
             f"expected a list or paginated items, got {type(verdicts).__name__}"
         )

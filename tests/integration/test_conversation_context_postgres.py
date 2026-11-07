@@ -73,6 +73,20 @@ async def test_a_stranger_cannot_read_or_write_the_memory(postgres_session):
         await make_catalog(postgres_session).search(
             SearchArguments(q="Nike"), context_for(cid, sid=STRANGER.anonymous_sid)
         )
-
     assert raised.value.code == "RECURSO_NO_ENCONTRADO"
     assert await conversations.get_context(cid) == {}
+
+
+async def test_discovery_policy_survives_use_case_reload(postgres_session):
+    from src.application.tools.catalog_tools import EmptyArguments, RecommendationArguments
+
+    conversations = ConversationPostgresAdapter(postgres_session)
+    cid = (await conversations.create(OWNER)).id
+    catalog = make_catalog(postgres_session)
+    await catalog.recommend(RecommendationArguments(actividad="fútbol"), context_for(cid))
+    assert (await conversations.get_context(cid))["recommendationQuestions"] == 1
+    await catalog.cross_sell("prod-001", context_for(cid))
+    reloaded = make_catalog(postgres_session)
+    assert await reloaded.cross_sell("prod-001", context_for(cid)) == []
+    await reloaded.silence(EmptyArguments(), context_for(cid))
+    assert await make_catalog(postgres_session).cross_sell("prod-002", context_for(cid)) == []

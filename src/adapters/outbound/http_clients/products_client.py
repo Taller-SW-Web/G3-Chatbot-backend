@@ -7,15 +7,17 @@ Only 2xx bodies are returned as data: 4xx answers raise
 (timeout/connection/5xx) raise `ModuleUnavailableError` (503 + module).
 External `codigo` fields normalize to `code` on the way out.
 
-Provisional until Productos confirms (A5/A16): the `GET /precios`
-query names (`skus`, `canal`, from busqueda-filtrado/design.md) and the
-`at` field sent to `POST /promociones/evaluar`
-(not listed in contratos-integracion.md §3.2).
+Contract reference: G6 docs a7778ec, OpenAPI 0.6.0-rc.3 and
+integraciones/ALINEACION_CHATBOT.md. Catalog variants carry SKU and optional
+attributes; pricing and commercial availability are separate queries.
+Service 401/403 failures become upstream unavailability, never customer logout.
 
 Open question: respx mocks live in
 `tests/helpers`; the default `http://localhost:4011` has no server behind,
 so deployed environments still need a mocks hosting decision (ADR-0017).
 """
+import logging
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -24,6 +26,7 @@ from urllib.parse import quote
 import httpx
 
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient
+from src.domain.services.product_projection import normalize_detail
 from src.ports.outbound.module_errors import (
     ModuleRequestError,
     ModuleUnavailableError,
@@ -32,7 +35,9 @@ from src.ports.outbound.product_repository_port import (
     MAX_SKUS_PER_CALL,
     normalize_sku_list,
 )
-from src.ports.outbound.service_token_port import ServiceTokenProvider
+from src.ports.outbound.request_context import correlation_id_var
+
+logger = logging.getLogger(__name__)
 
 MAX_PRICE_DECIMALS = Decimal("0.01")
 
@@ -50,7 +55,7 @@ def format_price(value: Decimal | float | int, name: str) -> str:
         amount = Decimal(str(value)).quantize(MAX_PRICE_DECIMALS)
     except (InvalidOperation, ValueError) as exc:
         raise ValueError(f"{name} must be a number, got {value!r}") from exc
-    if amount < 0:
+    if not amount.is_finite() or amount < 0:
         raise ValueError(f"{name} must be >= 0, got {value!r}")
     return f"{amount:.2f}"
 
@@ -79,22 +84,27 @@ class ProductsBaseClient(BaseModuleClient):
 
     module: str = "productos"
 
-    def __init__(
-        self,
-        base_url: str,
-        timeout_seconds: float = 4.0,
-        service_token_provider: ServiceTokenProvider | None = None,
-        client: httpx.AsyncClient | None = None,
-    ):
-        super().__init__(base_url=base_url, timeout_seconds=timeout_seconds, client=client)
-        self._service_tokens = service_token_provider
-
-    async def _request(self, method: str, path: str, correlation_id: str | None = None, **kwargs) -> httpx.Response:
-        headers = dict(kwargs.pop("headers", None) or {})
-        if self._service_tokens and "Authorization" not in headers:
-            token = await self._service_tokens.get_token(correlation_id=correlation_id)
-            headers["Authorization"] = f"Bearer {token}"
-        return await super()._request(method, path, correlation_id=correlation_id, headers=headers, **kwargs)
+    async def _request(self, method, path, correlation_id=None, **kwargs):
+        correlation_id = correlation_id or correlation_id_var.get() or str(uuid.uuid4())
+        provider = getattr(self, "_service_token_provider", None)
+        if provider is not None:
+            headers = dict(kwargs.pop("headers", {}))
+            try:
+                token = await provider.get_token(correlation_id=correlation_id)
+            except ModuleRequestError as exc:
+                if exc.status not in (401, 403):
+                    raise
+                logger.warning("service credential rejected by token provider: HTTP %s", exc.status)
+                raise ModuleUnavailableError(self.module, "service credential rejected") from exc
+            headers["Authorization"] = "Bearer " + token
+            kwargs["headers"] = headers
+        response = await super()._request(method, path, correlation_id=correlation_id, **kwargs)
+        if response.status_code in (401, 403):
+            if response.status_code == 401 and provider is not None:
+                provider.invalidate(token)
+            logger.warning("service credential rejected by %s: HTTP %s", self.module, response.status_code)
+            raise ModuleUnavailableError(self.module, "service credential rejected")
+        return response
 
     async def _parse_response(self, response: httpx.Response) -> Any:
         try:
@@ -109,7 +119,11 @@ class ProductsBaseClient(BaseModuleClient):
                 raise ModuleUnavailableError(
                     self.module, f"invalid JSON body: {exc}"
                 ) from exc
-        parsed = parse_product_body(self.module, response.status_code, body)
+        try:
+            parsed = parse_product_body(self.module, response.status_code, body)
+        except ModuleRequestError as exc:
+            exc.retry_after = response.headers.get("Retry-After")
+            raise
         return self.normalize_code(parsed) if isinstance(parsed, dict) else parsed
 
 
@@ -118,15 +132,11 @@ class ProductsClient(ProductsBaseClient):
         self,
         base_url: str,
         timeout_seconds: float = 4.0,
-        service_token_provider: ServiceTokenProvider | None = None,
         client: httpx.AsyncClient | None = None,
+        service_token_provider=None,
     ):
-        super().__init__(
-            base_url=base_url,
-            timeout_seconds=timeout_seconds,
-            service_token_provider=service_token_provider,
-            client=client,
-        )
+        super().__init__(base_url=base_url, timeout_seconds=timeout_seconds, client=client)
+        self._service_token_provider = service_token_provider
 
     async def search_products(
         self,
@@ -150,7 +160,6 @@ class ProductsClient(ProductsBaseClient):
             "canal": channel,
             "pagina": page,
             "tamanio": size,
-            "estado": state,
         }
         if q is not None:
             params["q"] = q
@@ -178,9 +187,10 @@ class ProductsClient(ProductsBaseClient):
         response = await self._request(
             "GET",
             f"/productos/{quote(product_id, safe='')}",
+            params={"canal": "CHATBOT"},
             correlation_id=correlation_id,
         )
-        return await self._parse_response(response)
+        return normalize_detail(await self._parse_response(response))
 
     async def list_categories(
         self, *, correlation_id: str | None = None
@@ -188,13 +198,13 @@ class ProductsClient(ProductsBaseClient):
         response = await self._request(
             "GET", "/categorias", correlation_id=correlation_id
         )
-        return self._unwrap_list(await self._parse_response(response))
+        return self._unwrap_list(await self._parse_response(response), "categories")
 
     async def list_brands(
         self, *, correlation_id: str | None = None
     ) -> list[dict[str, Any]]:
         response = await self._request("GET", "/marcas", correlation_id=correlation_id)
-        return self._unwrap_list(await self._parse_response(response))
+        return self._unwrap_list(await self._parse_response(response), "brands")
 
     async def get_price(
         self, sku: str, *, correlation_id: str | None = None
@@ -202,6 +212,7 @@ class ProductsClient(ProductsBaseClient):
         response = await self._request(
             "GET",
             f"/precios/skus/{quote(sku, safe='')}",
+            params={"canal": "CHATBOT"},
             correlation_id=correlation_id,
         )
         return await self._parse_response(response)
@@ -228,9 +239,17 @@ class ProductsClient(ProductsBaseClient):
         """Current promotions (`GET /promociones`): resolves `promotion_id`
         to a display name. Provisional shape until Productos confirms (A5)."""
         response = await self._request(
-            "GET", "/promociones", correlation_id=correlation_id
+            "GET", "/promociones", params={"canal": "CHATBOT", "vigentes": "true"}, correlation_id=correlation_id
         )
         return self._unwrap_list(await self._parse_response(response))
+
+    async def get_recommendations(self, product_id: str, *, correlation_id=None):
+        response = await self._request("GET", "/recomendaciones",
+            params={"productoId": product_id, "canal": "CHATBOT"}, correlation_id=correlation_id)
+        body = await self._parse_response(response)
+        if not isinstance(body, dict) or not isinstance(body.get("recommendations"), list):
+            raise ModuleUnavailableError(self.module, "invalid recommendations response")
+        return body["recommendations"]
 
     async def evaluate_promotions(
         self,
@@ -256,9 +275,11 @@ class ProductsClient(ProductsBaseClient):
         return await self._parse_response(response)
 
     @staticmethod
-    def _unwrap_list(payload: Any) -> list[dict[str, Any]]:
+    def _unwrap_list(payload: Any, envelope: str = "items") -> list[dict[str, Any]]:
         if isinstance(payload, list):
             return payload
-        if isinstance(payload, dict) and isinstance(payload.get("items"), list):
-            return payload["items"]
+        if isinstance(payload, dict):
+            for key in (envelope, "items"):
+                if isinstance(payload.get(key), list):
+                    return payload[key]
         raise ValueError(f"expected a list or paginated items, got {type(payload).__name__}")

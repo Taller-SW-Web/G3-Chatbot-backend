@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from src.application.catalog.discovery import fold
 from src.application.dto.conversation_events import (
     BlockEvent,
     ConversationEvent,
@@ -51,6 +52,7 @@ from src.ports.outbound.llm_provider_port import (
     ToolDefinition,
 )
 from src.ports.outbound.message_repository_port import MessageRepositoryPort
+from src.ports.outbound.request_context import correlation_id_var
 from src.ports.outbound.tool_executor_port import (
     INVALID_ARGUMENTS,
     ToolExecutionContext,
@@ -172,6 +174,7 @@ class InterpretAndRespondUseCase:
     ) -> AsyncIterator[ConversationEvent]:
         started = time.monotonic()
         turn = _Turn()
+        correlation_token = correlation_id_var.set(str(uuid.uuid4()))
         try:
             yield MessageAcceptedEvent(customer_message)
             async for event in self._loop(caller, conversation, turn, started, customer_message.text):
@@ -184,6 +187,8 @@ class InterpretAndRespondUseCase:
             else:
                 await self._uow.rollback()
             raise
+        finally:
+            correlation_id_var.reset(correlation_token)
 
     async def _loop(
         self,
@@ -202,6 +207,31 @@ class InterpretAndRespondUseCase:
                 customer_id=caller.customer_id,
                 anonymous_sid=caller.anonymous_sid,
             )
+            memory = await self._conversations.get_context(conversation.id)
+            normalized = fold(customer_text).strip(" .!,;¿?¡")
+            forced = None
+            if memory.get("crossSellPending") and normalized not in {"no gracias", "no, gracias", "no"}:
+                memory["crossSellPending"] = False
+                await self._conversations.save_context(conversation.id, memory)
+            if memory.get("crossSellLastProduct") and normalized in {
+                "quiero complementos", "ver complementos", "muestrame complementos", "complementos"}:
+                forced = ("recomendar_productos", {"actividad": "complementos", "omitirPreguntas": True})
+            if memory.get("crossSellPending") and normalized in {"no gracias", "no, gracias", "no"}:
+                forced = ("silenciar_complementos", {})
+            elif memory.get("recommendationPending") and normalized in {
+                "no se", "no se, muestrame algo", "muestrame algo", "sin preguntas", "no gracias", "no, gracias"}:
+                forced = ("recomendar_productos", {**memory.get("recommendationProfile", {}), "omitirPreguntas": True})
+            if forced and forced[0] in {tool.name for tool in tool_definitions}:
+                result = await self._execute_tool(ToolCall(id=str(uuid.uuid4()), name=forced[0], arguments=forced[1]),
+                                                  execution, turn, conversation.id)
+                reply = str(result.data.get("texto", ""))
+                for item in result.blocks:
+                    yield BlockEvent(dict(item))
+                final = await self._persist_reply(conversation.id, reply, list(result.blocks), turn, started)
+                if final.message.text:
+                    yield TokenEvent(final.message.text)
+                yield FinalEvent(final.message)
+                return
             degraded: DegradedReason | None = None
             try:
                 for iteration in range(MAX_ITERATIONS):
@@ -210,7 +240,6 @@ class InterpretAndRespondUseCase:
                     async for event in self._stream_llm(context, tool_definitions):
                         if isinstance(event, TextDelta):
                             iteration_text.append(event.text)
-                            yield TokenEvent(event.text)
                         elif isinstance(event, ToolCallRequested):
                             calls.append(event.call)
                         elif isinstance(event, Completed) and event.usage is not None:
@@ -279,19 +308,20 @@ class InterpretAndRespondUseCase:
                             yield BlockEvent(dict(search_block))
                     else:
                         reply = self._degraded_mode.responder("").texto
-                # The client drops the tokens it had before `degradado`; the fallback text is streamed after
-                # it so the live message matches the stored reply.
-                yield TokenEvent(reply)
-                for block in fallback_blocks:
-                    yield BlockEvent(block)
-                # Blocks of tools that already ran were streamed, so they stay in the stored reply too.
+                # Persist the validated text before publishing it, including on degraded turns.
                 blocks = [*turn.blocks, *fallback_blocks]
                 final = await self._persist_reply(conversation.id, reply, blocks, turn, started)
+                if final.message.text:
+                    yield TokenEvent(final.message.text)
+                for block in fallback_blocks:
+                    yield BlockEvent(block)
             else:
                 reply = "".join(turn.text_parts)
                 final = await self._persist_reply(
                     conversation.id, reply, turn.blocks, turn, started
                 )
+                if final.message.text:
+                    yield TokenEvent(final.message.text)
         except Exception:
             await self._uow.rollback()
             raise
@@ -355,6 +385,8 @@ class InterpretAndRespondUseCase:
         if result.code == INVALID_ARGUMENTS:
             turn.validation_failures += 1
         turn.tool_names.append(call.name)
+        if call.name == "recomendar_productos":
+            turn.recommendation_text = str(result.data.get("texto") or "No pude consultar recomendaciones en este momento.")
         await self._messages.add(
             conversation_id,
             MessageRole.TOOL,
@@ -412,6 +444,13 @@ class InterpretAndRespondUseCase:
             montos=turn.authorized_amounts,
             porcentajes=turn.authorized_percentages,
         ).texto
+        recommendation_rows = [row for item in blocks if item.get("tipo") == "CARRUSEL_PRODUCTOS"
+                               and item.get("datos", {}).get("variant") == "recomendacion"
+                               for row in item["datos"].get("productos", [])]
+        if turn.recommendation_text is not None:
+            text = turn.recommendation_text
+        if recommendation_rows:
+            text = self._output_validator.validar_recomendaciones(text, productos=recommendation_rows).texto
         latency_ms = int((time.monotonic() - started) * 1000)
         message = await self._messages.add(
             conversation_id,
@@ -431,6 +470,7 @@ class _Turn:
     """Mutable bookkeeping of one assistant turn."""
 
     def __init__(self) -> None:
+        self.recommendation_text: str | None = None
         self.text_parts: list[str] = []
         self.blocks: list[dict[str, Any]] = []
         self.tool_names: list[str] = []

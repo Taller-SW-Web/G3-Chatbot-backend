@@ -1,1 +1,72 @@
-{"brand":"Nike","brand_id":"brand-nike","category_id":"cat-zapatillas","currency":"PEN","description":"Zapatillas de running con amortiguación diaria","images":["https://cdn.example.com/p/prod-001-1.jpg","https://cdn.example.com/p/prod-001-2.jpg"],"name":"Nike Revolution 7","precio_oferta":279.9,"precio_regular":329.9,"product_id":"prod-001","sku_base":"NIK-REV7","tiene_variantes":true,"variants":[{"color":"negro","currency":"PEN","precio_oferta":279.9,"precio_regular":329.9,"sku":"NIK-REV7-42-NEG","talla":"42"},{"color":"blanco","currency":"PEN","precio_oferta":279.9,"precio_regular":329.9,"sku":"NIK-REV7-42-BLA","talla":"42"},{"color":"negro","currency":"PEN","precio_oferta":279.9,"precio_regular":329.9,"sku":"NIK-REV7-43-NEG","talla":"43"}]}
+{
+  "description": "Zapatillas de running con amortiguación diaria",
+  "images": [
+    "https://cdn.example.com/p/prod-001-1.jpg",
+    "https://cdn.example.com/p/prod-001-2.jpg"
+  ],
+  "marca": {
+    "marca_id": "brand-nike",
+    "name": "Nike"
+  },
+  "marca_id": "brand-nike",
+  "name": "Nike Revolution 7",
+  "product_id": "prod-001",
+  "sku_base": "NIK-REV7",
+  "tiene_variantes": true,
+  "variants": [
+    {
+      "identifying_attributes": [
+        {
+          "nombre": "Talla",
+          "valor": "42",
+          "caracteristica_id": "talla"
+        },
+        {
+          "nombre": "Color",
+          "valor": "negro",
+          "caracteristica_id": "color"
+        }
+      ],
+      "non_identifying_attributes": [],
+      "sku": "NIK-REV7-42-NEG",
+      "variant_id": "NIK-REV7-42-NEG"
+    },
+    {
+      "identifying_attributes": [
+        {
+          "nombre": "Talla",
+          "valor": "42",
+          "caracteristica_id": "talla"
+        },
+        {
+          "nombre": "Color",
+          "valor": "blanco",
+          "caracteristica_id": "color"
+        }
+      ],
+      "non_identifying_attributes": [],
+      "sku": "NIK-REV7-42-BLA",
+      "variant_id": "NIK-REV7-42-BLA"
+    },
+    {
+      "identifying_attributes": [
+        {
+          "nombre": "Talla",
+          "valor": "43",
+          "caracteristica_id": "talla"
+        },
+        {
+          "nombre": "Color",
+          "valor": "negro",
+          "caracteristica_id": "color"
+        }
+      ],
+      "non_identifying_attributes": [],
+      "sku": "NIK-REV7-43-NEG",
+      "variant_id": "NIK-REV7-43-NEG"
+    }
+  ],
+  "categoria_id": "cat-zapatillas",
+  "slug": "prod-001",
+  "tipo_producto_id": "tipo-demo"
+}
