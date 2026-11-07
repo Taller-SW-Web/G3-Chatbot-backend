@@ -218,3 +218,51 @@ async def test_first_concurrent_add_maps_unique_clash_to_conflict():
         await cart_uc.add(make_caller(), CONVERSATION_ID,
                           sku="NIK-REV7-42-NEG", quantity=1)
     assert error.value.code == "CONFLICTO"
+
+
+@pytest.mark.asyncio
+async def test_add_by_name_without_attributes_asks_for_variant():
+    """A named product outside the last carousel still reaches the variant selector."""
+    cart_uc, conversations = make_cart_use_case(
+        {"NIK-REV7-42-NEG": "DISPONIBLE"})
+    owned(cart_uc, conversations)
+    result = await cart_uc.add(
+        make_caller(), CONVERSATION_ID, name="Nike Revolution 7", quantity=1)
+    assert result["requiere_variante"] is True
+    assert result["product_id"] == "prod-001"
+    assert set(result["faltantes"]) == {"talla", "color"}
+    assert result["bloques"][0]["tipo"] == "SELECTOR_VARIANTE"
+
+
+@pytest.mark.asyncio
+async def test_add_by_name_with_size_and_color_adds_the_line():
+    cart_uc, conversations = make_cart_use_case(
+        {"NIK-REV7-42-NEG": "DISPONIBLE"})
+    owned(cart_uc, conversations)
+    result = await cart_uc.add(
+        make_caller(), CONVERSATION_ID, name="Nike Revolution 7",
+        size="42", color="negro", quantity=1)
+    assert "requiere_variante" not in result
+    lines = result["bloques"][0]["datos"]["lineas"]
+    assert [line["sku"] for line in lines] == ["NIK-REV7-42-NEG"]
+
+
+@pytest.mark.asyncio
+async def test_add_by_unknown_name_returns_the_not_found_answer():
+    cart_uc, conversations = make_cart_use_case()
+    owned(cart_uc, conversations)
+    with pytest.raises(CartError) as error:
+        await cart_uc.add(
+            make_caller(), CONVERSATION_ID, name="zzz inexistente", quantity=1)
+    assert error.value.code == "PRODUCTO_NO_DISPONIBLE"
+    assert "No encontré un producto llamado zzz inexistente" in error.value.detail
+
+
+@pytest.mark.asyncio
+async def test_add_by_ambiguous_name_asks_which_product():
+    cart_uc, conversations = make_cart_use_case()
+    owned(cart_uc, conversations)
+    with pytest.raises(CartError) as error:
+        await cart_uc.add(make_caller(), CONVERSATION_ID, name="Nike", quantity=1)
+    assert error.value.code == "PRODUCTO_NO_DISPONIBLE"
+    assert "Encontré varios productos parecidos a Nike" in error.value.detail

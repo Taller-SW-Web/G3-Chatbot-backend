@@ -65,10 +65,16 @@ async def test_supplier_object_values_resolve_and_filter_before_pricing():
 @pytest.mark.parametrize("payload", [
     {}, {"sku": "s", "productoRef": 1}, {"product_id": "p", "productoRef": 1},
     {"sku": "s", "product_id": "p", "productoRef": 1},
+    {"nombre": "n", "productoRef": 1}, {"nombre": "n", "sku": "s"},
+    {"nombre": "n", "product_id": "p"},
 ])
 def test_conflicting_product_references_stay_invalid(payload):
     with pytest.raises(ValueError):
         AddArguments(**payload)
+
+
+def test_add_arguments_accept_a_product_name_alone():
+    assert AddArguments(nombre="Nike Revolution 7").nombre == "Nike Revolution 7"
 
 
 @pytest.mark.asyncio
