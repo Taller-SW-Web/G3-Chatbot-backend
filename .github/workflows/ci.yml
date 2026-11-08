@@ -209,6 +209,10 @@ jobs:
 
   # Análisis de SonarCloud con la cobertura del job de unitarias. El proyecto espera
   # el Quality Gate (`sonar.qualitygate.wait`), así que un gate rojo tumba el job.
+  #
+  # Los PRs de Dependabot se ejecutan como si vinieran de un fork: no reciben
+  # secretos. Sin token el escaneo no puede autenticarse, así que se omite y el job
+  # queda verde; la cobertura y el resto del gate siguen intactos.
   sonar:
     name: SonarCloud
     runs-on: ubuntu-latest
@@ -219,11 +223,24 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Detect SONAR_TOKEN
+        id: token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Sin SONAR_TOKEN (PR de Dependabot): se omite SonarCloud."
+          fi
       - name: Download coverage
+        if: steps.token.outputs.available == 'true'
         uses: actions/download-artifact@v4
         with:
           name: coverage-backend
       - name: SonarCloud scan
+        if: steps.token.outputs.available == 'true'
         uses: SonarSource/sonarqube-scan-action@v8.4.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
