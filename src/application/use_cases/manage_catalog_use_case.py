@@ -161,9 +161,23 @@ class ManageCatalogUseCase(DiscoveryMixin):
                 summaries = [row for row in summaries if row["offer_price"] is not None]
             total = len(summaries) if args.soloOfertas or local_filter else page.get("total", len(summaries))
             scope = "page" if args.soloOfertas or local_filter else "catalog"
-            text = (f"Encontré {total} productos en esta página y los mostré en pantalla con precio y disponibilidad."
-                    if scope == "page" else
-                    f"Encontré {total} productos y los mostré en pantalla con precio y disponibilidad.")
+            if not summaries:
+                # Local filters can empty the page: never render an empty carousel.
+                return {
+                    "code": "OK",
+                    "total": 0,
+                    "total_scope": scope,
+                    "texto": (
+                        "No encontré productos con esos filtros en esta página. "
+                        "Prueba quitando un filtro o buscando por categoría."
+                    ),
+                    "bloques": [],
+                }
+            where = " en esta página" if scope == "page" else ""
+            text = (f"Encontré {total} productos{where}; en pantalla se muestran {len(summaries)} "
+                    "con precio y disponibilidad."
+                    if total > len(summaries) else
+                    f"Encontré {total} productos{where} y se muestran en pantalla con precio y disponibilidad.")
         for index, row in enumerate(summaries, 1):
             row["ref"] = index
         memory[MEMORY_CAROUSEL_KEY] = [s["product_id"] for s in summaries]
