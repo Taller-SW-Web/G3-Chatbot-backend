@@ -10,6 +10,12 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    ignore:
+      # pytest 9 rompe pytest-asyncio: 76 errores de coleccion con
+      # `FixtureManager._arg2fixturedefs`. Quitar esta regla cuando
+      # pytest-asyncio publique soporte para pytest 9.
+      - dependency-name: "pytest"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: "/"
