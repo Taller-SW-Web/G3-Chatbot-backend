@@ -438,12 +438,15 @@ class ManageCatalogUseCase(DiscoveryMixin):
                 *(self._catalog.get_product_detail(pid) for _, pid in missing),
                 return_exceptions=True,
             )
-            for (position, _), data in zip(missing, fetched):
-                if isinstance(data, ModuleRequestError) and data.status == 404:
+            for (position, _), detail in zip(missing, fetched, strict=True):
+                if isinstance(detail, ModuleRequestError) and detail.status == 404:
                     continue
-                if isinstance(data, BaseException):
-                    raise self.map_module_error(data)
-                resolved.append((position, data))
+                if isinstance(detail, Exception):
+                    raise self.map_module_error(detail)
+                if not isinstance(detail, dict):
+                    # Sin detalle (None) no hay nada que mostrar: se omite como el 404.
+                    continue
+                resolved.append((position, detail))
         resolved.sort(key=lambda entry: entry[0])
         # Bound commercial fan-out, selecting requested attributes before the cap.
         resolved = [
@@ -570,7 +573,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
             return "AGOTADO"
         return "INDETERMINADO"
 
-    async def _reference_price(self, data: dict) -> Decimal:
+    async def _reference_price(self, data: dict) -> Decimal | None:
         """Price of the current product, from its SKU prices (detail carries none)."""
         variants = data.get("variants") or []
         skus = [str(v.get("sku")) for v in variants if v.get("sku")]

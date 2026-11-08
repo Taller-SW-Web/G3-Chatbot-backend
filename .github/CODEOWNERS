@@ -1,0 +1,4 @@
+# Equipo del proyecto: cualquiera de sus miembros puede dar la revisión que
+# falte. GitHub no permite aprobar el PR propio, así que un CODEOWNERS con una
+# sola persona bloquearía sus propios cambios.
+* @Taller-SW-Web/chatbot

@@ -73,6 +73,11 @@ def _lines(summary: dict[str, Any]) -> list[dict[str, Any]]:
     return lines
 
 
+def _mapping(value: Any) -> dict[str, Any]:
+    """El valor si es un diccionario; vacío si no lo es (evita `None.get`)."""
+    return value if isinstance(value, dict) else {}
+
+
 def _coupon(summary: dict[str, Any]) -> str | None:
     coupon = summary.get("cupon")
     if isinstance(coupon, dict):
@@ -93,7 +98,7 @@ def _address(summary: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _delivery_days(summary: dict[str, Any]) -> int | None:
-    envio = summary.get("envio") if isinstance(summary.get("envio"), dict) else {}
+    envio = _mapping(summary.get("envio"))
     for value in (summary.get("plazoEstimadoDias"), envio.get("plazoEstimadoDias"),
                   envio.get("plazoEstimadoDiasHabiles")):
         if value not in (None, ""):
@@ -116,7 +121,7 @@ def build_confirmation_context(
     summary = source.summary
     discount = _amount(summary.get("descuento"))
     created: datetime = source.created_at
-    contacto = summary.get("contacto") if isinstance(summary.get("contacto"), dict) else {}
+    contacto = _mapping(summary.get("contacto"))
     return {
         "asunto": confirmation_subject(source.order_id),
         "pedido_id": source.order_id,

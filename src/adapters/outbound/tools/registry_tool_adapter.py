@@ -21,7 +21,7 @@ _BLOCKS_KEY = "bloques"
 
 # Tools that need an explicit on-screen click. Confirm re-sends the action with
 # `confirmado: true`; only that UI path (never the LLM) may execute it.
-_CONFIRMATION_PROMPTS = {
+_CONFIRMATION_PROMPTS: dict[str, dict[str, Any]] = {
     "vaciar_carrito": {
         "pregunta": "¿Seguro que quieres vaciar tu carrito?",
         "confirmar": {"id": "VACIAR_CARRITO", "etiqueta": "Sí, vaciar", "payload": {"confirmado": True}},
@@ -60,7 +60,7 @@ def _confirmation_prompt(data: Mapping[str, Any]) -> ToolResult | None:
     """Turn a pending confirmation into buttons the customer can click."""
     pending = data.get("accionPendiente")
     tool = pending.get("herramienta") if isinstance(pending, Mapping) else None
-    prompt = _CONFIRMATION_PROMPTS.get(tool)
+    prompt = _CONFIRMATION_PROMPTS.get(tool) if isinstance(tool, str) else None
     if prompt is None:
         return None
     actions = [dict(prompt["confirmar"]), dict(prompt["cancelar"])]

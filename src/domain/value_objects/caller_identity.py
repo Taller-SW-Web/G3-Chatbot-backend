@@ -13,6 +13,13 @@ class CallerIdentity:
     customer_id: uuid.UUID | None = None
     anonymous_sid: str | None = None
 
+    @property
+    def customer(self) -> uuid.UUID:
+        """`customer_id` de un llamante autenticado (lo garantiza `require_customer`)."""
+        if self.customer_id is None:
+            raise ValueError("anonymous caller has no customer_id")
+        return self.customer_id
+
     def __post_init__(self) -> None:
         if (self.customer_id is None) == (self.anonymous_sid is None):
             raise ValueError("CallerIdentity needs exactly one of customer_id or anonymous_sid")

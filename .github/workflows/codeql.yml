@@ -1,0 +1,36 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+    branches: [development, main]
+  schedule:
+    # Weekly full scan (Mondays 06:00 UTC) besides the PR/push runs.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+          # Consultas ampliadas: además del set por defecto incluye las de seguridad.
+          queries: security-extended
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4

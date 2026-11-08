@@ -12,7 +12,7 @@ from src.domain.services.product_projection import normalize_detail
 class VariantMatch:
     sku: str | None = None
     missing: tuple[str, ...] = ()
-    alternatives: tuple[dict] = ()
+    alternatives: tuple[dict, ...] = ()
 
 
 def _fold(text: str) -> str:
