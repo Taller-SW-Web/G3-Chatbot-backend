@@ -161,8 +161,9 @@ class ManageCatalogUseCase(DiscoveryMixin):
                 summaries = [row for row in summaries if row["offer_price"] is not None]
             total = len(summaries) if args.soloOfertas or local_filter else page.get("total", len(summaries))
             scope = "page" if args.soloOfertas or local_filter else "catalog"
-            text = (f"Encontré {total} productos en esta página." if scope == "page" else
-                    f"Encontré {total} productos. Te muestro los primeros:")
+            text = (f"Encontré {total} productos en esta página y los mostré en pantalla con precio y disponibilidad."
+                    if scope == "page" else
+                    f"Encontré {total} productos y los mostré en pantalla con precio y disponibilidad.")
         for index, row in enumerate(summaries, 1):
             row["ref"] = index
         memory[MEMORY_CAROUSEL_KEY] = [s["product_id"] for s in summaries]
