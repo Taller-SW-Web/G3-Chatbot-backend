@@ -45,7 +45,8 @@ class _Call:
 class HttpMock:
     """Sustituto mínimo de `respx` sobre el transporte del SDK 3.x."""
 
-    def __init__(self) -> None:
+    def __init__(self, method: str, url: str) -> None:
+        self.method, self.url = method, url
         self.calls: list[_Call] = []
         self.called = False
         self._response: httpx2.Response | None = None
@@ -63,14 +64,19 @@ class HttpMock:
         assert self._response is not None
         return self._response
 
+    def unmatched_calls(self) -> list[str]:
+        """Peticiones que no fueron al método y URL registrados (respx las rechazaba)."""
+        return [f"{c.request.method} {c.request.url}" for c in self.calls
+                if c.request.method != self.method or str(c.request.url) != self.url]
+
 
 _ACTIVE: HttpMock | None = None
 
 
-def http_mock_post(_url: str) -> HttpMock:
+def http_mock_post(url: str) -> HttpMock:
     """Registra la respuesta que devolverá el transporte del SDK en este test."""
     global _ACTIVE
-    _ACTIVE = HttpMock()
+    _ACTIVE = HttpMock("POST", url)
     return _ACTIVE
 
 
@@ -79,12 +85,16 @@ def _fresh_transport():
     global _ACTIVE
     _ACTIVE = None
     yield
-    _ACTIVE = None
+    # Se verifica al final: un assert dentro del transporte lo envolvería el SDK como error de conexión.
+    route, _ACTIVE = _ACTIVE, None
+    if route is not None:
+        assert route.unmatched_calls() == []
 
 
-def _client_with_transport(route: HttpMock) -> AsyncOpenAI:
+def _client_with_transport(route: HttpMock, timeout_seconds: float) -> AsyncOpenAI:
+    # Misma configuración que el cliente de producción del adapter (sin reintentos del SDK).
     return AsyncOpenAI(
-        api_key="test-key",
+        api_key="test-key", timeout=timeout_seconds, max_retries=0,
         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(route.handler)),
     )
 
@@ -95,7 +105,7 @@ def make_provider(**overrides) -> OpenAILLMProvider:
     merged = {**params, **overrides}
     # Sin api_key el adapter debe fallar de forma diferida: no se inyecta cliente.
     if _ACTIVE is not None and merged.get("api_key") is not None:
-        merged.setdefault("client", _client_with_transport(_ACTIVE))
+        merged.setdefault("client", _client_with_transport(_ACTIVE, merged["timeout_seconds"]))
     return OpenAILLMProvider(**merged)
 
 
