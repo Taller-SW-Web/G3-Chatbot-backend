@@ -4,7 +4,7 @@
 
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
-pydantic>=2.14.2,<3.0
+pydantic>=2.14.3,<3.0
 SQLAlchemy[asyncio]>=2.0.30,<3.0
 alembic>=1.13,<2.0
 psycopg2-binary>=2.9,<3.0  # Alembic runs sync (env.py); async paths use asyncpg.
