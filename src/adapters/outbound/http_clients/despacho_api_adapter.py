@@ -114,12 +114,20 @@ class DespachoClient(BaseModuleClient):
         if 400 <= response.status_code < 500:
             code = f"HTTP_{response.status_code}"
             detail = ""
-            if isinstance(body, dict):
+            if isinstance(body, dict) and body:
                 code = str(body.get("code", body.get("codigo", code)))
                 raw_detail = body.get("detail", body.get("message"))
                 if isinstance(raw_detail, str):
                     detail = raw_detail
-            raise ModuleRequestError(self.module, response.status_code, code, detail)
+            elif response.status_code == 429:
+                # Despacho documenta `DESP_ERROR_LIMITE_COTIZACION`. Un 429 sin
+                # JSON (gateway o proxy por delante) sigue siendo un limite de
+                # peticiones del modulo, nunca un 503.
+                code = "DESP_ERROR_LIMITE_COTIZACION"
+                detail = "Demasiadas cotizaciones. Intenta de nuevo en un minuto."
+            error = ModuleRequestError(self.module, response.status_code, code, detail)
+            error.retry_after = response.headers.get("Retry-After")
+            raise error
         raise ModuleUnavailableError(
             self.module, f"unexpected HTTP {response.status_code}"
         )

@@ -16,15 +16,14 @@ from src.ports.outbound.module_errors import ModuleUnavailableError
 
 
 def build_destination(payload: ShippingQuoteRequest) -> dict[str, Any]:
-    """Despacho `destino` from a validated quote request."""
-    return {
-        "destinatario": payload.destinatario,
-        "direccion": payload.direccion,
-        "distrito": payload.distrito,
-        "departamento": payload.departamento,
-        "provincia": payload.provincia,
-        "referencia": payload.referencia,
-    }
+    """Despacho `destino` con solo los campos que documenta su contrato.
+
+    `distrito` es el unico obligatorio y `direccion` es opcional para cotizar;
+    el destinatario y el resto de la direccion no forman parte de la cotizacion
+    (Ventas los usa cuando crea el despacho).
+    """
+    destination = {"distrito": payload.distrito, "direccion": payload.direccion}
+    return {key: value for key, value in destination.items() if value not in (None, "")}
 
 
 def build_quote_lines(rows: Iterable[Any]) -> list[dict[str, Any]]:
