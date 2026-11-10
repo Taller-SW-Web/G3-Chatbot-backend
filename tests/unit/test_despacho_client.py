@@ -150,3 +150,38 @@ async def test_tracking_requests_the_tracking_scope():
     assert tokens.kwargs == [
         {"scope": "seguimientos:leer", "audience": "api-despacho"}
     ]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_plain_text_429_is_a_rate_limit_not_a_module_outage():
+    """Un 429 sin JSON (gateway/proxy) debe seguir siendo límite de peticiones."""
+    respx.post(f"{BASE_URL}/cotizaciones").mock(
+        return_value=httpx.Response(429, text="Too Many Requests")
+    )
+
+    with pytest.raises(ModuleRequestError) as exc:
+        await make_client().quote_shipping(destino={"distrito": "Miraflores"},
+                                           lineas=[{"sku": "X", "cantidad": 1}])
+
+    assert exc.value.status == 429
+    assert exc.value.code == "DESP_ERROR_LIMITE_COTIZACION"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_429_keeps_retry_after_when_the_module_sends_it():
+    respx.post(f"{BASE_URL}/cotizaciones").mock(
+        return_value=httpx.Response(
+            429,
+            json={"codigo": "DESP_ERROR_LIMITE_COTIZACION"},
+            headers={"Retry-After": "30"},
+        )
+    )
+
+    with pytest.raises(ModuleRequestError) as exc:
+        await make_client().quote_shipping(destino={"distrito": "Miraflores"},
+                                           lineas=[{"sku": "X", "cantidad": 1}])
+
+    assert exc.value.code == "DESP_ERROR_LIMITE_COTIZACION"
+    assert exc.value.retry_after == "30"
