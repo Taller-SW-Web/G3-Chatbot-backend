@@ -8,7 +8,15 @@ import pytest_asyncio
 from sqlalchemy import Column, MetaData, Table, Text, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models import Attachment, Conversation, Evidence, Message
+from src.adapters.outbound.persistence.models import (
+    Attachment,
+    Cart,
+    CartItem,
+    Checkout,
+    Conversation,
+    Evidence,
+    Message,
+)
 from src.infrastructure.db.connection import create_engine
 
 # The in-process outbox worker (lifespan) must never poll a database during tests.
@@ -24,6 +32,10 @@ def persistence_metadata():
     Message.__table__.to_metadata(metadata)
     Evidence.__table__.to_metadata(metadata)
     Attachment.__table__.to_metadata(metadata)
+    # Carrito y checkout: los adapters de SPEC-11/12/14 se prueban contra el SQL real.
+    Cart.__table__.to_metadata(metadata)
+    CartItem.__table__.to_metadata(metadata)
+    Checkout.__table__.to_metadata(metadata)
     return metadata
 
 
