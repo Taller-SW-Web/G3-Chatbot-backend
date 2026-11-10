@@ -139,7 +139,18 @@ jobs:
           alembic downgrade base
           alembic upgrade head
       - name: Run integration tests
-        run: python -m pytest tests/integration
+        # `--cov-fail-under=0`: este reporte no se evalúa solo. Sonar combina la
+        # cobertura de integración con la de unitarias y el umbral se aplica una
+        # vez sobre el total del proyecto.
+        run: |
+          python -m pytest tests/integration \
+            --cov=src --cov-report=xml:coverage-integration.xml --cov-fail-under=0
+      - name: Upload integration coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-integration
+          path: coverage-integration.xml
+          if-no-files-found: error
 
   # Advisory during Fase 2: a finding is reported but does not block the gate yet.
   security:
@@ -207,8 +218,8 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
 
-  # Análisis de SonarCloud con la cobertura del job de unitarias. El proyecto espera
-  # el Quality Gate (`sonar.qualitygate.wait`), así que un gate rojo tumba el job.
+  # Análisis de SonarCloud con la cobertura de unitarias e integración. El proyecto
+  # espera el Quality Gate (`sonar.qualitygate.wait`), así que un gate rojo tumba el job.
   #
   # Los PRs de Dependabot se ejecutan como si vinieran de un fork: no reciben
   # secretos. Sin token el escaneo no puede autenticarse, así que se omite y el job
@@ -217,7 +228,7 @@ jobs:
     name: SonarCloud
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [unit-tests]
+    needs: [unit-tests, integration-tests]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -234,11 +245,14 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Sin SONAR_TOKEN (PR de Dependabot): se omite SonarCloud."
           fi
-      - name: Download coverage
+      - name: Download coverage reports
         if: steps.token.outputs.available == 'true'
         uses: actions/download-artifact@v8
         with:
-          name: coverage-backend
+          # `coverage-backend` (unitarias) y `coverage-integration` aterrizan en la
+          # raíz: Sonar los lee juntos y suma las líneas cubiertas por cualquiera.
+          pattern: coverage-*
+          merge-multiple: true
       - name: SonarCloud scan
         if: steps.token.outputs.available == 'true'
         uses: SonarSource/sonarqube-scan-action@v8.4.1
