@@ -8,4 +8,6 @@ venv/
 # Coverage artifacts (CI uploads them; never committed)
 .coverage
 coverage.xml
+coverage-integration.xml
+coverage-combined.xml
 htmlcov/
