@@ -67,6 +67,10 @@ async def test_carrito_anonimo_por_conversacion(postgres_session):
     assert (await adapter.obtener_abierto_por_conversacion(conversacion.id)).id == carrito.id
     assert await adapter.obtener_abierto_por_conversacion(uuid.uuid4()) is None
 
+    # Índice único parcial: un segundo carrito abierto en la misma conversación choca.
+    with pytest.raises(CartConflictError):
+        await adapter.crear_anonimo(conversacion.id)
+
 
 async def test_estado_totales_cupon_y_reset(postgres_session):
     adapter = CartPostgresAdapter(postgres_session)
@@ -205,29 +209,46 @@ async def test_checkout_consultas_estado_e_intentos(postgres_session):
     for esperado in (1, 2, 3):
         assert (await adapter.incrementar_intentos(checkout.id)).payment_attempts == esperado
 
+    # CHECK payment_attempts BETWEEN 0 AND 3: el cuarto intento lo rechaza la BD.
+    # Deja la sesión en error, así que va al final del test.
+    with pytest.raises(IntegrityError):
+        await adapter.incrementar_intentos(checkout.id)
+
 
 async def test_latest_document_usa_el_snapshot_del_ultimo_contacto(postgres_session):
     carrito = await CartPostgresAdapter(postgres_session).crear_para_cliente(uuid.uuid4())
     cart_id = carrito.id
     cliente = uuid.uuid4()
     adapter = CheckoutPostgresAdapter(postgres_session)
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
     assert await adapter.latest_document(cliente) is None
 
-    sin_documento = await adapter.guardar(nuevo_checkout(cart_id, cliente, "key-1"))
+    sin_documento = await adapter.guardar(nuevo_checkout(cart_id, cliente, "key-1", created_at=t0))
     assert await adapter.latest_document(cliente) is None
 
     await adapter.marcar_estado(sin_documento.id, "FAILED")
-    # `now()` es el inicio de la transacción: dos filas del mismo test comparten
-    # created_at, así que el "último" se fija con una marca explícita.
-    await adapter.guardar(nuevo_checkout(
+    # Contacto incompleto (sin numeroDocumento) pero más reciente: no se expone.
+    incompleto = await adapter.guardar(nuevo_checkout(
         cart_id,
         cliente,
         "key-2",
-        created_at=AHORA + timedelta(minutes=5),
+        created_at=t0 + timedelta(minutes=1),
+        summary={"contacto": {"tipoDocumento": "DNI"}},
+    ))
+    assert await adapter.latest_document(cliente) is None
+
+    # Un solo checkout vivo por carrito: el anterior pasa a FAILED antes del nuevo.
+    await adapter.marcar_estado(incompleto.id, "FAILED")
+
+    # El más reciente sí trae el documento completo.
+    await adapter.guardar(nuevo_checkout(
+        cart_id,
+        cliente,
+        "key-3",
+        created_at=t0 + timedelta(minutes=2),
         summary={"contacto": {"tipoDocumento": "DNI", "numeroDocumento": "12345678"}},
     ))
-
     assert await adapter.latest_document(cliente) == {"tipo": "DNI", "numero": "12345678"}
-    # El contacto incompleto (sin número) no se expone.
+    # Otro cliente no ve este documento.
     assert await adapter.latest_document(uuid.uuid4()) is None

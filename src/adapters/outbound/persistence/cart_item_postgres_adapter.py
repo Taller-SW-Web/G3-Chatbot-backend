@@ -46,7 +46,13 @@ class CartItemPostgresAdapter:
         return res.scalar_one_or_none()
 
     async def listar_por_cart(self, cart_id: uuid.UUID) -> list[CartItem]:
-        stmt = select(CartItem).where(CartItem.cart_id == cart_id).order_by(CartItem.created_at)
+        # `id` (uuidv7) desempata: dos líneas creadas en la misma transacción
+        # comparten created_at y el orden de la UI quedaría indefinido.
+        stmt = (
+            select(CartItem)
+            .where(CartItem.cart_id == cart_id)
+            .order_by(CartItem.created_at, CartItem.id)
+        )
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
 
