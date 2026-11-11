@@ -1,4 +1,6 @@
-.env
+# Entorno: todo lo local queda fuera del repo; la plantilla sí se versiona.
+.env*
+!.env.template
 __pycache__/
 *.py[cod]
 .pytest_cache/
