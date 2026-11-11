@@ -26,9 +26,13 @@ pip install -r requirements.txt
 # 4. Esquema
 alembic upgrade head
 
-# 5. Servidor
-uvicorn src.infrastructure.main:app --reload
+# 5. Servidor (uvicorn carga el .env; python-dotenv viene con uvicorn[standard])
+uvicorn src.infrastructure.main:app --reload --env-file .env
 ```
+
+`alembic` carga el `.env` por su cuenta (`src/infrastructure/db/migrations/env.py`),
+así que no hace falta exportar `DATABASE_URL` a mano. `load_dotenv` no sobreescribe
+variables ya exportadas: en CI o en un contenedor manda el entorno real.
 
 Con `MODULES_MODE=fake` (valor de la plantilla) el backend no llama a G2, G5, G6
 ni G7: todo funciona contra adaptadores en memoria. **No hace falta ningún
@@ -76,8 +80,9 @@ Dos detalles que cuestan tiempo si se pasan por alto:
 - **`SALES_MODE=fake` explícito**. Si se omite, hereda `MODULES_MODE=http` y apunta a
   `localhost:4012`, que no existe: los flujos de pedidos fallan con error de red.
   Ventas (G5) todavía no está desplegado para el chatbot.
-- **`COOKIE_SECURE=false` en local**. Con `true`, algunos navegadores no guardan la
-  cookie de sesión sobre `http://localhost`. En cualquier despliegue HTTPS va en `true`.
+- **`COOKIE_SECURE=false` en local**. El backend local sirve por HTTP y no queremos
+  que el entorno dependa de que el navegador trate `localhost` como contexto seguro.
+  En cualquier despliegue HTTPS va en `true`.
 
 Para el perfil real solo hace falta un secreto: `SECURITY_CLIENT_SECRET`
 (token de servicio de G7). `LLM_API_KEY` es independiente del perfil y solo se
