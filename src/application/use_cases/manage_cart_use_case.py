@@ -25,7 +25,7 @@ from src.application.tools.tool_registry import ExecutionContext
 from src.domain.entities.message import MessageRole
 from src.domain.services.cart_line_resolver import CartLineResolver
 from src.domain.services.offer_policy import amount, instant, price_projection
-from src.domain.services.product_projection import normalize_detail
+from src.domain.services.product_projection import normalize_detail, sellable_skus
 from src.domain.services.stock_validator import StockValidator
 from src.domain.services.totals_calculator import PricedLine, TotalsCalculator
 from src.domain.services.variant_resolver import VariantResolver, known_selection
@@ -659,7 +659,7 @@ class ManageCartUseCase:
             variants = normalize_detail(detail)["variants"]
             match = next((row for row in variants if row.get("sku") == sku), None)
             if str(detail.get("product_id")) != product_id or (
-                match is None and (variants or detail.get("sku_base") != sku)
+                sku not in sellable_skus(detail)
             ):
                 raise CartError("PRODUCTO_NO_DISPONIBLE", "SKU does not belong to the supplied product")
             for label, selected in (("talla", size), ("color", color)):
@@ -678,7 +678,7 @@ class ManageCartUseCase:
                         if exc.status == 404:
                             continue
                         raise
-                    if any(v.get("sku") == sku for v in found.get("variants", [])):
+                    if sku in sellable_skus(found):
                         detail = found
                         break
             except Exception:

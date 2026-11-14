@@ -5,7 +5,7 @@ reports what is missing / which close combinations exist. Pure.
 """
 from dataclasses import dataclass
 
-from src.domain.services.product_projection import normalize_detail
+from src.domain.services.product_projection import normalize_detail, sellable_skus
 
 
 @dataclass(frozen=True)
@@ -41,8 +41,8 @@ class VariantResolver:
     ) -> VariantMatch:
         variants = normalize_detail(detail)["variants"]
         if not variants:
-            sku = detail.get("sku_base")
-            return VariantMatch(sku=sku) if sku else VariantMatch()
+            skus = sellable_skus(detail)
+            return VariantMatch(sku=skus[0]) if skus else VariantMatch()
         wanted_size = _fold(size) if size else None
         wanted_color = _fold(color) if color else None
         scored: list[tuple[int, dict]] = []

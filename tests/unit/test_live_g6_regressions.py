@@ -127,7 +127,7 @@ async def test_prices_cover_every_sku_with_four_small_calls_at_most():
         seen.extend(batch)
         await asyncio.sleep(0)
         active -= 1
-        return [{"sku": sku, "precio_regular": 1} for sku in batch]
+        return [{"sku": sku, "precio_regular": 1, "currency": "PEN"} for sku in batch]
 
     uc._catalog.get_prices = AsyncMock(side_effect=price)
     skus = [f"sku-{i}" for i in range(47)]
@@ -146,17 +146,17 @@ async def test_rate_limit_stops_next_wave_and_preserves_retry_after():
     async def price(batch):
         if batch[0] == "0":
             raise error
-        return [{"sku": sku} for sku in batch]
+        return [{"sku": sku, "precio_regular": 1, "currency": "PEN"} for sku in batch]
 
     uc._catalog.get_prices = AsyncMock(side_effect=price)
-    with pytest.raises(catalog_module.CatalogError) as raised:
-        await uc._prices_by_sku([str(i) for i in range(30)])
-    assert raised.value.status == 429 and raised.value.retry_after == "30"
+    result = await uc._prices_by_sku([str(i) for i in range(30)])
+    assert result.error.status == 429 and result.error.retry_after == "30"
+    assert len(result) == 15
     assert uc._catalog.get_prices.await_count == 4
 
 
 @pytest.mark.asyncio
-async def test_price_aggregate_budget_fails_without_partial_success(monkeypatch):
+async def test_price_aggregate_budget_records_missing_data(monkeypatch):
     uc, _ = g6_service([])
     monkeypatch.setattr(catalog_module, "COMMERCIAL_BUDGET_SECONDS", 0.01)
 
@@ -164,6 +164,5 @@ async def test_price_aggregate_budget_fails_without_partial_success(monkeypatch)
         await asyncio.Event().wait()
 
     uc._catalog.get_prices = AsyncMock(side_effect=price)
-    with pytest.raises(catalog_module.CatalogError) as raised:
-        await uc._prices_by_sku(["sku"])
-    assert raised.value.code == "SERVICIO_NO_DISPONIBLE"
+    result = await uc._prices_by_sku(["sku"])
+    assert not result and isinstance(result.error, TimeoutError)
