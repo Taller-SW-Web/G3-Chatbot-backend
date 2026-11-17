@@ -1,5 +1,6 @@
 """Conversation-scoped discovery policy over catalog and merchandising ports."""
 import asyncio
+import logging
 import unicodedata
 import uuid
 from decimal import Decimal
@@ -8,9 +9,19 @@ from src.application.catalog.partial import PartialRows
 from src.application.tools.catalog_tools import SearchArguments
 from src.domain.services.offer_policy import promotion_summaries
 from src.domain.services.product_normalizer import ProductNormalizer
+from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+
+logger = logging.getLogger(__name__)
 
 # Leaves two seconds for HTTP serialization within the frontend 12 s ceiling.
 OFFERS_BUDGET_SECONDS = 10.0
+
+def _is_provider_error(exc):
+    """True for upstream/provider failures; programming errors are not provider errors."""
+    # Imported lazily: manage_catalog_use_case imports this module.
+    from src.application.use_cases.manage_catalog_use_case import CatalogError
+    return isinstance(exc, (CatalogError, ModuleRequestError, ModuleUnavailableError, TimeoutError))
+
 
 def fold(value):
     return "".join(c for c in unicodedata.normalize("NFD", value.casefold())
@@ -82,6 +93,11 @@ class DiscoveryMixin:
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
         promotions, products = results
+        for name, result in (("promotions", promotions), ("products", products)):
+            if isinstance(result, Exception):
+                if not _is_provider_error(result):
+                    raise result
+                logger.warning("offers branch %r degraded: %s: %s", name, type(result).__name__, result)
         if isinstance(promotions, Exception) and isinstance(products, Exception):
             error = next((e for e in results if getattr(e, "status", None) == 429), products)
             raise self.map_module_error(error)
@@ -264,16 +280,24 @@ class DiscoveryMixin:
         if memory.get("crossSellSilenciado") or product_id in seen:
             return []
         try:
-            return await self._cross_sell_candidates(product_id, conversation_id, memory, seen)
-        except Exception:
-            return []  # Optional merchandising never breaks detail or cart.
+            summaries = await self._cross_sell_summaries(product_id)
+        except Exception as exc:
+            if not _is_provider_error(exc):
+                raise
+            # Optional merchandising never breaks detail or cart on provider failures.
+            logger.warning("cross-sell unavailable for product %s: %s: %s", product_id, type(exc).__name__, exc)
+            return []
+        # Persistence errors (row lock, save, commit) are not provider failures and propagate.
+        return await self._cross_sell_candidates(product_id, conversation_id, summaries)
 
-    async def _cross_sell_candidates(self, product_id, conversation_id, memory, seen):
+    async def _cross_sell_summaries(self, product_id):
         candidates = await self._catalog.get_recommendations(product_id)
         ids = list(dict.fromkeys(str(row["product_id"]) for row in candidates
                    if row.get("product_id") and row["product_id"] != product_id
                    and row.get("type") == "CROSS_SELL"))[:10]
-        summaries = await self._summarize([{"product_id": value} for value in ids], positive_stock_only=True) if ids else []
+        return await self._summarize([{"product_id": value} for value in ids], positive_stock_only=True) if ids else []
+
+    async def _cross_sell_candidates(self, product_id, conversation_id, summaries):
         picks = [row for row in summaries if not row.get("missing_data") and row["availability"] in {
             "DISPONIBLE", "POCAS_UNIDADES"} and row["price"] is not None][:3]
         # Re-read under a row lock only after all provider calls finish.

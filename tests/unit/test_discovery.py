@@ -302,3 +302,38 @@ async def test_missing_prices_are_null_and_cannot_be_recommended():
         await uc.search(SearchArguments(q="running"), ctx)
     with pytest.raises(CatalogError):
         await uc.recommend(RecommendationArguments(actividad="running"), ctx)
+
+
+@pytest.mark.asyncio
+async def test_cross_sell_provider_failure_returns_empty_and_logs(caplog):
+    uc, ctx = service()
+    uc._catalog.get_recommendations = AsyncMock(side_effect=ModuleUnavailableError("productos"))
+    with caplog.at_level("WARNING"):
+        assert await uc.cross_sell("0", ctx) == []
+    assert "cross-sell unavailable" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_cross_sell_persistence_failure_propagates():
+    uc, ctx = service({"SKU1": "INDETERMINADO", "SKU2": "AGOTADO"})
+    uc._conversations.get_context_for_update = AsyncMock(side_effect=RuntimeError("db down"))
+    with pytest.raises(RuntimeError, match="db down"):
+        await uc.cross_sell("0", ctx)
+
+
+@pytest.mark.asyncio
+async def test_offers_provider_failure_degrades_branch_and_logs(caplog):
+    uc, ctx = service()
+    uc.search = AsyncMock(side_effect=ModuleUnavailableError("productos"))
+    with caplog.at_level("WARNING"):
+        result = await uc.offers(PromotionArguments(), ctx)
+    assert result["partial"] and result["bloques"][0]["tipo"] == "LISTA_PROMOCIONES"
+    assert "offers branch 'products' degraded" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_offers_programming_error_in_products_branch_propagates():
+    uc, ctx = service()
+    uc.search = AsyncMock(side_effect=TypeError("bug"))
+    with pytest.raises(TypeError, match="bug"):
+        await uc.offers(PromotionArguments(), ctx)
