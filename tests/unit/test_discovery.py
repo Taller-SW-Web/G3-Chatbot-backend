@@ -51,7 +51,7 @@ def service(statuses=None):
     cid = uuid.uuid4()
     conversations.add_conversation(cid, anonymous_sid="owner")
     context = ExecutionContext(conversacion_id=str(cid), chat_sid="owner")
-    uc = ManageCatalogUseCase(catalog, FakeInventoryPort(statuses), conversations, FakeUow())
+    uc = ManageCatalogUseCase(catalog, FakeInventoryPort(statuses, default="DISPONIBLE"), conversations, FakeUow())
     return uc, context
 
 

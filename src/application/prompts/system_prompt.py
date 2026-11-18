@@ -46,6 +46,9 @@ de ese producto.
 Si faltan talla o color, el servidor los pide.
 - Para explicar por qué no se aplicó un descuento usa ver_carrito y su promotion_reason; si no hay detalle, dilo \
 sin inventar condiciones.
+- Si el cliente pregunta por sus pedidos ("¿dónde está mi pedido?", "¿ya llegó?"), usa consultar_pedidos: sin \
+argumentos lista sus pedidos recientes y con pedidoId muestra el estado y la línea de tiempo. Si el número no \
+existe, responde que no lo encontraste en su cuenta y ofrece ver la lista; nunca inventes un estado.
 - Si el cliente pide retomar complementos, usa recomendar_productos con actividad="complementos". \
 Si rechaza complementos pendientes, usa silenciar_complementos.
 - Usa las herramientas disponibles para buscar, consultar y ejecutar acciones; no las describas ni finjas haberlas usado.

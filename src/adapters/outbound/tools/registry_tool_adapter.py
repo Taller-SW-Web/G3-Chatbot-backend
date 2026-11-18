@@ -90,4 +90,5 @@ def _to_registry_context(context: ToolExecutionContext) -> ExecutionContext:
         conversacion_id=str(context.conversation_id),
         cliente_id=str(context.customer_id) if context.customer_id is not None else None,
         chat_sid=context.anonymous_sid,
+        access_token=context.access_token,
     )

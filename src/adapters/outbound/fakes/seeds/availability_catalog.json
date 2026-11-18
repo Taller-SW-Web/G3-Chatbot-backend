@@ -1,0 +1,424 @@
+{
+  "items": [
+    {
+      "sku": "ADI-AX-076",
+      "status": "AGOTADO"
+    },
+    {
+      "sku": "ADI-AZ-048",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-COMP",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-CP-041",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-CP-067",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-CT-031",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-CV-030",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-CX-022",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "ADI-CX-066",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-CX-095",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-DX-013",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-DX-075",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-EX-032",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-GS-050",
+      "status": "AGOTADO"
+    },
+    {
+      "sku": "ADI-HX-014",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "ADI-HX-058",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-MB-086",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-MOCH",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-MX-049",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-PRED",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-PRED-40-BLA",
+      "status": "AGOTADO"
+    },
+    {
+      "sku": "ADI-PT-085",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "ADI-PX-021",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-PX-057",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-RX-023",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-SD-077",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-SX-012",
+      "status": "AGOTADO"
+    },
+    {
+      "sku": "ADI-SX-093",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-TP-068",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "ADI-TX-039",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-TX-040",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-TX-084",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-TX-094",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "ADI-VX-059",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-AX-079",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-AZ-051",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "AND-CANG",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-CP-044",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-CP-070",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-CT-034",
+      "status": "AGOTADO"
+    },
+    {
+      "sku": "AND-CV-033",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-CX-025",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-CX-069",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "AND-CX-098",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-DX-016",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-DX-078",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-EX-035",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-GS-053",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-HX-017",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-HX-061",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "AND-MB-089",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-MX-052",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-POLO",
+      "status": "AGOTADO"
+    },
+    {
+      "sku": "AND-POLO-M-NEG",
+      "status": "INDETERMINADO"
+    },
+    {
+      "sku": "AND-PT-088",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-PX-024",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-PX-060",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "AND-RX-026",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-SD-080",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-SX-015",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-SX-096",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-TP-071",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-TRAIL",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-TX-042",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "AND-TX-043",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-TX-087",
+      "status": "AGOTADO"
+    },
+    {
+      "sku": "AND-TX-097",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "AND-VX-062",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-AX-073",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-AZ-045",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-CP-038",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "NIK-CP-064",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-CT-028",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-CV-027",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-CX-019",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-CX-063",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-CX-092",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-DX-072",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "NIK-EX-029",
+      "status": "AGOTADO"
+    },
+    {
+      "sku": "NIK-EX-100",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-GS-047",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-HX-011",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-HX-055",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-MB-083",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-MORR",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "NIK-MX-046",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-POLO",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-PREC",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-PT-082",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-PX-018",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-PX-054",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-REV7",
+      "status": "AGOTADO"
+    },
+    {
+      "sku": "NIK-REV7-42-BLA",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "NIK-REV7-42-NEG",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-REV7-43-NEG",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-RX-020",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-SD-074",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-SX-090",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-TP-065",
+      "status": "STOCK_BAJO"
+    },
+    {
+      "sku": "NIK-TX-036",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-TX-037",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-TX-081",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-TX-091",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-VX-056",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "NIK-XG-099",
+      "status": "AGOTADO"
+    }
+  ]
+}

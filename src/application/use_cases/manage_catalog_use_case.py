@@ -393,14 +393,14 @@ class ManageCatalogUseCase(DiscoveryMixin):
             return {"code": "OK", "texto": "No pudimos consultar la disponibilidad en este momento, intenta de nuevo.",
                     "missing_data": ["availability"], "bloques": []}
         if statuses[match.sku] == "INDETERMINADO":
-            return {"code": "OK", "texto": "No pudimos confirmar el stock.", "bloques": []}
+            return {"code": "OK", "texto": "No puedo confirmar el stock ahora mismo.", "bloques": []}
         check = self._stock.check_row({"sku": match.sku, "status": statuses[match.sku]})
         if check.ok and not check.warning:
             return {"code": "OK", "texto": "Sí, hay stock disponible.", "bloques": []}
         if check.ok:
             return {
                 "code": "OK",
-                "texto": "Hay pocas unidades. Si te interesa, agrégalo pronto.",
+                "texto": "Quedan pocas unidades. Si te interesa, agrégalo pronto.",
                 "bloques": [],
             }
         reference = await self._reference_price({**data, "variants": [{"sku": match.sku}]})
@@ -664,6 +664,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
         name = str(data.get("name", ""))
         description = data.get("description") or name
         images = data.get("images") or []
+        missing_availability = not skus or any(sku not in statuses for sku in skus)
         return {
             "ref": position,
             "product_id": str(data.get("product_id", "")),
@@ -676,9 +677,10 @@ class ManageCatalogUseCase(DiscoveryMixin):
             "short_description": str(description)[:90],
             "has_variants": bool(data.get("tiene_variantes") or variants),
             "single_sku": skus[0] if len(skus) == 1 else None,
-            "availability": "INDETERMINADO" if any(sku not in statuses for sku in skus) else self._badge(statuses, skus),
+            # An absent status leaves the card without a badge, never "Disponible" (A17).
+            "availability": None if missing_availability else self._badge(statuses, skus),
             "missing_data": (["price"] if price is None else []) + (
-                ["availability"] if not skus or any(sku not in statuses for sku in skus) else []),
+                ["availability"] if missing_availability else []),
             "variants": [
                 {"sku": str(v.get("sku")), "talla": v.get("talla"), "color": v.get("color")}
                 for v in variants if v.get("sku")
@@ -686,17 +688,22 @@ class ManageCatalogUseCase(DiscoveryMixin):
         }
 
     @staticmethod
-    def _badge(statuses: dict, skus: list[str]) -> str:
+    def _badge(statuses: dict, skus: list[str]) -> str | None:
+        """Card badge from the published states; None when any status is missing."""
         if not skus:
-            return "INDETERMINADO"
-        values = {statuses.get(sku, "") for sku in skus}
+            return None
+        values = {statuses.get(sku) for sku in skus}
+        if None in values or "" in values:
+            return None
         if "DISPONIBLE" in values:
             return "DISPONIBLE"
         if "STOCK_BAJO" in values:
             return "POCAS_UNIDADES"
-        if "AGOTADO" in values and len(values) == 1:
+        if values == {"AGOTADO"}:
             return "AGOTADO"
-        return "INDETERMINADO"
+        if values == {"INDETERMINADO"}:
+            return "INDETERMINADO"
+        return None
 
     async def _reference_price(self, data: dict) -> Decimal | None:
         """Price of the current product, from its SKU prices (detail carries none)."""

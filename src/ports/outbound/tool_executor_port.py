@@ -20,6 +20,7 @@ class ToolExecutionContext:
     conversation_id: uuid.UUID
     customer_id: uuid.UUID | None
     anonymous_sid: str | None
+    access_token: str | None = None
 
 
 @dataclass(frozen=True)

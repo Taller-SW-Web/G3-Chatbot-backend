@@ -1,17 +1,20 @@
 """Who is calling: an authenticated customer or an anonymous visitor (SPEC-05 Req. 1)."""
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
 class CallerIdentity:
-    """Exactly one of the two fields is set.
+    """Exactly one of the two identity fields is set.
 
     `anonymous_sid` is the stored (hashed) value of the `chat_sid` cookie, never the raw cookie.
+    `access_token` is the customer's bearer token while the request lives; only needed to
+    forward holder-scoped calls (Ventas `GET /pedidos/me`) from the chat. Never logged.
     """
 
     customer_id: uuid.UUID | None = None
     anonymous_sid: str | None = None
+    access_token: str | None = field(default=None, repr=False, compare=False)
 
     @property
     def customer(self) -> uuid.UUID:

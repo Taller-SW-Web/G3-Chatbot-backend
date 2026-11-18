@@ -54,11 +54,22 @@ async def test_fake_catalog_answers_search_and_detail():
 
 @pytest.mark.asyncio
 async def test_fake_inventory_status_and_verdicts():
-    inventory = FakeInventoryPort({"A": "AGOTADO"})
+    inventory = FakeInventoryPort({"A": "AGOTADO"}, default="DISPONIBLE")
     rows = await inventory.get_availability(["A", "B"])
     assert [row["status"] for row in rows] == ["AGOTADO", "DISPONIBLE"]
     verdicts = await inventory.verify_quantities([{"sku": "A", "quantity": 1}])
-    assert verdicts[0]["veredicto"] == "INSUFICIENTE"
+    assert verdicts[0]["result"] == "INSUFICIENTE"
+    assert verdicts[0]["requested_quantity"] == 1
+
+
+@pytest.mark.asyncio
+async def test_fake_inventory_does_not_invent_availability():
+    """A SKU outside the seeds has no row: absence, never a default status."""
+    inventory = FakeInventoryPort()
+    assert await inventory.get_availability(["NOT-IN-SEEDS"]) == []
+    assert await inventory.verify_quantities([{"sku": "NOT-IN-SEEDS", "quantity": 1}]) == []
+    known = await inventory.get_availability(["NIK-REV7-42-NEG"])
+    assert known == [{"sku": "NIK-REV7-42-NEG", "status": "DISPONIBLE"}]
 
 
 def test_checkout_provider_wires_real_notification_service(monkeypatch):

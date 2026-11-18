@@ -69,6 +69,7 @@ class DispatchDirectActionUseCase:
             conversacion_id=str(conversation_id),
             cliente_id=str(caller.customer_id) if caller.customer_id is not None else None,
             chat_sid=caller.anonymous_sid,
+            access_token=caller.access_token,
         )
         correlation_token = correlation_id_var.set(str(uuid.uuid4()))
         try:

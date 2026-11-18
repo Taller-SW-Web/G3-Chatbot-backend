@@ -16,6 +16,10 @@ from src.adapters.outbound.persistence.models import (
     Conversation,
     Evidence,
     Message,
+    Notification,
+    OrderRef,
+    Outbox,
+    PaymentAttempt,
 )
 from src.infrastructure.db.connection import create_engine
 
@@ -36,6 +40,11 @@ def persistence_metadata():
     Cart.__table__.to_metadata(metadata)
     CartItem.__table__.to_metadata(metadata)
     Checkout.__table__.to_metadata(metadata)
+    # Confirmación por correo e idempotencia del pedido (SPEC-15/16, issue 4.3).
+    PaymentAttempt.__table__.to_metadata(metadata)
+    OrderRef.__table__.to_metadata(metadata)
+    Notification.__table__.to_metadata(metadata)
+    Outbox.__table__.to_metadata(metadata)
     return metadata
 
 

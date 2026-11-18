@@ -260,38 +260,59 @@ class FakeCatalogPort:
 
 
 class FakeInventoryPort:
-    """Inventory fake: configurable statuses, DISPONIBLE by default."""
+    """Inventory fake over the seed projection (SPEC-10).
+
+    Statuses come from `seeds/availability_catalog.json`; a SKU outside the
+    seeds has no row (no invented availability, A17). `default` exists only so
+    a test can model a fully stocked world explicitly.
+    """
 
     def __init__(self, statuses: dict[str, str] | None = None,
-                 default: str = "DISPONIBLE"):
-        self._statuses = dict(statuses or {})
+                 *, default: str | None = None):
+        seeded = {
+            str(row["sku"]): str(row["status"])
+            for row in load_seed("availability_catalog.json")["items"]
+            if isinstance(row, dict) and row.get("sku") and row.get("status")
+        }
+        seeded.update(dict(statuses or {}))
+        self._statuses = seeded
         self._default = default
+
+    def _status(self, sku: str) -> str | None:
+        return self._statuses.get(sku, self._default)
 
     async def get_availability(self, skus, *, channel="CHATBOT",
                                correlation_id=None):
-        return [
-            {"sku": sku, "status": self._statuses.get(sku, self._default)}
-            for sku in skus
-        ]
+        rows = []
+        for sku in skus:
+            status = self._status(sku)
+            if status is not None:
+                rows.append({"sku": sku, "status": status})
+        return rows
 
     async def verify_quantities(self, lines, *, channel_id="CHATBOT",
                                 correlation_id=None):
-        verdicts = []
+        """OpenAPI shape: `items[{sku, requested_quantity, result, reason_code}]`."""
+        rows = []
         for line in lines:
-            status = self._statuses.get(line["sku"], self._default)
-            verdict = (
+            status = self._status(line["sku"])
+            if status is None:
+                continue
+            result = (
                 "SUFICIENTE" if status in ("DISPONIBLE", "STOCK_BAJO")
                 else "INSUFICIENTE" if status == "AGOTADO" else "INDETERMINADO"
             )
-            verdicts.append({
-                "sku": line["sku"], "quantity": line["quantity"],
-                "veredicto": verdict,
+            rows.append({
+                "sku": line["sku"],
+                "requested_quantity": line["quantity"],
+                "result": result,
+                "reason_code": None if result == "SUFICIENTE" else f"STOCK_{status}",
             })
-        return verdicts
+        return rows
 
     async def get_sku_availability(self, sku, *, correlation_id=None):
-        rows = await self.get_availability([sku], correlation_id=correlation_id)
-        return rows[0] if rows else None
+        status = self._status(sku)
+        return {"sku": sku, "status": status} if status is not None else None
 
 
 def availability_seeds() -> Any:

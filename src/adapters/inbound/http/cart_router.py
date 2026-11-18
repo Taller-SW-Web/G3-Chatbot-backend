@@ -36,11 +36,11 @@ ERROR_STATUS = {
     "CUPON_INVALIDO": 422,
     "DEMASIADAS_SOLICITUDES": 429,
     "VALIDACION": 400,
-    # Productos could not decide (`INDETERMINADO`): never treat it as stock,
-    # so the caller gets 503 and can retry instead of a wrong cart change.
-    "INDETERMINADO": 503,
-    "MODULO_NO_DISPONIBLE": 503,
+    # A17 · D2: a missing/incompatible availability answer is not a commercial
+    # state; the caller gets 503 and can retry. `INDETERMINADO` is accepted with
+    # a warning and never reaches this table as an error.
     "SERVICIO_NO_DISPONIBLE": 503,
+    "MODULO_NO_DISPONIBLE": 503,
 }
 
 
@@ -55,14 +55,17 @@ def _problem(error: CartError) -> ProblemError:
         400: "Invalid request",
         503: "Service unavailable",
     }[status]
+    data = dict(error.data)
+    retry_after = data.pop("retryAfter", None)
     if error.code == "LINEA_AMBIGUA":
-        body: dict[str, Any] = {"opciones": error.data["opciones"]}
-    elif error.data:
-        body = dict(error.data)
+        body: dict[str, Any] = {"opciones": data["opciones"]}
     else:
-        body = {}
-    return ProblemError(status, error.code, title, error.detail or None,
-                        extra=body)
+        body = data
+    return ProblemError(
+        status, error.code, title, error.detail or None,
+        extra=body,
+        headers=[("Retry-After", str(retry_after))] if retry_after else None,
+    )
 
 
 class AddItemIn(BaseModel):

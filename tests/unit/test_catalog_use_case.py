@@ -27,7 +27,7 @@ CUSTOMER_ID = uuid.uuid4()
 def make_catalog(statuses=None, products=None, catalog=None, inventory=None):
     return ManageCatalogUseCase(
         catalog or FakeCatalogPort(products=products),
-        inventory or FakeInventoryPort(statuses or {}),
+        inventory or FakeInventoryPort(statuses or {}, default="DISPONIBLE"),
         FakeConversations(),
         FakeUow(),
     )
@@ -209,7 +209,7 @@ async def test_out_of_stock_suggests_similar_with_real_reference_price():
     }
     catalog = owned_catalog(make_catalog(
         catalog=FakeCatalogPort(products=products, details=details),
-        inventory=FakeInventoryPort({"A-BASE-42": "AGOTADO"}),
+        inventory=FakeInventoryPort({"A-BASE-42": "AGOTADO"}, default="DISPONIBLE"),
     ))
 
     result = await catalog.availability(
