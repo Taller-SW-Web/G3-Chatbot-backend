@@ -1,0 +1,52 @@
+{
+  "items": [
+    {
+      "sku": "ADI-MESSI-JI8291-05",
+      "precio_regular": 79,
+      "precio_oferta": 69.52,
+      "currency": "PEN",
+      "channel_id": "CHATBOT",
+      "valid_from": "2026-11-07T05:00:00.000Z",
+      "valid_until": "2026-11-21T05:00:00.000Z",
+      "price_version": 1,
+      "vigencia_id": "4eb5de4b-3f0e-4311-a79d-a2943b837b94",
+      "origen": "PRODUCTO"
+    },
+    {
+      "sku": "NIK-ACADEMY-HV4386-05",
+      "precio_regular": 129.9,
+      "precio_oferta": null,
+      "currency": "PEN",
+      "channel_id": null,
+      "valid_from": "2026-10-17T11:34:20.018Z",
+      "valid_until": null,
+      "price_version": 1,
+      "vigencia_id": "f0cddeb6-0c68-5947-a1e9-ceb5163bbc1a",
+      "origen": "PRODUCTO"
+    },
+    {
+      "sku": "NIK-EVP-FQ0327-BLA-EU3438",
+      "precio_regular": 69.9,
+      "precio_oferta": null,
+      "currency": "PEN",
+      "channel_id": null,
+      "valid_from": "2026-10-17T11:34:20.018Z",
+      "valid_until": null,
+      "price_version": 1,
+      "vigencia_id": "da40d40c-1b6a-5a72-a50e-2b9adce4099b",
+      "origen": "PRODUCTO"
+    },
+    {
+      "sku": "NIK-EVP-FQ0327-NEG-EU4246",
+      "precio_regular": 69.9,
+      "precio_oferta": null,
+      "currency": "PEN",
+      "channel_id": null,
+      "valid_from": "2026-10-17T11:34:20.018Z",
+      "valid_until": null,
+      "price_version": 1,
+      "vigencia_id": "da40d40c-1b6a-5a72-a50e-2b9adce4099b",
+      "origen": "PRODUCTO"
+    }
+  ]
+}

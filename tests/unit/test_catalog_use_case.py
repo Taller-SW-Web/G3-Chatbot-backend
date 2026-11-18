@@ -188,6 +188,7 @@ async def test_search_batches_prices_and_availability_in_bulk():
     assert len(result["bloques"][0]["datos"]["productos"]) > 1
     assert all(len(batch) <= 5 for batch in catalog_port.price_batches)
     expected = {v["sku"] for row in result["bloques"][0]["datos"]["productos"] for v in row["variants"]}
+    expected.update(row["single_sku"] for row in result["bloques"][0]["datos"]["productos"] if row["single_sku"])
     assert {sku for batch in catalog_port.price_batches for sku in batch} == expected
     assert inventory_port.availability_calls == 1
 

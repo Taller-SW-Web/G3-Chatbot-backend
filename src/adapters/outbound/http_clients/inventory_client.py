@@ -51,12 +51,23 @@ class InventoryClient(ProductsBaseClient):
         )
         rows = await self._parse_response(response)
         if isinstance(rows, list):
-            return [self._check_row(row) for row in rows]
+            return self._valid_rows(rows)
         if isinstance(rows, dict) and isinstance(rows.get("items"), list):
-            return [self._check_row(row) for row in rows["items"]]
+            return self._valid_rows(rows["items"])
         raise ValueError(
             f"expected a list or paginated items, got {type(rows).__name__}"
         )
+
+    @classmethod
+    def _valid_rows(cls, rows):
+        # Isolate malformed neighbours; absence stays absence for stock decisions.
+        valid = []
+        for row in rows:
+            try:
+                valid.append(cls._check_row(row))
+            except ValueError:
+                continue
+        return valid
 
     async def verify_quantities(
         self,
