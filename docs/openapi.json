@@ -93,6 +93,24 @@
       "AvailabilityOut": {
         "additionalProperties": false,
         "properties": {
+          "mensaje": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mensaje"
+          },
+          "missing_data": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Data",
+            "type": "array"
+          },
           "sku": {
             "title": "Sku",
             "type": "string"
@@ -166,6 +184,43 @@
           "numeroDocumento"
         ],
         "title": "BuyerContactDTO",
+        "type": "object"
+      },
+      "CatalogSearchOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "mensaje": {
+            "title": "Mensaje",
+            "type": "string"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "total_scope": {
+            "title": "Total Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "total_scope",
+          "mensaje",
+          "partial"
+        ],
+        "title": "CatalogSearchOut",
         "type": "object"
       },
       "ClearCartIn": {
@@ -1914,6 +1969,48 @@
           },
           {
             "in": "query",
+            "name": "talla",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Talla"
+            }
+          },
+          {
+            "in": "query",
+            "name": "color",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Color"
+            }
+          },
+          {
+            "in": "query",
+            "name": "soloOfertas",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Soloofertas",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "precioMin",
             "required": false,
             "schema": {
@@ -1991,9 +2088,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Search Products Api V1 Catalogo Productos Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/CatalogSearchOut"
                 }
               }
             },
@@ -2055,6 +2150,25 @@
           }
         },
         "summary": "Product Detail",
+        "tags": [
+          "catalogo"
+        ]
+      }
+    },
+    "/api/v1/catalogo/promociones": {
+      "get": {
+        "operationId": "promotions_api_v1_catalogo_promociones_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Promotions",
         "tags": [
           "catalogo"
         ]

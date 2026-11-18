@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 from src.application.catalog.discovery import DiscoveryMixin
+from src.application.catalog.partial import CommercialRows, PartialRows
 from src.application.catalog.product_lookup import (
     MEMORY_CAROUSEL_KEY,
     MEMORY_FILTERS_KEY,
@@ -25,7 +26,7 @@ from src.application.tools.tool_context import (
 )
 from src.domain.services.offer_policy import price_projection
 from src.domain.services.product_normalizer import ProductNormalizer
-from src.domain.services.product_projection import normalize_detail
+from src.domain.services.product_projection import normalize_detail, sellable_skus
 from src.domain.services.similar_products import SimilarProducts
 from src.domain.services.stock_validator import StockValidator
 from src.domain.services.variant_resolver import VariantResolver, known_selection
@@ -41,6 +42,11 @@ MAX_VARIANTS_PER_PRODUCT = 100
 PRICE_BATCH_SIZE = 5
 PRICE_CONCURRENCY = 4
 INVENTORY_BATCH_SIZE = 20
+# Stage ceilings override longer configured transport timeouts; no retries.
+CATALOG_BUDGET_SECONDS = 10.0
+DETAIL_TIMEOUT_SECONDS = 4.0
+# Measured on live G6 (2026-11-11): ~0.33 s per SKU, ~3 s per wave of four
+# 5-SKU batches. A 10-product page needs two waves, so 4 s dropped real prices.
 COMMERCIAL_BUDGET_SECONDS = 8.0
 OFFER_DISCOVERY_PAGES = 5
 OFFER_DISCOVERY_SECONDS = 8.0
@@ -110,11 +116,27 @@ class ManageCatalogUseCase(DiscoveryMixin):
 
     # -- public orchestration -------------------------------------------------
 
-    async def search(self, args, context, *, discover_offers: bool = False) -> dict[str, Any]:
+    async def search(self, args, context, *, discover_offers: bool = False, offer_deadline: float | None = None) -> dict[str, Any]:
+        deadline_at = asyncio.get_running_loop().time() + CATALOG_BUDGET_SECONDS - 0.1
+        if offer_deadline is not None:
+            deadline_at = min(deadline_at, offer_deadline)
+        try:
+            async with asyncio.timeout(CATALOG_BUDGET_SECONDS):
+                return await self._search(args, context, discover_offers=discover_offers, deadline_at=deadline_at)
+        except Exception as exc:
+            raise self.map_module_error(exc) from exc
+
+    async def _search(self, args, context, *, discover_offers=False, deadline_at=None):
         conversation_id = await self._owned_conversation(context)
         memory = await self._read_memory(conversation_id)
-        categories = await self._cached_list("categories", self._catalog.list_categories)
-        brands = await self._cached_list("brands", self._catalog.list_brands)
+        categories, brands = await asyncio.gather(
+            self._cached_list("categories", self._catalog.list_categories),
+            self._cached_list("brands", self._catalog.list_brands),
+            return_exceptions=True,
+        )
+        for options in (categories, brands):
+            if isinstance(options, Exception):
+                raise self.map_module_error(options)
         normalizer = self._normalizer or ProductNormalizer(
             categories=categories, brands=brands
         )
@@ -125,8 +147,9 @@ class ManageCatalogUseCase(DiscoveryMixin):
                 "texto": self._clarifying_question(filters),
                 "bloques": [],
             }
+        partial = False
         if discover_offers:
-            summaries, total, exhausted, pages_scanned = await self._discover_offer_products(args, filters)
+            summaries, total, exhausted, pages_scanned, partial = await self._discover_offer_products(args, filters, deadline_at=deadline_at)
             scope = "catalog" if exhausted else "scanned_pages"
             text = (f"Encontré {total} productos en oferta en el catálogo con esos filtros."
                     if exhausted else
@@ -153,16 +176,41 @@ class ManageCatalogUseCase(DiscoveryMixin):
                 }
             local_filter = args.talla is not None or args.color is not None
             summaries = await self._summarize(
-                items[:10], requested_size=args.talla, requested_color=args.color,
+                items[:10], requested_size=args.talla, requested_color=args.color, deadline_at=deadline_at,
             )
+            partial = summaries.partial
             if local_filter:
                 summaries = [row for row in summaries if row["variants"]]
             if args.soloOfertas:
                 summaries = [row for row in summaries if row["offer_price"] is not None]
             total = len(summaries) if args.soloOfertas or local_filter else page.get("total", len(summaries))
             scope = "page" if args.soloOfertas or local_filter else "catalog"
-            text = (f"Encontré {total} productos en esta página." if scope == "page" else
-                    f"Encontré {total} productos. Te muestro los primeros:")
+            if not summaries:
+                # Local filters can empty the page: never render an empty carousel.
+                return {
+                    "code": "OK",
+                    "partial": partial,
+                    "total": 0,
+                    "total_scope": scope,
+                    "texto": (("Resultado parcial: no pudimos obtener algunos datos; puede haber más ofertas. " if partial else "") +
+                        "No encontré productos con esos filtros en esta página. "
+                        "Prueba quitando un filtro o buscando por categoría."
+                    ),
+                    "bloques": [],
+                }
+            where = " en esta página" if scope == "page" else ""
+            text = (f"Encontré {total} productos{where}; en pantalla se muestran {len(summaries)} "
+                    "con precio y disponibilidad."
+                    if total > len(summaries) else
+                    f"Encontré {total} productos{where} y se muestran en pantalla con precio y disponibilidad.")
+        if partial:
+            text = text.replace("con precio y disponibilidad", "con los datos obtenidos")
+            if discover_offers:
+                text = text.replace("La búsqueda es parcial; puede haber más ofertas en el catálogo.",
+                                    "La búsqueda es parcial: no pudimos consultar todo el catálogo ahora; puede haber más ofertas.")
+            else:
+                text += (" Resultado parcial: no pudimos obtener algunos productos o datos" +
+                         ("; puede haber más ofertas." if args.soloOfertas else "."))
         for index, row in enumerate(summaries, 1):
             row["ref"] = index
         memory[MEMORY_CAROUSEL_KEY] = [s["product_id"] for s in summaries]
@@ -178,9 +226,10 @@ class ManageCatalogUseCase(DiscoveryMixin):
             "bloques": [{
                 "id": uuid.uuid4().hex,
                 "tipo": "CARRUSEL_PRODUCTOS",
-                "datos": {"productos": summaries},
+                "datos": {"productos": summaries, "partial": partial},
             }],
             "total": total,
+            "partial": partial,
             "total_scope": scope,
             **({"complete": exhausted, "pages_scanned": pages_scanned} if discover_offers else {}),
         }
@@ -199,20 +248,24 @@ class ManageCatalogUseCase(DiscoveryMixin):
             max_price=args.precioMax,
         )
 
-    async def _discover_offer_products(self, args, filters):
+    async def _discover_offer_products(self, args, filters, *, deadline_at=None):
         """Scan bounded pages only for chat discovery; REST retains upstream pagination.
 
         At most 50 unique products, ten concurrent detail reads per page and the
-        existing per-product commercial caps. Never suppress supplier failures.
+        existing per-product commercial caps. Retain only validated pages on failure.
         """
         summaries = []
         seen = set()
         exhausted = False
         pages_scanned = 0
-        deadline = asyncio.timeout(OFFER_DISCOVERY_SECONDS)
+        incomplete = False
+        ceiling = asyncio.get_running_loop().time() + OFFER_DISCOVERY_SECONDS
+        deadline = asyncio.timeout_at(min(ceiling, deadline_at) if deadline_at is not None else ceiling)
         try:
             async with deadline:
+                loop = asyncio.get_running_loop()
                 for number in range(1, OFFER_DISCOVERY_PAGES + 1):
+                    started = loop.time()
                     page = await self._catalog.search_products(
                         q=filters.q, category_id=args.categoriaId or filters.category_id,
                         brand_id=args.marcaId or filters.brand_id, channel=args.canal,
@@ -226,23 +279,32 @@ class ManageCatalogUseCase(DiscoveryMixin):
                         if pid not in seen:
                             seen.add(pid)
                             unique.append(item)
-                    rows = await self._summarize(unique, requested_size=args.talla, requested_color=args.color)
+                    rows = await self._summarize(unique, requested_size=args.talla, requested_color=args.color,
+                                                 deadline_at=deadline.when())
+                    incomplete = incomplete or rows.partial
                     summaries.extend(row for row in rows if row["offer_price"] is not None
                                      and (not (args.talla or args.color) or row["variants"]))
                     pages_scanned += 1
                     total = page.get("total")
                     exhausted = not items or (isinstance(total, int) and number * 10 >= total)
+                    if rows.rate_limited:
+                        incomplete = True
+                        break
                     if exhausted or len(summaries) >= args.tamanio:
                         break
-        except TimeoutError as exc:
-            if not deadline.expired():
-                raise self.map_module_error(exc) from exc
-            # Only completed, validated pages are counted. Unknown is never no-offers.
-            pass
+                    if loop.time() - started > (deadline.when() or 0) - loop.time():
+                        # Another page would not fit: answer now with the validated
+                        # pages instead of waiting for the deadline to discard it.
+                        incomplete = True
+                        break
         except Exception as exc:
-            raise self.map_module_error(exc) from exc
+            if not pages_scanned:
+                raise self.map_module_error(exc) from exc
+            incomplete = True
         # Count every validated match, including those beyond the carousel size.
-        return summaries[:args.tamanio], len(summaries), exhausted, pages_scanned
+        # `incomplete` means data was not obtained; a bounded scan that simply
+        # stopped at the carousel size is not a failure.
+        return summaries[:args.tamanio], len(summaries), exhausted and not incomplete, pages_scanned, incomplete
 
     async def detail(self, args, context) -> dict[str, Any]:
         conversation_id = await self._owned_conversation(context)
@@ -326,7 +388,10 @@ class ManageCatalogUseCase(DiscoveryMixin):
                 "texto": "Esa combinación no existe. Te muestro alternativas cercanas.",
                 "bloques": [],
             }
-        statuses = await self._status_by_sku([match.sku])
+        statuses = await self._status_by_sku([match.sku], strict=True)
+        if match.sku not in statuses:
+            return {"code": "OK", "texto": "No pudimos consultar la disponibilidad en este momento, intenta de nuevo.",
+                    "missing_data": ["availability"], "bloques": []}
         if statuses[match.sku] == "INDETERMINADO":
             return {"code": "OK", "texto": "No pudimos confirmar el stock.", "bloques": []}
         check = self._stock.check_row({"sku": match.sku, "status": statuses[match.sku]})
@@ -416,14 +481,16 @@ class ManageCatalogUseCase(DiscoveryMixin):
     async def _summarize(
         self, items: list[dict], prefetched: dict[str, dict] | None = None,
         *, positive_stock_only: bool = False, requested_size: str | None = None,
-        requested_color: str | None = None,
-    ) -> list[dict]:
+        requested_color: str | None = None, deadline_at: float | None = None,
+    ) -> PartialRows:
         """Summaries for up to 10 carousel items, batching the fan-out.
 
         Details are fetched concurrently; prices use bounded small batches and
         availability uses bulk reads. Every selected SKU is inspected.
         """
         prefetched = prefetched or {}
+        partial = False
+        detail_error = None
         resolved: list[tuple[int, dict]] = []
         missing: list[tuple[int, str]] = []
         for position, item in enumerate(items[:10], start=1):
@@ -435,15 +502,26 @@ class ManageCatalogUseCase(DiscoveryMixin):
                 resolved.append((position, data))
         if missing:
             fetched = await asyncio.gather(
-                *(self._catalog.get_product_detail(pid) for _, pid in missing),
+                *(self._bounded_detail(pid, deadline_at=deadline_at) for _, pid in missing),
                 return_exceptions=True,
             )
-            for (position, _), data in zip(missing, fetched):
-                if isinstance(data, ModuleRequestError) and data.status == 404:
+            for (position, _), detail in zip(missing, fetched, strict=True):
+                if isinstance(detail, ModuleRequestError) and detail.status == 404:
                     continue
-                if isinstance(data, BaseException):
-                    raise self.map_module_error(data)
-                resolved.append((position, data))
+                if isinstance(detail, Exception):
+                    if getattr(detail_error, "status", None) != 429:
+                        detail_error = detail
+                    partial = True
+                    continue
+                if not isinstance(detail, dict):
+                    detail_error = ValueError("invalid detail")
+                    partial = True
+                    continue
+                resolved.append((position, detail))
+        if getattr(detail_error, "status", None) == 429:
+            raise self.map_module_error(detail_error or ValueError("rate limited"))
+        if not resolved and detail_error is not None:
+            raise self.map_module_error(detail_error)
         resolved.sort(key=lambda entry: entry[0])
         # Bound commercial fan-out, selecting requested attributes before the cap.
         resolved = [
@@ -454,61 +532,105 @@ class ManageCatalogUseCase(DiscoveryMixin):
             ][:MAX_VARIANTS_PER_PRODUCT]})
             for position, data in resolved
         ]
-        skus = [
-            str(variant.get("sku"))
-            for _, data in resolved
-            for variant in (data.get("variants") or [])
-            if variant.get("sku")
-        ]
+        if requested_size is not None or requested_color is not None:
+            resolved = [(position, data) for position, data in resolved if data["variants"]]
+        skus = [sku for _, data in resolved for sku in sellable_skus(data)]
+        budget = (max(0, deadline_at - asyncio.get_running_loop().time() - 0.02)
+                  if deadline_at is not None else COMMERCIAL_BUDGET_SECONDS)
+        stop = asyncio.Event()
         prices, statuses = await asyncio.gather(
-            self._prices_by_sku(skus), self._status_by_sku(skus)
+            self._prices_by_sku(skus, stop=stop, budget=budget), self._status_by_sku(skus, stop=stop, budget=budget)
         ) if skus else ({}, {})
-        return [
-            self._summary(data, position, prices, statuses, positive_stock_only=positive_stock_only, requested_size=requested_size, requested_color=requested_color)
+        rows = [
+            self._summary(data, position, prices, statuses, positive_stock_only=positive_stock_only,
+                          requested_size=requested_size, requested_color=requested_color)
             for position, data in resolved
         ]
+        if rows and not any(row["price"] is not None for row in rows):
+            errors = [getattr(result, "error", None) for result in (prices, statuses)]
+            error = next((e for e in errors if getattr(e, "status", None) == 429), None)
+            raise self.map_module_error(error or errors[0] or ValueError("no validated prices"))
+        return PartialRows(rows, partial=partial or any(row.get("missing_data") for row in rows),
+                           rate_limited=any(getattr(getattr(result, "error", None), "status", None) == 429
+                                            for result in (prices, statuses))
+                           or getattr(detail_error, "status", None) == 429)
 
-    async def _prices_by_sku(self, skus: list[str]) -> dict[str, dict]:
-        rows = []
+    async def _bounded_detail(self, product_id, *, deadline_at=None):
+        budget = (max(0, deadline_at - asyncio.get_running_loop().time() - 0.05)
+                  if deadline_at is not None else DETAIL_TIMEOUT_SECONDS)
+        async with asyncio.timeout(min(DETAIL_TIMEOUT_SECONDS, budget)):
+            return await self._catalog.get_product_detail(product_id)
+
+    async def _prices_by_sku(self, skus: list[str], *, stop=None, budget=None) -> dict[str, dict]:
+        rows = CommercialRows()
         clean = list(dict.fromkeys(skus))
+
+        async def read(batch):
+            try:
+                result = await self._catalog.get_prices(batch)
+                for row in result:
+                    if not isinstance(row, dict) or row.get("sku") not in batch:
+                        continue
+                    try:
+                        projection = price_projection(row)
+                    except (ValueError, TypeError, ArithmeticError):
+                        continue
+                    if projection["price"] is not None:
+                        rows[row["sku"]] = row
+            except Exception as exc:
+                rows.record_error(exc)
+                if stop is not None and getattr(exc, "status", None) == 429:
+                    stop.set()
+
         try:
-            async with asyncio.timeout(COMMERCIAL_BUDGET_SECONDS):
+            async with asyncio.timeout(min(COMMERCIAL_BUDGET_SECONDS, budget) if budget is not None else COMMERCIAL_BUDGET_SECONDS):
                 for start in range(0, len(clean), PRICE_BATCH_SIZE * PRICE_CONCURRENCY):
+                    if stop is not None and stop.is_set():
+                        break
                     window = clean[start:start + PRICE_BATCH_SIZE * PRICE_CONCURRENCY]
-                    results = await asyncio.gather(*(
-                        self._catalog.get_prices(window[offset:offset + PRICE_BATCH_SIZE])
-                        for offset in range(0, len(window), PRICE_BATCH_SIZE)
-                    ), return_exceptions=True)
-                    # Finish this bounded wave, then stop on an upstream error;
-                    # never return partial prices or launch the next wave on 429.
-                    for result in results:
-                        if isinstance(result, BaseException):
-                            raise result
-                        rows.extend(result)
-        except Exception as exc:
-            raise self.map_module_error(exc) from exc
-        return {str(row.get("sku")): row for row in rows if row.get("sku")}
+                    await asyncio.gather(*(read(window[offset:offset + PRICE_BATCH_SIZE])
+                                           for offset in range(0, len(window), PRICE_BATCH_SIZE)))
+                    if getattr(rows.error, "status", None) == 429:
+                        break
+        except TimeoutError as exc:
+            rows.record_error(exc)
+        return rows
 
-    async def _status_by_sku(self, skus: list[str]) -> dict[str, str]:
+    async def _status_by_sku(self, skus: list[str], *, strict=False, stop=None, budget=None) -> dict[str, str]:
         clean = list(dict.fromkeys(skus))
-        rows = []
+        statuses = CommercialRows()
         try:
-            async with asyncio.timeout(COMMERCIAL_BUDGET_SECONDS):
+            async with asyncio.timeout(min(COMMERCIAL_BUDGET_SECONDS, budget) if budget is not None else COMMERCIAL_BUDGET_SECONDS):
                 for start in range(0, len(clean), INVENTORY_BATCH_SIZE):
-                    rows.extend(await self._inventory.get_availability(clean[start:start + INVENTORY_BATCH_SIZE]))
-            statuses = {str(row["sku"]): row["status"] for row in rows}
-            if any(statuses.get(sku) not in {
-                "DISPONIBLE", "STOCK_BAJO", "AGOTADO", "INDETERMINADO"
-            } for sku in clean):
-                raise ValueError("missing or incompatible availability")
-            return statuses
+                    if stop is not None and stop.is_set():
+                        break
+                    batch = clean[start:start + INVENTORY_BATCH_SIZE]
+                    try:
+                        rows = await self._inventory.get_availability(batch)
+                    except Exception as exc:
+                        statuses.record_error(exc)
+                        if stop is not None and getattr(exc, "status", None) == 429:
+                            stop.set()
+                        if strict and getattr(exc, "status", None) not in (400, 422):
+                            raise
+                        if getattr(exc, "status", None) == 429:
+                            break
+                        continue
+                    for row in rows:
+                        if (isinstance(row, dict) and isinstance(row.get("sku"), str)
+                                and row["sku"] in batch and isinstance(row.get("status"), str) and row["status"] in {
+                                    "DISPONIBLE", "STOCK_BAJO", "AGOTADO", "INDETERMINADO"}):
+                            statuses[row["sku"]] = row["status"]
         except Exception as exc:
-            raise self.map_module_error(exc) from exc
+            if strict:
+                raise self.map_module_error(exc) from exc
+            statuses.record_error(exc)
+        return statuses
 
     @staticmethod
-    def _price_from_variants(variants: list, prices: dict) -> Decimal | None:
-        amounts = [price_projection(prices[str(v["sku"])])["price"]
-                   for v in variants if str(v.get("sku")) in prices]
+    def _price_from_skus(skus: list[str], prices: dict) -> Decimal | None:
+        amounts = [price_projection(prices[sku])["price"]
+                   for sku in skus if sku in prices]
         return min((value for value in amounts if value is not None), default=None)
 
     def _summary(
@@ -522,18 +644,22 @@ class ManageCatalogUseCase(DiscoveryMixin):
             variants = [v for v in variants if str(v.get("talla")).casefold() == requested_size.casefold()]
         if requested_color is not None:
             variants = [v for v in variants if str(v.get("color")).casefold() == requested_color.casefold()]
-        pricing_variants = [v for v in variants if statuses.get(str(v.get("sku"))) in {
+        skus = sellable_skus(data)
+        if requested_size is not None or requested_color is not None:
+            skus = [str(v["sku"]) for v in variants if v.get("sku")]
+        pricing_skus = [sku for sku in skus if statuses.get(sku) in {
             "DISPONIBLE", "STOCK_BAJO"}] if positive_stock_only else [
-                v for v in variants if statuses.get(str(v.get("sku"))) != "AGOTADO"]
-        if not pricing_variants and not positive_stock_only:
-            pricing_variants = variants
+                sku for sku in skus if statuses.get(sku) != "AGOTADO"]
+        if not pricing_skus and not positive_stock_only:
+            pricing_skus = skus
         try:
-            projections = [price_projection(prices[str(v["sku"])])
-                           for v in pricing_variants if str(v.get("sku")) in prices]
+            projections = [price_projection(prices[sku]) for sku in pricing_skus if sku in prices]
             projection = min((p for p in projections if p["price"] is not None),
                              key=lambda p: p["price"], default=price_projection({}))
         except ValueError as exc:
             raise self.map_module_error(exc) from exc
+        if any(sku not in prices for sku in pricing_skus):
+            projection = price_projection({})
         price = projection["price"]
         name = str(data.get("name", ""))
         description = data.get("description") or name
@@ -548,9 +674,11 @@ class ManageCatalogUseCase(DiscoveryMixin):
             **projection,
             "price_text": f"S/ {price:.2f}" if price is not None else "Precio no disponible",
             "short_description": str(description)[:90],
-            "has_variants": bool(data.get("tiene_variantes") and variants),
-            "single_sku": str(variants[0].get("sku")) if len(variants) == 1 else None,
-            "availability": self._badge(statuses, variants),
+            "has_variants": bool(data.get("tiene_variantes") or variants),
+            "single_sku": skus[0] if len(skus) == 1 else None,
+            "availability": "INDETERMINADO" if any(sku not in statuses for sku in skus) else self._badge(statuses, skus),
+            "missing_data": (["price"] if price is None else []) + (
+                ["availability"] if not skus or any(sku not in statuses for sku in skus) else []),
             "variants": [
                 {"sku": str(v.get("sku")), "talla": v.get("talla"), "color": v.get("color")}
                 for v in variants if v.get("sku")
@@ -558,10 +686,10 @@ class ManageCatalogUseCase(DiscoveryMixin):
         }
 
     @staticmethod
-    def _badge(statuses: dict, variants: list) -> str:
-        if not variants:
+    def _badge(statuses: dict, skus: list[str]) -> str:
+        if not skus:
             return "INDETERMINADO"
-        values = {statuses.get(str(v.get("sku")), "") for v in variants if v.get("sku")}
+        values = {statuses.get(sku, "") for sku in skus}
         if "DISPONIBLE" in values:
             return "DISPONIBLE"
         if "STOCK_BAJO" in values:
@@ -570,12 +698,11 @@ class ManageCatalogUseCase(DiscoveryMixin):
             return "AGOTADO"
         return "INDETERMINADO"
 
-    async def _reference_price(self, data: dict) -> Decimal:
+    async def _reference_price(self, data: dict) -> Decimal | None:
         """Price of the current product, from its SKU prices (detail carries none)."""
-        variants = data.get("variants") or []
-        skus = [str(v.get("sku")) for v in variants if v.get("sku")]
+        skus = sellable_skus(data)
         prices = await self._prices_by_sku(skus) if skus else {}
-        return self._price_from_variants(variants, prices)
+        return self._price_from_skus(skus, prices)
 
     async def _find_similar(self, data: dict, reference: Decimal) -> list[dict]:
         """Same-category alternatives within ±20% of `reference`, with stock.
@@ -607,7 +734,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
                     "precio_regular": None,
                 }
             )
-            if summary["availability"] in ("DISPONIBLE", "POCAS_UNIDADES"):
+            if not summary.get("missing_data") and summary["availability"] in ("DISPONIBLE", "POCAS_UNIDADES"):
                 stocked.add(product_id)
         picks = self._similar.find(
             category_id, reference, enriched,
@@ -642,6 +769,8 @@ class ManageCatalogUseCase(DiscoveryMixin):
             return exc
         if isinstance(exc, ModuleRequestError) and exc.status == 404 and inactive:
             return CatalogError("PRODUCTO_NO_DISPONIBLE", exc.code)
+        if isinstance(exc, ModuleRequestError) and exc.status in (401, 403):
+            return CatalogError("SERVICIO_NO_DISPONIBLE", "service credential rejected")
         if isinstance(exc, ModuleRequestError):
             return CatalogError(exc.code, exc.detail, status=exc.status,
                                 retry_after=getattr(exc, "retry_after", None))

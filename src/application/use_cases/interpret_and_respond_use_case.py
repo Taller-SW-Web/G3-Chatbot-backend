@@ -230,7 +230,9 @@ class InterpretAndRespondUseCase:
                 reply = str(result.data.get("texto", ""))
                 for item in result.blocks:
                     yield BlockEvent(dict(item))
-                final = await self._persist_reply(conversation.id, reply, list(result.blocks), turn, started)
+                final = await self._persist_reply(
+                    conversation.id, reply, [dict(item) for item in result.blocks], turn, started
+                )
                 if final.message.text:
                     yield TokenEvent(final.message.text)
                 yield FinalEvent(final.message)
@@ -413,7 +415,7 @@ class InterpretAndRespondUseCase:
             return INVALID_ARGUMENTS_TEXT, [], None
         if reason == "iteration_limit":
             text = ITERATION_LIMIT_TEXT
-            actions = QUICK_ACTIONS
+            actions: tuple[tuple[str, str], ...] = QUICK_ACTIONS
             search_query = None
         else:
             mode = degraded_mode or DegradedMode()

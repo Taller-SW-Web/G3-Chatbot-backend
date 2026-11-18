@@ -9,13 +9,21 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import Any, Protocol
 
 from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 
-SessionFactory = Callable[[], AbstractAsyncContextManager]
-ProcessorFactory = Callable[[object], object]
+
+class BatchProcessor(Protocol):
+    """Lo mínimo que el loop necesita del procesador (sin acoplarse a su clase)."""
+
+    async def process_pending_batch(self) -> int: ...
+
+
+SessionFactory = Callable[[], AbstractAsyncContextManager[Any]]
+ProcessorFactory = Callable[[Any], BatchProcessor]
 
 
 async def run_outbox_loop(
@@ -51,7 +59,7 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
         connection.get_engine()
         task = asyncio.create_task(
             run_outbox_loop(
-                lambda: connection.AsyncSessionLocal(),
+                lambda: connection.open_session(),
                 provide_outbox_processor,
                 settings.outbox_poll_interval_seconds,
             ),

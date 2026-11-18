@@ -140,8 +140,10 @@ class ManageCheckoutUseCase:
             raise CheckoutError("VALIDACION", "Se requiere Idempotency-Key", {"campo": "Idempotency-Key"})
 
         contacto = input_data.contacto
+        if not isinstance(contacto, dict):
+            raise CheckoutError("DATO_INVALIDO", "Los datos de contacto son obligatorios", {"campo": "contacto"})
         for field_name in ("nombreCompleto", "tipoDocumento", "numeroDocumento"):
-            if not isinstance(contacto, dict) or not isinstance(contacto.get(field_name), str) or not contacto[field_name].strip():
+            if not isinstance(contacto.get(field_name), str) or not contacto[field_name].strip():
                 raise CheckoutError("DATO_INVALIDO", "Los datos de contacto son obligatorios", {"campo": f"contacto.{field_name}"})
         for field_name in ("telefono", "email"):
             if field_name in contacto and not isinstance(contacto[field_name], str):

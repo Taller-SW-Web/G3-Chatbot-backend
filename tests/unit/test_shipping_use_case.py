@@ -12,6 +12,7 @@ from src.application.use_cases.manage_shipping_use_case import (
     EMPTY_CART_CODE,
     ManageShippingUseCase,
 )
+from src.application.use_cases.shipping_quote import build_destination, parse_quote
 from src.ports.outbound.module_errors import ModuleRequestError
 from tests.fakes.fake_commerce import FakeCarts, FakeItems
 
@@ -85,12 +86,8 @@ async def test_quote_reads_cart_lines_and_forwards_address():
     call = dispatch.calls[0]
     assert call["lineas"] == [{"sku": SKU, "cantidad": 2}]
     assert call["destino"] == {
-        "destinatario": "Ana Díaz",
-        "direccion": "Av. Larco 1234, dpto. 502",
         "distrito": "Miraflores",
-        "departamento": "Lima",
-        "provincia": "Lima",
-        "referencia": "Frente al parque",
+        "direccion": "Av. Larco 1234, dpto. 502",
     }
     # H4-S7: the service sends a dashed UUID as correlation id.
     assert str(uuid.UUID(call["correlation_id"])) == call["correlation_id"]
@@ -133,3 +130,36 @@ async def test_saved_addresses_are_proxied_from_seguridad():
 
     assert addresses[0]["distrito"] == "Miraflores"
     assert security.calls == [(str(CUSTOMER_ID), "holder-token")]
+
+def test_destination_omits_empty_fields():
+    """Despacho documenta `distrito` como unico obligatorio: no se envian `null`."""
+    destino = build_destination(
+        ShippingQuoteRequest(
+            distrito="Miraflores", destinatario="Ana Diaz", direccion="Av. Larco 1234"
+        )
+    )
+
+    assert destino == {"distrito": "Miraflores", "direccion": "Av. Larco 1234"}
+    assert "destinatario" not in destino
+
+
+def test_parse_quote_with_the_response_documented_by_despacho():
+    raw = {
+        "coberturaDisponible": True,
+        "tipoCotizacion": "EXACTA",
+        "nombreZona": "Lima Centro",
+        "distrito": "Brena",
+        "pesoTotalKg": 0.185,
+        "volumenTotalM3": 0.003,
+        "costoEnvio": 8.00,
+        "moneda": "PEN",
+        "plazoEstimadoDiasHabiles": 2,
+    }
+
+    quote = parse_quote(raw, "Brena")
+
+    assert quote is not None
+    assert quote.costoEnvio == 8.0
+    assert quote.moneda == "PEN"
+    assert quote.plazoEstimadoDias == 2
+    assert quote.nombreZona == "Lima Centro"

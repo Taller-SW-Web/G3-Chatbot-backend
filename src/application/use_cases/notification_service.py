@@ -158,6 +158,8 @@ class NotificationService:
         resend_number = int(task.payload.get("resend_number", 0))
         result = await self.send_confirmation(order_id, resend_number)
         if result.outcome is SendOutcome.RETRY:
+            # Invariante de `SendResult`: RETRY siempre trae la fecha del proximo intento.
+            assert result.next_attempt_at is not None
             await self._outbox.marcar_reintento(task.id, result.next_attempt_at, result.error)
         elif result.outcome is SendOutcome.FAILED:
             await self._outbox.marcar_fallido(task.id, result.error or "send failed")

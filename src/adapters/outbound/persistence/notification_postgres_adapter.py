@@ -106,6 +106,7 @@ class NotificationPostgresAdapter:
         )
         await self.session.execute(stmt)
         row = await self.obtener_por_order_y_reenvio(order_id, resend_number)
+        assert row is not None  # INSERT ... ON CONFLICT garantiza la fila
         return _record(row)
 
     async def obtener(self, order_id: str, resend_number: int) -> NotificationRecord | None:

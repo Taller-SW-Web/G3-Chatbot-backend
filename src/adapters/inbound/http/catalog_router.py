@@ -3,10 +3,11 @@
 Thin: no business rules. Anonymous reads need no session; explicit ids
 work without a chat context (carousel ordinals stay unavailable then).
 """
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.adapters.inbound.http.problem import ProblemError
 from src.application.tools.catalog_tools import (
@@ -25,6 +26,16 @@ class AvailabilityOut(BaseModel):
     sku: str
     status: str
     veredicto: str | None = None
+    missing_data: list[str] = Field(default_factory=list)
+    mensaje: str | None = None
+
+
+class CatalogSearchOut(BaseModel):
+    items: list[dict[str, Any]]
+    total: int
+    total_scope: str
+    mensaje: str
+    partial: bool
 
 
 ERROR_STATUS = {
@@ -33,6 +44,11 @@ ERROR_STATUS = {
     "VALIDACION": 400,
     "SERVICIO_NO_DISPONIBLE": 503,
 }
+
+
+def _decimal(value: float | None) -> Decimal | None:
+    """Los query params llegan como `float`; el dominio usa `Decimal`."""
+    return None if value is None else Decimal(str(value))
 
 
 def _problem(error: CatalogError) -> ProblemError:
@@ -50,7 +66,7 @@ def _problem(error: CatalogError) -> ProblemError:
 def create_catalog_router(catalog_provider) -> APIRouter:
     router = APIRouter(prefix="/catalogo", tags=["catalogo"])
 
-    @router.get("/productos")
+    @router.get("/productos", response_model=CatalogSearchOut)
     async def search_products(
         q: str | None = Query(default=None),
         categoria: str | None = Query(default=None),
@@ -73,25 +89,25 @@ def create_catalog_router(catalog_provider) -> APIRouter:
                 SearchArguments(
                     q=q, categoria=categoria, marca=marca, talla=talla, color=color,
                     soloOfertas=soloOfertas,
-                    precioMin=precioMin, precioMax=precioMax,
+                    precioMin=_decimal(precioMin), precioMax=_decimal(precioMax),
                     pagina=pagina, tamanio=tamanio,
                 ),
                 ExecutionContext(),
             )
         except Exception as exc:
-            raise _problem(_as_catalog_error(exc))
+            raise _problem(_as_catalog_error(exc)) from exc
         bloques = result.get("bloques", [])
         items = bloques[0]["datos"]["productos"] if bloques else []
         return {"items": items, "total": result.get("total", len(items)),
                 "total_scope": result.get("total_scope", "catalog"),
-                "mensaje": result.get("texto", "")}
+                "mensaje": result.get("texto", ""), "partial": result.get("partial", False)}
 
     @router.get("/promociones")
     async def promotions(service: ManageCatalogUseCase = Depends(catalog_provider)):
         try:
             return {"items": await service.promotions()}
         except Exception as exc:
-            raise _problem(_as_catalog_error(exc))
+            raise _problem(_as_catalog_error(exc)) from exc
 
     @router.get("/productos/{product_id}")
     async def product_detail(
@@ -105,7 +121,7 @@ def create_catalog_router(catalog_provider) -> APIRouter:
                 ProductArguments(product_id=product_id), ExecutionContext()
             )
         except CatalogError as exc:
-            raise _problem(exc)
+            raise _problem(exc) from exc
         bloques = result.get("bloques", [])
         if not bloques:
             raise ProblemError(404, "PRODUCTO_NO_DISPONIBLE",
@@ -120,16 +136,21 @@ def create_catalog_router(catalog_provider) -> APIRouter:
     ) -> list[AvailabilityOut]:
 
         try:
-            rows = await service.inventory.get_availability([sku.strip()])
+            statuses = await service._status_by_sku([sku.strip()], strict=True)
         except Exception as exc:
-            raise _problem(_as_catalog_error(exc))
-        out = [AvailabilityOut(sku=row["sku"], status=row["status"]) for row in rows]
-        if cantidad is not None:
+            raise _problem(_as_catalog_error(exc)) from exc
+        obtained = sku.strip() in statuses
+        out = [AvailabilityOut(sku=sku.strip(), status=statuses.get(sku.strip(), "INDETERMINADO"),
+                               missing_data=[] if obtained else ["availability"],
+                               mensaje=("No pudimos consultar la disponibilidad en este momento, intenta de nuevo."
+                                        if not obtained else "No se pudo confirmar el stock."
+                                        if statuses[sku.strip()] == "INDETERMINADO" else None))]
+        if cantidad is not None and obtained:
             try:
                 verdicts = await service.inventory.verify_quantities(
                     [{"sku": sku.strip(), "quantity": cantidad}])
             except Exception as exc:
-                raise _problem(_as_catalog_error(exc))
+                raise _problem(_as_catalog_error(exc)) from exc
             by_sku = {v.get("sku"): v.get("veredicto") for v in verdicts}
             out = [row.model_copy(update={"veredicto": by_sku.get(row.sku)})
                    for row in out]

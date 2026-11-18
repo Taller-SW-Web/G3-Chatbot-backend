@@ -20,6 +20,13 @@ from src.infrastructure.db.connection import Base
 class PaymentAttempt(Base):
     __tablename__ = "payment_attempt"
 
+    # `confirmation` NO es columna: el caso de uso la adjunta al intento aprobado
+    # para que el router devuelva el correo encolado. `__allow_unmapped__` permite
+    # la anotacion sin que SQLAlchemy intente mapearla.
+    __allow_unmapped__ = True
+
+    confirmation: dict | None = None
+
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )

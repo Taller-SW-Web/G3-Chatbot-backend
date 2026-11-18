@@ -25,7 +25,7 @@ from src.application.tools.tool_registry import ExecutionContext
 from src.domain.entities.message import MessageRole
 from src.domain.services.cart_line_resolver import CartLineResolver
 from src.domain.services.offer_policy import amount, instant, price_projection
-from src.domain.services.product_projection import normalize_detail
+from src.domain.services.product_projection import normalize_detail, sellable_skus
 from src.domain.services.stock_validator import StockValidator
 from src.domain.services.totals_calculator import PricedLine, TotalsCalculator
 from src.domain.services.variant_resolver import VariantResolver, known_selection
@@ -89,12 +89,12 @@ class ManageCartUseCase:
 
     # -- public operations ----------------------------------------------------
 
-    async def add(self, caller, conversation_id: uuid.UUID, *, sku=None,
+    async def add(self, caller, conversation_id: uuid.UUID | None, *, sku=None,
                   producto_ref=None, product_id=None, name=None, size=None, color=None,
                   quantity: int = 1, tool: str = "agregar_al_carrito", deliver_cross_sell: bool = True) -> dict:
         if not 1 <= quantity <= MAX_PER_LINE:
             raise CartError("LIMITE_CANTIDAD", f"quantity {quantity} out of 1..10")
-        added = []
+        added: list[dict] = []
         result = await self._mutate(
             caller, conversation_id, tool,
             lambda cart: self._add_line(cart, conversation_id, sku, producto_ref,
@@ -113,7 +113,7 @@ class ManageCartUseCase:
                 logger.warning("cross-sell unavailable after successful add")
         return result
 
-    async def update_quantity(self, caller, conversation_id: uuid.UUID, *,
+    async def update_quantity(self, caller, conversation_id: uuid.UUID | None, *,
                               item_id=None, item_ref=None, name=None,
                               quantity: int = 0, tool: str = "cambiar_cantidad") -> dict:
         return await self._mutate(
@@ -121,7 +121,7 @@ class ManageCartUseCase:
             lambda cart: self._set_quantity(cart, item_id, item_ref, name, quantity),
         )
 
-    async def remove_item(self, caller, conversation_id: uuid.UUID, *,
+    async def remove_item(self, caller, conversation_id: uuid.UUID | None, *,
                           item_id=None, item_ref=None, name=None,
                           tool: str = "quitar_del_carrito") -> dict:
         return await self._mutate(
@@ -129,7 +129,7 @@ class ManageCartUseCase:
             lambda cart: self._drop_line(cart, item_id, item_ref, name),
         )
 
-    async def clear(self, caller, conversation_id: uuid.UUID,
+    async def clear(self, caller, conversation_id: uuid.UUID | None,
                     tool: str = "vaciar_carrito") -> dict:
         async def _clear(cart):
             for row in await self._items.listar_por_cart(cart.id):
@@ -138,7 +138,7 @@ class ManageCartUseCase:
             return "Vaciamos tu carrito."
         return await self._mutate(caller, conversation_id, tool, _clear)
 
-    async def view(self, caller, conversation_id: uuid.UUID) -> dict:
+    async def view(self, caller, conversation_id: uuid.UUID | None) -> dict:
         cart = await self._open_cart(caller, conversation_id, create=False)
         if cart is None:
             return self._empty_cart_view()
@@ -294,10 +294,10 @@ class ManageCartUseCase:
                 await self._uow.commit()
                 view["texto"] = self._with_summary(texto, view)
                 return view
-            except StaleCartError:
+            except StaleCartError as exc:
                 await self._uow.rollback()
                 if attempts >= 2:
-                    raise CartError("CONFLICTO", "concurrent modification, retry")
+                    raise CartError("CONFLICTO", "concurrent modification, retry") from exc
             except CartConflictError as exc:
                 await self._uow.rollback()
                 raise CartError("CONFLICTO", "cart was modified concurrently") from exc
@@ -369,7 +369,7 @@ class ManageCartUseCase:
                 "LIMITE_CANTIDAD", "Tu carrito llegó al máximo de 20 productos distintos"
             )
         await self._check_can_sell(sku_value, current + quantity)
-        captured_price = []
+        captured_price: list[dict] = []
         price = await self._live_price(sku_value, captured_price)
         if conversation_id is not None and captured_price:
             projection = price_projection(captured_price[0])
@@ -445,7 +445,7 @@ class ManageCartUseCase:
         if not rows:
             return self._empty_cart_view()
         skus = [row.sku for row in rows]
-        price_rows = {}
+        price_rows: dict = {}
         prices, (evaluation, promotions_ok) = await asyncio.gather(
             self._prices_map(skus, price_rows),
             self._evaluate(cart, rows, coupon_code=coupon_code),
@@ -659,7 +659,7 @@ class ManageCartUseCase:
             variants = normalize_detail(detail)["variants"]
             match = next((row for row in variants if row.get("sku") == sku), None)
             if str(detail.get("product_id")) != product_id or (
-                match is None and (variants or detail.get("sku_base") != sku)
+                sku not in sellable_skus(detail)
             ):
                 raise CartError("PRODUCTO_NO_DISPONIBLE", "SKU does not belong to the supplied product")
             for label, selected in (("talla", size), ("color", color)):
@@ -678,7 +678,7 @@ class ManageCartUseCase:
                         if exc.status == 404:
                             continue
                         raise
-                    if any(v.get("sku") == sku for v in found.get("variants", [])):
+                    if sku in sellable_skus(found):
                         detail = found
                         break
             except Exception:

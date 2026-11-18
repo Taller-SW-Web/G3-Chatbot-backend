@@ -14,8 +14,11 @@ def test_modelos_registrados_sin_inventar_tablas_de_companeros():
 def test_fk_conversation_message_attachment_resuelven_modelos_reales(persistence_metadata):
     assert next(iter(Message.__table__.c.conversation_id.foreign_keys)).column is Conversation.__table__.c.id
     assert next(iter(Attachment.__table__.c.message_id.foreign_keys)).column is Message.__table__.c.id
+    # El inventario crece con los adapters que se prueban contra SQL real
+    # (carrito y checkout); `return_ref` es el mínimo que exige evidence.
     assert {t.name for t in persistence_metadata.sorted_tables} == {
         "conversation", "message", "attachment", "evidence", "return_ref",
+        "cart", "cart_item", "checkout",
     }
 
 

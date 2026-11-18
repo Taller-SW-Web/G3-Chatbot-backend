@@ -211,6 +211,10 @@ class FakeServiceTokenProvider:
     """Mirrors the client_credentials provider without network (A3)."""
 
     async def get_token(
-        self, *, correlation_id: str | None = None, scope: str | None = None
+        self,
+        *,
+        correlation_id: str | None = None,
+        scope: str | None = None,
+        audience: str | None = None,
     ) -> str:
         return SERVICE_TOKEN

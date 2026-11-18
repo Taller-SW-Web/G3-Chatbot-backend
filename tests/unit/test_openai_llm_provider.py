@@ -1,9 +1,14 @@
-"""OpenAI adapter of LLMProvider against a mocked HTTP layer. No network, no real key."""
+"""OpenAI adapter of LLMProvider against an injected HTTP transport. No network, no real key.
+
+El SDK 3.x usa `httpx2` (nuevo major de httpx), así que `respx` —que parchea
+`httpx` 1.x— ya no intercepta. Se inyecta un `httpx2.MockTransport` en el
+cliente, que es el punto de extensión oficial del SDK.
+"""
 import json
 
-import httpx
+import httpx2
 import pytest
-import respx
+from openai import AsyncOpenAI
 
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.infrastructure.config.container import provide_llm_provider
@@ -30,10 +35,78 @@ USER_HELLO = [LLMMessage(LLMRole.USER, (TextPart("hello"),))]
 SEARCH_TOOL = ToolDefinition("search_products", "Search the catalog", {"type": "object", "properties": {}})
 
 
+class _Call:
+    """Misma forma que `respx` exponía: `.request.content` con el cuerpo enviado."""
+
+    def __init__(self, request: httpx2.Request) -> None:
+        self.request = request
+
+
+class HttpMock:
+    """Sustituto mínimo de `respx` sobre el transporte del SDK 3.x."""
+
+    def __init__(self, method: str, url: str) -> None:
+        self.method, self.url = method, url
+        self.calls: list[_Call] = []
+        self.called = False
+        self._response: httpx2.Response | None = None
+        self._error: Exception | None = None
+
+    def mock(self, *, return_value=None, side_effect: Exception | None = None) -> "HttpMock":
+        self._response, self._error = return_value, side_effect
+        return self
+
+    def handler(self, request: httpx2.Request) -> httpx2.Response:
+        self.called = True
+        self.calls.append(_Call(request))
+        if self._error is not None:
+            raise self._error
+        assert self._response is not None
+        return self._response
+
+    def unmatched_calls(self) -> list[str]:
+        """Peticiones que no fueron al método y URL registrados (respx las rechazaba)."""
+        return [f"{c.request.method} {c.request.url}" for c in self.calls
+                if c.request.method != self.method or str(c.request.url) != self.url]
+
+
+_ACTIVE: HttpMock | None = None
+
+
+def http_mock_post(url: str) -> HttpMock:
+    """Registra la respuesta que devolverá el transporte del SDK en este test."""
+    global _ACTIVE
+    _ACTIVE = HttpMock("POST", url)
+    return _ACTIVE
+
+
+@pytest.fixture(autouse=True)
+def _fresh_transport():
+    global _ACTIVE
+    _ACTIVE = None
+    yield
+    # Se verifica al final: un assert dentro del transporte lo envolvería el SDK como error de conexión.
+    route, _ACTIVE = _ACTIVE, None
+    if route is not None:
+        assert route.unmatched_calls() == []
+
+
+def _client_with_transport(route: HttpMock, timeout_seconds: float) -> AsyncOpenAI:
+    # Misma configuración que el cliente de producción del adapter (sin reintentos del SDK).
+    return AsyncOpenAI(
+        api_key="test-key", timeout=timeout_seconds, max_retries=0,
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(route.handler)),
+    )
+
+
 def make_provider(**overrides) -> OpenAILLMProvider:
     params = dict(api_key="test-key", model="test-model", temperature=0.6, max_tokens=256,
                   timeout_seconds=5.0)
-    return OpenAILLMProvider(**{**params, **overrides})
+    merged = {**params, **overrides}
+    # Sin api_key el adapter debe fallar de forma diferida: no se inyecta cliente.
+    if _ACTIVE is not None and merged.get("api_key") is not None:
+        merged.setdefault("client", _client_with_transport(_ACTIVE, merged["timeout_seconds"]))
+    return OpenAILLMProvider(**merged)
 
 
 def final_response(status="completed", usage=None, incomplete_reason=None) -> dict:
@@ -80,19 +153,18 @@ def completed(usage=None) -> dict:
     return {"type": "response.completed", "response": final_response(usage=usage)}
 
 
-def sse(*events: dict) -> httpx.Response:
+def sse(*events: dict) -> httpx2.Response:
     body = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events)
-    return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+    return httpx2.Response(200, content=body, headers={"content-type": "text/event-stream"})
 
 
 async def collect(provider, messages=USER_HELLO, tools=()):
     return [event async for event in provider.stream(messages, tools)]
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_streams_text_deltas_and_usage_with_default_request_shape():
-    route = respx.post(URL).mock(return_value=sse(
+    route = http_mock_post(URL).mock(return_value=sse(
         text_delta("Hola"), text_delta(" mundo"), completed(usage_of(7, 3)),
     ))
     events = await collect(make_provider())
@@ -108,10 +180,9 @@ async def test_streams_text_deltas_and_usage_with_default_request_shape():
     assert "tools" not in body
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_assembles_tool_calls_from_argument_deltas():
-    route = respx.post(URL).mock(return_value=sse(
+    route = http_mock_post(URL).mock(return_value=sse(
         call_added(0, "call_1", "search_products"),
         args_delta(0, '{"query": "zapa'),
         args_delta(0, 'tillas", "size": 42}'),
@@ -132,20 +203,18 @@ async def test_assembles_tool_calls_from_argument_deltas():
         "parameters": {"type": "object", "properties": {}}, "strict": False}]
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_tool_call_arguments_fall_back_to_deltas_when_item_done_is_missing():
-    respx.post(URL).mock(return_value=sse(
+    http_mock_post(URL).mock(return_value=sse(
         call_added(0, "call_1", "get_cart"), args_delta(0, '{"a":'), args_delta(0, " 1}"), completed(),
     ))
     events = await collect(make_provider())
     assert events[0] == ToolCallRequested(ToolCall("call_1", "get_cart", {"a": 1}))
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_mixed_text_then_tool_call():
-    respx.post(URL).mock(return_value=sse(
+    http_mock_post(URL).mock(return_value=sse(
         text_delta("Let me check."),
         call_added(1, "call_1", "get_cart"),
         call_done(1, "call_1", "get_cart", "{}"),
@@ -158,21 +227,19 @@ async def test_mixed_text_then_tool_call():
     ]
 
 
-@respx.mock
 @pytest.mark.asyncio
 @pytest.mark.parametrize("arguments", ['{"a": ', "[1, 2]"])
 async def test_malformed_or_non_object_tool_arguments_raise_unavailable(arguments):
-    respx.post(URL).mock(return_value=sse(
+    http_mock_post(URL).mock(return_value=sse(
         call_added(0, "c", "t"), call_done(0, "c", "t", arguments), completed(),
     ))
     with pytest.raises(LLMUnavailableError):
         await collect(make_provider())
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_maps_history_images_and_tool_results_to_response_input_items():
-    route = respx.post(URL).mock(return_value=sse(completed()))
+    route = http_mock_post(URL).mock(return_value=sse(completed()))
     history = [
         LLMMessage(LLMRole.SYSTEM, (TextPart("be brief"),)),
         LLMMessage(LLMRole.USER, (TextPart("what is this?"), ImagePart("image/png", "QUJD"))),
@@ -196,21 +263,19 @@ async def test_maps_history_images_and_tool_results_to_response_input_items():
     ]
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_assistant_tool_call_without_text_emits_only_the_function_call():
-    route = respx.post(URL).mock(return_value=sse(completed()))
+    route = http_mock_post(URL).mock(return_value=sse(completed()))
     history = [LLMMessage(LLMRole.ASSISTANT, tool_calls=(ToolCall("call_1", "get_cart", {}),))]
     await collect(make_provider(), history)
     assert json.loads(route.calls[0].request.content)["input"] == [
         {"type": "function_call", "call_id": "call_1", "name": "get_cart", "arguments": "{}"}]
 
 
-@respx.mock
 @pytest.mark.asyncio
 @pytest.mark.parametrize("effort", ["minimal", "low", "medium", "high"])
 async def test_reasoning_effort_is_sent_and_temperature_omitted_unless_none(effort):
-    route = respx.post(URL).mock(return_value=sse(completed()))
+    route = http_mock_post(URL).mock(return_value=sse(completed()))
     await collect(make_provider(reasoning_effort=effort))
     body = json.loads(route.calls[0].request.content)
     assert body["reasoning"] == {"effort": effort}
@@ -231,38 +296,34 @@ async def test_image_with_vision_disabled_is_rejected_without_calling_the_provid
         await collect(provider, messages)
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_timeout_raises_neutral_timeout_error():
-    respx.post(URL).mock(side_effect=httpx.ReadTimeout("slow"))
+    http_mock_post(URL).mock(side_effect=httpx2.ReadTimeout("slow"))
     with pytest.raises(LLMTimeoutError):
         await collect(make_provider())
 
 
-@respx.mock
 @pytest.mark.parametrize("status", [401, 429, 500, 503])
 @pytest.mark.asyncio
 async def test_http_errors_raise_neutral_unavailable_error(status):
-    respx.post(URL).mock(return_value=httpx.Response(status, json={"error": {"message": "nope"}}))
+    http_mock_post(URL).mock(return_value=httpx2.Response(status, json={"error": {"message": "nope"}}))
     with pytest.raises(LLMUnavailableError) as error:
         await collect(make_provider())
     assert str(status) in str(error.value)
     assert "test-key" not in str(error.value)
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_connection_failure_raises_unavailable_error():
-    respx.post(URL).mock(side_effect=httpx.ConnectError("down"))
+    http_mock_post(URL).mock(side_effect=httpx2.ConnectError("down"))
     with pytest.raises(LLMUnavailableError):
         await collect(make_provider())
 
 
-@respx.mock
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reason, finish", [("max_output_tokens", "length"), ("content_filter", "content_filter")])
 async def test_incomplete_response_maps_to_finish_reason(reason, finish):
-    respx.post(URL).mock(return_value=sse(
+    http_mock_post(URL).mock(return_value=sse(
         text_delta("cut"),
         {"type": "response.incomplete",
          "response": final_response("incomplete", usage_of(5, 256), reason)},
@@ -271,36 +332,32 @@ async def test_incomplete_response_maps_to_finish_reason(reason, finish):
         TextDelta("cut"), Completed(finish, TokenUsage(5, 256))]
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_failed_response_raises_unavailable_error():
-    respx.post(URL).mock(return_value=sse(
+    http_mock_post(URL).mock(return_value=sse(
         {"type": "response.failed", "response": final_response("failed")}))
     with pytest.raises(LLMUnavailableError):
         await collect(make_provider())
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_error_event_raises_unavailable_error():
-    respx.post(URL).mock(return_value=sse(
+    http_mock_post(URL).mock(return_value=sse(
         {"type": "error", "code": "server_error", "message": "boom", "param": None}))
     with pytest.raises(LLMUnavailableError):
         await collect(make_provider())
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_stream_without_final_response_raises_unavailable_error():
-    respx.post(URL).mock(return_value=sse(text_delta("cut")))
+    http_mock_post(URL).mock(return_value=sse(text_delta("cut")))
     with pytest.raises(LLMUnavailableError):
         await collect(make_provider())
 
 
-@respx.mock
 @pytest.mark.asyncio
 async def test_missing_api_key_fails_lazily_without_calling_the_network():
-    route = respx.post(URL)
+    route = http_mock_post(URL)
     provider = make_provider(api_key=None)  # building it must not raise
     with pytest.raises(LLMUnavailableError):
         await collect(provider)

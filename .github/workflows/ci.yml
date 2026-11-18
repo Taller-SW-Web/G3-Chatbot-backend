@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [development, main]
 
+# Least privilege: the workflow only reads the repository.
+permissions:
+  contents: read
+
+# A newer push on the same ref cancels the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   PYTHONPATH: .
 
@@ -13,9 +22,12 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install ruff
@@ -23,26 +35,54 @@ jobs:
       - name: Lint
         run: ruff check .
 
+  types:
+    name: Type check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install mypy
+        run: pip install mypy
+      - name: Type check
+        run: mypy src
+
   unit-tests:
     name: Unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run unit tests
-        run: python -m pytest tests/unit
+        run: python -m pytest tests/unit --cov=src --cov-report=xml --cov-report=term
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-backend
+          path: coverage.xml
+          if-no-files-found: error
 
   openapi:
     name: Export OpenAPI
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -50,8 +90,12 @@ jobs:
         run: pip install -r requirements.txt
       - name: Export OpenAPI schema
         run: python scripts/export_openapi.py --output docs/openapi.json
+      - name: Validate OpenAPI schema
+        run: |
+          pip install openapi-spec-validator
+          openapi-spec-validator docs/openapi.json
       - name: Upload OpenAPI schema artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openapi-spec
           path: docs/openapi.json
@@ -60,6 +104,7 @@ jobs:
   integration-tests:
     name: Migrations and integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         # PostgreSQL 18 for native uuidv7(), as the integration tests require.
@@ -79,8 +124,10 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/chatbot_test
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/chatbot_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -92,14 +139,134 @@ jobs:
           alembic downgrade base
           alembic upgrade head
       - name: Run integration tests
-        run: python -m pytest tests/integration
+        # `--cov-fail-under=0`: este reporte no se evalúa solo. Sonar combina la
+        # cobertura de integración con la de unitarias y el umbral se aplica una
+        # vez sobre el total del proyecto.
+        run: |
+          python -m pytest tests/integration \
+            --cov=src --cov-report=xml:coverage-integration.xml --cov-fail-under=0
+      - name: Upload integration coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-integration
+          path: coverage-integration.xml
+          if-no-files-found: error
+
+  # Advisory during Fase 2: a finding is reported but does not block the gate yet.
+  security:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Audit requirements (advisory)
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt \
+            || echo "::warning::pip-audit encontró vulnerabilidades (advisory durante la Fase 2)"
+
+  docker:
+    name: Dockerfile + Trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: hadolint
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: Dockerfile
+          # Solo bloquea errores; los estilos se revisan sin frenar el gate.
+          failure-threshold: error
+      - name: Trivy (vulnerabilidades y configuración)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          format: table
+      - name: Build image (equivalente al build del frontend)
+        run: docker build --tag g3-chatbot-backend:ci .
+
+  # Revisa las dependencias que el PR agrega/cambia contra el Dependency Graph.
+  # El job corre siempre (aunque en `push` no revisa nada) para no romper el
+  # chequeo de `skipped` del gate.
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Review dependencies
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  # Análisis de SonarCloud con la cobertura de unitarias e integración. El proyecto
+  # espera el Quality Gate (`sonar.qualitygate.wait`), así que un gate rojo tumba el job.
+  #
+  # Los PRs de Dependabot se ejecutan como si vinieran de un fork: no reciben
+  # secretos. Sin token el escaneo no puede autenticarse, así que se omite y el job
+  # queda verde; la cobertura y el resto del gate siguen intactos.
+  sonar:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [unit-tests, integration-tests]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Detect SONAR_TOKEN
+        id: token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Sin SONAR_TOKEN (PR de Dependabot): se omite SonarCloud."
+          fi
+      - name: Download coverage reports
+        if: steps.token.outputs.available == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          # `coverage-backend` (unitarias) y `coverage-integration` aterrizan en la
+          # raíz: Sonar los lee juntos y suma las líneas cubiertas por cualquiera.
+          pattern: coverage-*
+          merge-multiple: true
+      - name: SonarCloud scan
+        if: steps.token.outputs.available == 'true'
+        uses: SonarSource/sonarqube-scan-action@v8.4.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
 
   # `test` is the required status check of the protected branches, so it stays as the
   # single gate. It runs even when a job fails, because a skipped required check counts as passed.
   test:
     name: test
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, openapi, integration-tests]
+    timeout-minutes: 10
+    needs: [lint, types, unit-tests, openapi, integration-tests, security, dependency-review, docker, sonar]
     if: always()
     steps:
       - name: Require every job to succeed

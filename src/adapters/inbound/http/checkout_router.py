@@ -109,7 +109,7 @@ def create_checkout_router(
         try:
             row = await service.create_checkout(
                 CreateCheckoutInput(
-                    customer_id=caller.customer_id,
+                    customer_id=caller.customer,
                     idempotency_key=idempotency_key,
                     cart_id=payload.cartId,
                     direccion=payload.direccion,
@@ -137,7 +137,7 @@ def create_checkout_router(
         service: ManageCheckoutUseCase = Depends(use_case_provider),
     ) -> dict[str, Any]:
         try:
-            row = await service.get_checkout(checkout_id, caller.customer_id)
+            row = await service.get_checkout(checkout_id, caller.customer)
             order_id = row.summary.get("orderId") if isinstance(row.summary, dict) else None
             return {
                 "id": str(row.id),
@@ -180,7 +180,7 @@ def create_checkout_router(
             attempt = await service.process_payment(
                 ProcessPaymentInput(
                     checkout_id=checkout_id,
-                    customer_id=caller.customer_id,
+                    customer_id=caller.customer,
                     idempotency_key=idempotency_key,
                     numero_tarjeta=payload.numeroTarjeta,
                     titular=payload.titular,

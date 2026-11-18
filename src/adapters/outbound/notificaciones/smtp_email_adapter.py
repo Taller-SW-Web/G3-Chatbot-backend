@@ -49,7 +49,11 @@ class SmtpEmailSender:
         try:
             with smtplib.SMTP(self.host, self.port, timeout=self.timeout_seconds) as smtp:
                 if self.starttls:
-                    smtp.starttls(context=ssl.create_default_context())
+                    # Explicito: el certificado del servidor SMTP se verifica siempre.
+                    context = ssl.create_default_context()
+                    context.check_hostname = True
+                    context.verify_mode = ssl.CERT_REQUIRED
+                    smtp.starttls(context=context)
                 if self._username:
                     smtp.login(self._username, self._password)
                 smtp.send_message(mime)

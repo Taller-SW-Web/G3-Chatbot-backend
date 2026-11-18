@@ -10,7 +10,7 @@ Frames are `event: <name>\\ndata: <json>\\n\\n`, UTF-8:
 """
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import AsyncExitStack
 from typing import Any
 
@@ -50,7 +50,7 @@ def encode_event(event: ConversationEvent) -> str:
     raise TypeError(f"unmapped conversation event {type(event).__name__}")
 
 
-async def stream_turn(stream: AsyncIterator[ConversationEvent]) -> AsyncIterator[str]:
+async def stream_turn(stream: AsyncIterator[ConversationEvent]) -> AsyncGenerator[str, None]:
     """Yields SSE frames. Each use-case step is shielded from cancellation: with ASGI < 2.4 Starlette cancels
     the response task on disconnect, and the use case must not be interrupted inside its own commit or
     rollback. The cancellation takes effect between events instead."""

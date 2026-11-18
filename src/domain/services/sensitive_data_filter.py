@@ -154,8 +154,8 @@ class SensitiveDataFilter:
             reemplazos.append((asignacion.end(), fin_secreto))
             detectadas.add("CONTRASENA")
 
-        for inicio, fin in reversed(reemplazos):
-            texto = texto[:inicio] + _PASSWORD_PLACEHOLDER + texto[fin:]
+        for inicio, fin_redaccion in reversed(reemplazos):
+            texto = texto[:inicio] + _PASSWORD_PLACEHOLDER + texto[fin_redaccion:]
         return texto
 
     @staticmethod

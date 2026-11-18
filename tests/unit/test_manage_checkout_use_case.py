@@ -285,9 +285,10 @@ async def test_create_checkout_uses_quoted_shipping_cost(use_case):
     assert checkout.total == 118.9
     call = use_case.dispatch.calls[0]
     assert call["lineas"] == [{"sku": "SKU-1", "cantidad": 2}]
-    assert call["destino"]["destinatario"] == VALID_CONTACT["nombreCompleto"]
+    # El contrato de cotizacion de Despacho solo documenta distrito y direccion.
     assert call["destino"]["direccion"] == "Av. Larco 1234"
     assert call["destino"]["distrito"] == "Miraflores"
+    assert "destinatario" not in call["destino"]
 
 
 @pytest.mark.asyncio

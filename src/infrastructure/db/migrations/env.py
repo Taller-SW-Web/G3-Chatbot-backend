@@ -4,7 +4,13 @@ import sys
 from logging.config import fileConfig
 
 from alembic import context
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
+
+# Carga .env de la raíz del backend. `override=False` (default): las variables
+# ya exportadas (CI, contenedor) mandan. El servidor no usa esto: se arranca
+# con `uvicorn --env-file .env`.
+load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..", ".env")))
 
 # Permite `from src.adapters...` cuando se ejecuta `alembic` desde la raíz del backend.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))

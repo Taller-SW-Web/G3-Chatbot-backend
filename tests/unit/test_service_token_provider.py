@@ -113,4 +113,30 @@ async def test_invalidate_drops_only_the_rejected_token():
     await security.get_token(scope="a")
     await security.get_token()
     security.invalidate("svc-a")
-    assert set(security._tokens) == {None}
+    assert set(security._tokens) == {(None, None)}
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_requests_scope_and_audience_and_caches_per_key():
+    route = respx.post(f"{BASE_URL}/auth/token").mock(
+        side_effect=[
+            httpx.Response(200, json={"accessToken": "svc-desp", "expiresIn": 900}),
+            httpx.Response(200, json={"accessToken": "svc-otro", "expiresIn": 900}),
+        ]
+    )
+    security = provider()
+
+    first = await security.get_token(
+        scope="cotizaciones:calcular", audience="api-despacho"
+    )
+    assert first == "svc-desp"
+    body = parse_qs(route.calls[0].request.content.decode())
+    assert body["scope"] == ["cotizaciones:calcular"]
+    assert body["audience"] == ["api-despacho"]
+
+    # Un token de otro scope/audiencia no se reutiliza.
+    second = await security.get_token(
+        scope="seguimientos:leer", audience="api-despacho"
+    )
+    assert second == "svc-otro"
+    assert route.call_count == 2

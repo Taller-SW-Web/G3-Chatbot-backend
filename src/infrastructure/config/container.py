@@ -539,7 +539,7 @@ def provide_interpret_and_respond(
 async def provide_turn_scope() -> AsyncIterator[InterpretAndRespondUseCase]:
     """One database session per use: a WebSocket outlives any request-scoped session, so each turn opens its own."""
     connection.get_engine()
-    async with connection.AsyncSessionLocal() as session:
+    async with connection.open_session() as session:
         yield build_interpret_and_respond(session)
 
 
@@ -547,7 +547,7 @@ async def provide_turn_scope() -> AsyncIterator[InterpretAndRespondUseCase]:
 async def provide_action_scope() -> AsyncIterator[DispatchDirectActionUseCase]:
     """One database session for a direct UI action; no LLM or SSE is opened."""
     connection.get_engine()
-    async with connection.AsyncSessionLocal() as session:
+    async with connection.open_session() as session:
         yield DispatchDirectActionUseCase(
             conversations=ConversationPostgresAdapter(session),
             messages=MessagePostgresAdapter(session),

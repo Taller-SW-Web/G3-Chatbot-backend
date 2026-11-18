@@ -307,9 +307,9 @@ def create_session_router(
             answer = await sessions.verify_mfa_code(challenge, body.code)
         except InvalidCredentialsError as exc:
             extra = ({"intentosRestantes": exc.intentos_restantes}
-                     if exc.intentos_restantes is not None else {})
+                     if exc.intentos_restantes is not None else None)
             raise ProblemError(401, "CODIGO_INVALIDO", "Invalid code",
-                               "Código incorrecto", **extra) from None
+                               "Código incorrecto", extra=extra) from None
         except AccountNotAllowedError:
             # The injected `response` is discarded when a problem is raised, so the
             # cookie deletions travel on the problem itself.

@@ -7,8 +7,9 @@ and the caps (10 u/line, 20 lines) are enforced by the use case before
 calling here.
 """
 import uuid
+from typing import Any, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
@@ -45,7 +46,13 @@ class CartItemPostgresAdapter:
         return res.scalar_one_or_none()
 
     async def listar_por_cart(self, cart_id: uuid.UUID) -> list[CartItem]:
-        stmt = select(CartItem).where(CartItem.cart_id == cart_id).order_by(CartItem.created_at)
+        # `id` (uuidv7) desempata: dos líneas creadas en la misma transacción
+        # comparten created_at y el orden de la UI quedaría indefinido.
+        stmt = (
+            select(CartItem)
+            .where(CartItem.cart_id == cart_id)
+            .order_by(CartItem.created_at, CartItem.id)
+        )
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
 
@@ -87,6 +94,6 @@ class CartItemPostgresAdapter:
 
     async def eliminar(self, id: uuid.UUID) -> bool:
         stmt = delete(CartItem).where(CartItem.id == id)
-        res = await self.session.execute(stmt)
+        res = cast(CursorResult[Any], await self.session.execute(stmt))
         await self._flush()
         return res.rowcount > 0

@@ -170,7 +170,6 @@ class FakeCatalogPort:
             return _commercial_product(self._details[product_id])
         for item in self._products:
             if item.get("product_id") == product_id:
-                base = item.get("sku_base") or product_id
                 return {
                     "product_id": product_id, "name": item.get("name"),
                     "slug": item.get("slug") or product_id,
@@ -180,9 +179,10 @@ class FakeCatalogPort:
                     "marca": item.get("marca") or {"name": item.get("brand_name")},
                     "categoria_id": (item.get("categoria_id") or item.get("category_id")),
                     "images": item.get("images", []),
-                    "tiene_variantes": False,
-                    "variants": [{"sku": f"{base}-STD", "variant_id": f"{base}-STD", "identifying_attributes": [],
-                                  "non_identifying_attributes": []}],
+                    "tiene_variantes": item.get("tiene_variantes", False),
+                    "sku_base": item.get("sku_base"),
+                    "attributes": item.get("attributes", []),
+                    "variants": item.get("variants", []),
                 }
         raise ModuleRequestError("productos", 404, "RECURSO_NO_ENCONTRADO")
 

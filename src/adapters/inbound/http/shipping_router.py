@@ -52,6 +52,7 @@ class ShippingServicePort(Protocol):
 def _translate_shipping_error(exc: Exception) -> ProblemError:
     if isinstance(exc, ProblemError):
         return exc
+    headers: list[tuple[str, str]] | None = None
     if isinstance(exc, ShippingError):
         code = exc.code
         detail = exc.detail
@@ -60,6 +61,9 @@ def _translate_shipping_error(exc: Exception) -> ProblemError:
         code = DISPATCH_TO_CHANNEL_ERROR.get(exc.code, exc.code)
         detail = exc.detail
         extra = {}
+        # Despacho puede no enviar Retry-After; si lo envía, se reenvía.
+        if exc.retry_after:
+            headers = [("Retry-After", exc.retry_after)]
     elif isinstance(exc, ModuleUnavailableError):
         return ProblemError(
             status=503,
@@ -88,6 +92,7 @@ def _translate_shipping_error(exc: Exception) -> ProblemError:
         title=title_map.get(http_status, "Shipping error"),
         detail=detail,
         extra=extra,
+        headers=headers,
     )
 
 

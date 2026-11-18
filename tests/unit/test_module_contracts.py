@@ -2,6 +2,7 @@
 import httpx
 import pytest
 import respx
+from pydantic import ValidationError
 
 from src.adapters.outbound.http_clients.base_client import BaseModuleClient, ModuleUnavailableError
 from src.application.dto.chatbot_response_dto import AssistantTurnResult, ChatBlock
@@ -75,9 +76,9 @@ def test_block_types_cover_contract():
 def test_send_message_shapes():
     assert SendMessageRequest(texto="hola").texto == "hola"
     assert SendMessageRequest(accion={"tipo": "VER_OFERTAS", "payload": {}}).accion.tipo == "VER_OFERTAS"
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         SendMessageRequest(texto="a", accion={"tipo": "X", "payload": {}})
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         SendMessageRequest(texto="x" * 1001)
 
 

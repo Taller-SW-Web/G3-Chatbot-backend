@@ -1,0 +1,11 @@
+[run]
+source = src
+
+[report]
+# Baseline measured on 2026-11-07 (88 %). It is a floor, not a target: raise it
+# per milestone instead of jumping to a global 90 %.
+fail_under = 85
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError

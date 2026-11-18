@@ -1,0 +1,40 @@
+{
+  "product_id": "ad478840-d9fa-5c02-8e4f-d6bdbd0b1914",
+  "slug": "adidas-messi-club-ji8291",
+  "name": "adidas Messi Club",
+  "description": "Balón adidas Messi Club, referencia JI8291, presentación multicolor y talla 5. Opción para sesiones de fútbol recreativo y entrenamiento; se vende por unidad.",
+  "categoria_id": "fcb3cac1-b14a-b935-fc1a-c147b878a5c6",
+  "tipo_producto_id": "455e292f-face-5ea3-387d-db95b93cc9af",
+  "marca_id": "d05cc621-2d16-faa3-f620-19fb3173737c",
+  "tiene_variantes": false,
+  "sku_base": "ADI-MESSI-JI8291-05",
+  "images": [
+    "https://slzglmtiyrzygpkiuthf.supabase.co/storage/v1/object/public/catalog-products/adidas-messi-ji8291.jpg"
+  ],
+  "attributes": [
+    {
+      "caracteristica_id": "acee6db1-ba1c-f020-caf8-f439b09556ff",
+      "nombre": "Color",
+      "valor_id": "35e25c52-aa9b-5572-b656-15b701e4894c",
+      "valor": {
+        "valor_id": "35e25c52-aa9b-5572-b656-15b701e4894c"
+      }
+    },
+    {
+      "caracteristica_id": "fe3fe43d-f3a4-6fe7-4a2f-34e8bdfa0abd",
+      "nombre": "Talla",
+      "valor_id": "52d4b91a-f829-c05e-d60e-31ada29b0513",
+      "valor": {
+        "valor_id": "52d4b91a-f829-c05e-d60e-31ada29b0513"
+      }
+    }
+  ],
+  "variants": [],
+  "marca": {
+    "marca_id": "d05cc621-2d16-faa3-f620-19fb3173737c",
+    "name": "adidas",
+    "description": "Marca de ropa, calzado y accesorios deportivos con opciones para fútbol, running y entrenamiento.",
+    "logo_url": null,
+    "country_code": "DE"
+  }
+}

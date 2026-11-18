@@ -9,6 +9,7 @@ Decisión: PostgreSQL 18 + Python 3.12.7.
 """
 import json
 import os
+from collections.abc import AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -37,11 +38,11 @@ def create_engine(url: str) -> AsyncEngine:
     return create_async_engine(url, pool_pre_ping=True, json_serializer=_json_serializer)
 
 
-engine = None
-AsyncSessionLocal = None
+engine: AsyncEngine | None = None
+AsyncSessionLocal: async_sessionmaker[AsyncSession] | None = None
 
 
-def get_engine():
+def get_engine() -> AsyncEngine:
     global engine, AsyncSessionLocal
     if engine is None:
         engine = create_engine(get_database_url())
@@ -49,7 +50,19 @@ def get_engine():
     return engine
 
 
-async def get_session():
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Sessionmaker listo para usar; construye el engine la primera vez."""
     get_engine()
-    async with AsyncSessionLocal() as session:
+    factory = AsyncSessionLocal
+    assert factory is not None  # `get_engine()` siempre lo crea
+    return factory
+
+
+def open_session() -> AsyncSession:
+    """Nueva sesión; quien la abre la cierra (`async with connection.open_session()`)."""
+    return get_session_factory()()
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    async with open_session() as session:
         yield session
