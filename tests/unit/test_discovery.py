@@ -45,7 +45,7 @@ def service(statuses=None):
                  "marca_id": "a" if i < 6 else "b", "marca": {"name": "Marca A" if i < 6 else "Marca B"}, "sku_base": f"SKU{i}", "precio_regular": 100 + i}
                 for i in range(8)]
     catalog = FakeCatalogPort(products=products, details={}, prices={
-        f"SKU{i}-STD": {**PRICE, "sku": f"SKU{i}-STD", "precio_regular": 100 + i,
+        f"SKU{i}": {**PRICE, "sku": f"SKU{i}", "precio_regular": 100 + i,
                        "precio_oferta": 80 + i} for i in range(8)})
     conversations = FakeConversations()
     cid = uuid.uuid4()
@@ -89,7 +89,7 @@ def test_recommendation_schema_rejects_bad_budget(budget):
 
 @pytest.mark.asyncio
 async def test_recommendations_budget_diversity_exclusion_and_ordinals():
-    uc, ctx = service({"SKU0-STD": "AGOTADO", "SKU1-STD": "INDETERMINADO"})
+    uc, ctx = service({"SKU0": "AGOTADO", "SKU1": "INDETERMINADO"})
     result = await uc.recommend(RecommendationArguments(actividad="running", presupuestoMax=100), ctx)
     rows = result["bloques"][0]["datos"]["productos"]
     assert len(rows) == 5 and len({row["brand"] for row in rows}) == 2
@@ -114,16 +114,16 @@ async def test_clarifications_persist_two_max_and_refusal_chip():
 
 
 @pytest.mark.asyncio
-async def test_missing_availability_fails_not_commercial_empty():
+async def test_missing_availability_excludes_recommendations_as_partial():
     uc, ctx = service()
     uc._inventory.get_availability = AsyncMock(return_value=[])
-    with pytest.raises(CatalogError):
-        await uc.recommend(RecommendationArguments(actividad="running"), ctx)
+    result = await uc.recommend(RecommendationArguments(actividad="running"), ctx)
+    assert result["partial"] is True and result["bloques"] == []
 
 
 @pytest.mark.asyncio
 async def test_cross_sell_persistence_once_silence_resume_and_no_leakage():
-    uc, ctx = service({"SKU1-STD": "INDETERMINADO", "SKU2-STD": "AGOTADO"})
+    uc, ctx = service({"SKU1": "INDETERMINADO", "SKU2": "AGOTADO"})
     rows = await uc.cross_sell("0", ctx)
     assert len(rows[0]["datos"]["productos"]) == 1
     reloaded = ManageCatalogUseCase(uc._catalog, uc._inventory, uc._conversations, uc._uow)
@@ -148,7 +148,8 @@ async def test_direct_actions_share_tools_and_promotion_errors_are_not_empty():
     assert result.code == "OK" and result.data["bloques"][0]["datos"]["variant"] == "recomendacion"
     uc._catalog.list_promotions = AsyncMock(side_effect=ModuleUnavailableError("productos"))
     result = await dispatcher.despachar({"tipo": "VER_OFERTAS", "payload": {}}, ctx)
-    assert result.code == "SERVICIO_NO_DISPONIBLE"
+    assert result.code == "OK"
+    assert result.data["bloques"][0]["datos"]["unavailable"] is True
 
 
 def test_anonymous_rest_promotions_and_offer_page_scope():
@@ -297,7 +298,42 @@ async def test_below_budget_reports_only_observed_minimum():
 async def test_missing_prices_are_null_and_cannot_be_recommended():
     uc, ctx = service()
     uc._catalog.get_prices = AsyncMock(return_value=[])
-    search = await uc.search(SearchArguments(q="running"), ctx)
-    assert all(row["price"] is None and row["price_text"] == "Precio no disponible"
-               for row in search["bloques"][0]["datos"]["productos"])
-    assert (await uc.recommend(RecommendationArguments(actividad="running"), ctx))["bloques"] == []
+    with pytest.raises(CatalogError):
+        await uc.search(SearchArguments(q="running"), ctx)
+    with pytest.raises(CatalogError):
+        await uc.recommend(RecommendationArguments(actividad="running"), ctx)
+
+
+@pytest.mark.asyncio
+async def test_cross_sell_provider_failure_returns_empty_and_logs(caplog):
+    uc, ctx = service()
+    uc._catalog.get_recommendations = AsyncMock(side_effect=ModuleUnavailableError("productos"))
+    with caplog.at_level("WARNING"):
+        assert await uc.cross_sell("0", ctx) == []
+    assert "cross-sell unavailable" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_cross_sell_persistence_failure_propagates():
+    uc, ctx = service({"SKU1": "INDETERMINADO", "SKU2": "AGOTADO"})
+    uc._conversations.get_context_for_update = AsyncMock(side_effect=RuntimeError("db down"))
+    with pytest.raises(RuntimeError, match="db down"):
+        await uc.cross_sell("0", ctx)
+
+
+@pytest.mark.asyncio
+async def test_offers_provider_failure_degrades_branch_and_logs(caplog):
+    uc, ctx = service()
+    uc.search = AsyncMock(side_effect=ModuleUnavailableError("productos"))
+    with caplog.at_level("WARNING"):
+        result = await uc.offers(PromotionArguments(), ctx)
+    assert result["partial"] and result["bloques"][0]["tipo"] == "LISTA_PROMOCIONES"
+    assert "offers branch 'products' degraded" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_offers_programming_error_in_products_branch_propagates():
+    uc, ctx = service()
+    uc.search = AsyncMock(side_effect=TypeError("bug"))
+    with pytest.raises(TypeError, match="bug"):
+        await uc.offers(PromotionArguments(), ctx)

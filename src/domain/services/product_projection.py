@@ -31,3 +31,14 @@ def normalize_detail(data):
         "brand_name": brand.get("name") or data.get("brand_name"),
         "category_id": data.get("categoria_id") or data.get("category_id"),
     }
+
+
+def sellable_skus(data: dict) -> list[str]:
+    """Variant SKUs, or the real base SKU only for a product without variants."""
+    variants = data.get("variants") or []
+    if variants:
+        return [str(row["sku"]) for row in variants if row.get("sku")]
+    base = data.get("sku_base")
+    if data.get("tiene_variantes") is not True and isinstance(base, str) and base.strip():
+        return [base]
+    return []

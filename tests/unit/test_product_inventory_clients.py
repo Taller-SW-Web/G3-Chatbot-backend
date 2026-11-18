@@ -320,12 +320,11 @@ async def test_availability_409_raises_with_contract_code():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_availability_rejects_malformed_rows():
+async def test_availability_omits_malformed_rows():
     respx.get(f"{BASE_URL}/inventario/disponibilidad/comercial").mock(
         return_value=httpx.Response(200, json=[{"sku": "  ", "status": "DISPONIBLE"}])
     )
-    with pytest.raises(ValueError):
-        await make_inventory().get_availability(["SKU-X"])
+    assert await make_inventory().get_availability(["SKU-X"]) == []
 
 
 @respx.mock
