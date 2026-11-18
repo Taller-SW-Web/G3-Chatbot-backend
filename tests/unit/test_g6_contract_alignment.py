@@ -73,9 +73,8 @@ async def test_missing_separate_price_does_not_use_embedded_catalog_price():
     detail["variants"][0]["precio_oferta"] = 1
     uc, ctx = g6_service([detail])
     uc._catalog.get_prices.return_value = []
-    row = cards(await uc.search(SearchArguments(), ctx))[0]
-    assert row["price"] is None and row["price_text"] == "Precio no disponible"
-    assert row["availability"] == "DISPONIBLE"
+    with pytest.raises(CatalogError):
+        await uc.search(SearchArguments(), ctx)
 
 
 @pytest.mark.asyncio
@@ -102,11 +101,12 @@ async def test_unknown_availability_does_not_claim_low_stock():
 @pytest.mark.parametrize("rows", [[], [{"sku": "other", "status": "DISPONIBLE"}],
                                   [{"sku": "p-42", "status": "UNKNOWN"}]])
 @pytest.mark.asyncio
-async def test_missing_or_incompatible_stock_is_an_error(rows):
+async def test_missing_or_incompatible_stock_is_not_obtained(rows):
     uc, ctx = g6_service([g6_detail("p", "brand")])
     uc._inventory.get_availability.return_value = rows
-    with pytest.raises(CatalogError, match="ValueError"):
-        await uc.availability(AvailabilityArguments(product_id="p", talla="42"), ctx)
+    result = await uc.availability(AvailabilityArguments(product_id="p", talla="42"), ctx)
+    assert result["missing_data"] == ["availability"]
+    assert "No pudimos consultar" in result["texto"]
 
 
 @pytest.mark.parametrize("upstream,code,expected", [

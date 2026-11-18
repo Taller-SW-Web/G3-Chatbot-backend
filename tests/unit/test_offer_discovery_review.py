@@ -6,7 +6,6 @@ import pytest
 
 from src.application.tools.catalog_tools import PromotionArguments, RecommendationArguments, SearchArguments
 from src.application.use_cases import manage_catalog_use_case as module
-from src.application.use_cases.manage_catalog_use_case import CatalogError
 from src.ports.outbound.module_errors import ModuleRequestError
 from tests.unit.test_astra_regressions import cards, g6_detail, g6_service
 from tests.unit.test_discovery import PRICE
@@ -85,8 +84,9 @@ async def test_last_page_counts_all_matches_even_beyond_carousel_size():
 async def test_upstream_timeout_is_error_rather_than_empty_success():
     uc, ctx = paged()
     uc._catalog.search_products.side_effect = TimeoutError("supplier failed")
-    with pytest.raises(CatalogError, match="TimeoutError"):
-        await uc.offers(PromotionArguments(), ctx)
+    result = await uc.offers(PromotionArguments(), ctx)
+    assert result["partial"] and result["complete"] is False
+    assert "No pudimos consultar los productos" in result["texto"]
 
 
 @pytest.mark.asyncio
@@ -132,9 +132,9 @@ async def test_later_supplier_error_preserves_rate_and_retry_after():
         {"items": [{"product_id": "0"}], "total": 30},
         rejected,
     ]
-    with pytest.raises(CatalogError) as error:
-        await uc.offers(PromotionArguments(), ctx)
-    assert error.value.status == 429 and error.value.retry_after == "9"
+    result = await uc.offers(PromotionArguments(), ctx)
+    assert result["partial"] and result["pages_scanned"] == 1
+    assert cards(result)[0]["product_id"] == "0"
 
 
 @pytest.mark.asyncio

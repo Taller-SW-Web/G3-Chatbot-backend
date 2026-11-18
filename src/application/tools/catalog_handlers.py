@@ -14,7 +14,7 @@ from src.application.tools.tool_context import (
 from src.application.tools.tool_registry import ExecutionContext, ToolResult
 from src.application.use_cases.manage_catalog_use_case import CatalogError
 from src.domain.value_objects.caller_identity import CallerIdentity
-from src.ports.outbound.module_errors import ModuleUnavailableError
+from src.ports.outbound.module_errors import GENERIC_UNAVAILABLE_TEXT, ModuleUnavailableError
 
 
 def _caller(context: ExecutionContext) -> CallerIdentity | None:
@@ -58,7 +58,8 @@ def build_catalog_handlers(catalog_use_case) -> dict:
         try:
             result = await catalog_use_case.availability(args, context)
         except CatalogError as exc:
-            return ToolResult(exc.code, {"texto": exc.detail})
+            return ToolResult(exc.code, {"texto": GENERIC_UNAVAILABLE_TEXT,
+                                         **({"retry_after": exc.retry_after} if exc.retry_after else {})})
         except ModuleUnavailableError as exc:
             return ToolResult("SERVICIO_NO_DISPONIBLE", {"modulo": exc.module})
         except Exception as exc:
@@ -66,6 +67,7 @@ def build_catalog_handlers(catalog_use_case) -> dict:
             return ToolResult(error.code, {"texto": error.detail})
         return ToolResult(result["code"], {
             "texto": result["texto"], "bloques": result["bloques"],
+            "missing_data": result.get("missing_data", []),
         })
 
     def discovery_handler(method):
