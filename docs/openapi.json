@@ -120,6 +120,32 @@
         "title": "AvailabilityOut",
         "type": "object"
       },
+      "Body_upload_evidence_api_v1_evidencias_post": {
+        "properties": {
+          "conversacionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversacionid"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_evidence_api_v1_evidencias_post",
+        "type": "object"
+      },
       "BuyerContactDTO": {
         "description": "Buyer contact and identity document snapshot (`SPEC-12` Req. 1, `SPEC-15` Req. 1).",
         "properties": {
@@ -166,6 +192,282 @@
           "numeroDocumento"
         ],
         "title": "BuyerContactDTO",
+        "type": "object"
+      },
+      "ClaimConsumerDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "documento": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Documento",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 150,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "nombreCompleto": {
+            "maxLength": 150,
+            "minLength": 1,
+            "title": "Nombrecompleto",
+            "type": "string"
+          },
+          "telefono": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Telefono",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nombreCompleto",
+          "documento",
+          "email",
+          "telefono"
+        ],
+        "title": "ClaimConsumerDTO",
+        "type": "object"
+      },
+      "ClaimDetailResponse": {
+        "properties": {
+          "canal": {
+            "default": "CHATBOT",
+            "title": "Canal",
+            "type": "string"
+          },
+          "codigoSeguimiento": {
+            "title": "Codigoseguimiento",
+            "type": "string"
+          },
+          "detalle": {
+            "title": "Detalle",
+            "type": "string"
+          },
+          "diasHabilesRestantes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diashabilesrestantes"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "estadoSla": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estadosla"
+          },
+          "fechaAtencion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fechaatencion"
+          },
+          "fechaLimiteSLA": {
+            "title": "Fechalimitesla",
+            "type": "string"
+          },
+          "fechaRegistro": {
+            "title": "Fecharegistro",
+            "type": "string"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "pedidoId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pedidoid"
+          },
+          "plazoDiasHabiles": {
+            "default": 15,
+            "title": "Plazodiashabiles",
+            "type": "integer"
+          },
+          "reclamoId": {
+            "title": "Reclamoid",
+            "type": "string"
+          },
+          "respuestaVisibleCliente": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Respuestavisiblecliente"
+          },
+          "slaCumplido": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slacumplido"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reclamoId",
+          "codigoSeguimiento",
+          "tipo",
+          "motivo",
+          "detalle",
+          "estado",
+          "fechaLimiteSLA",
+          "fechaRegistro"
+        ],
+        "title": "ClaimDetailResponse",
+        "type": "object"
+      },
+      "ClaimListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimSummaryDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "default": 10,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "total": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "ClaimListResponse",
+        "type": "object"
+      },
+      "ClaimSummaryDTO": {
+        "properties": {
+          "codigoSeguimiento": {
+            "title": "Codigoseguimiento",
+            "type": "string"
+          },
+          "diasHabilesRestantes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diashabilesrestantes"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "estadoSla": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estadosla"
+          },
+          "fechaLimiteSLA": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fechalimitesla"
+          },
+          "fechaRegistro": {
+            "title": "Fecharegistro",
+            "type": "string"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "pedidoId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pedidoid"
+          },
+          "reclamoId": {
+            "title": "Reclamoid",
+            "type": "string"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reclamoId",
+          "codigoSeguimiento",
+          "tipo",
+          "motivo",
+          "estado",
+          "fechaRegistro"
+        ],
+        "title": "ClaimSummaryDTO",
         "type": "object"
       },
       "ClearCartIn": {
@@ -324,6 +626,179 @@
         "title": "CreateCheckoutRequest",
         "type": "object"
       },
+      "CreateClaimRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "consumidor": {
+            "$ref": "#/components/schemas/ClaimConsumerDTO"
+          },
+          "detalle": {
+            "maxLength": 1000,
+            "minLength": 20,
+            "title": "Detalle",
+            "type": "string"
+          },
+          "motivo": {
+            "minLength": 1,
+            "title": "Motivo",
+            "type": "string"
+          },
+          "pedidoId": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pedidoid"
+          },
+          "solucionEsperada": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solucionesperada"
+          },
+          "tipo": {
+            "minLength": 1,
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "motivo",
+          "detalle",
+          "consumidor"
+        ],
+        "title": "CreateClaimRequest",
+        "type": "object"
+      },
+      "CreateCsatRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comentario": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comentario"
+          },
+          "puntuacion": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Puntuacion",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "puntuacion"
+        ],
+        "title": "CreateCsatRequest",
+        "type": "object"
+      },
+      "CreateReturnRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "descripcion": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion"
+          },
+          "evidencias": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnEvidenceDTO"
+            },
+            "title": "Evidencias",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnItemDTO"
+            },
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "motivo": {
+            "minLength": 1,
+            "title": "Motivo",
+            "type": "string"
+          },
+          "pedidoId": {
+            "minLength": 1,
+            "title": "Pedidoid",
+            "type": "string"
+          },
+          "tipo": {
+            "minLength": 1,
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pedidoId",
+          "tipo",
+          "motivo",
+          "items"
+        ],
+        "title": "CreateReturnRequest",
+        "type": "object"
+      },
+      "EvidenceResponse": {
+        "properties": {
+          "fechaSubida": {
+            "title": "Fechasubida",
+            "type": "string"
+          },
+          "nombreArchivoOriginal": {
+            "title": "Nombrearchivooriginal",
+            "type": "string"
+          },
+          "tamanioBytes": {
+            "minimum": 1.0,
+            "title": "Tamaniobytes",
+            "type": "integer"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "url",
+          "nombreArchivoOriginal",
+          "tamanioBytes",
+          "fechaSubida"
+        ],
+        "title": "EvidenceResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -480,7 +955,6 @@
         "type": "object"
       },
       "OrderDetailResponse": {
-        "additionalProperties": false,
         "properties": {
           "canal": {
             "default": "CHATBOT",
@@ -555,7 +1029,6 @@
         "type": "object"
       },
       "OrderHistoryMilestoneDTO": {
-        "additionalProperties": false,
         "properties": {
           "completado": {
             "default": true,
@@ -932,6 +1405,222 @@
           "correoEnmascarado"
         ],
         "title": "ResendConfirmationResponse",
+        "type": "object"
+      },
+      "ReturnDetailResponse": {
+        "properties": {
+          "descripcion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion"
+          },
+          "devolucionId": {
+            "title": "Devolucionid",
+            "type": "string"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "evidencias": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnEvidenceDTO"
+            },
+            "title": "Evidencias",
+            "type": "array"
+          },
+          "fechaRegistro": {
+            "title": "Fecharegistro",
+            "type": "string"
+          },
+          "historial": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Historial",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnItemDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "pedidoId": {
+            "title": "Pedidoid",
+            "type": "string"
+          },
+          "recepciones": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Recepciones",
+            "type": "array"
+          },
+          "resolucion": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolucion"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "devolucionId",
+          "pedidoId",
+          "tipo",
+          "estado",
+          "motivo",
+          "fechaRegistro"
+        ],
+        "title": "ReturnDetailResponse",
+        "type": "object"
+      },
+      "ReturnEvidenceDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "tipo": {
+            "minLength": 1,
+            "title": "Tipo",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "url"
+        ],
+        "title": "ReturnEvidenceDTO",
+        "type": "object"
+      },
+      "ReturnItemDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "cantidad": {
+            "minimum": 1.0,
+            "title": "Cantidad",
+            "type": "integer"
+          },
+          "productoId": {
+            "minLength": 1,
+            "title": "Productoid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "productoId",
+          "cantidad"
+        ],
+        "title": "ReturnItemDTO",
+        "type": "object"
+      },
+      "ReturnListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReturnSummaryDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "default": 10,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "total": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "ReturnListResponse",
+        "type": "object"
+      },
+      "ReturnSummaryDTO": {
+        "properties": {
+          "devolucionId": {
+            "title": "Devolucionid",
+            "type": "string"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "estadoReembolso": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estadoreembolso"
+          },
+          "fechaRegistro": {
+            "title": "Fecharegistro",
+            "type": "string"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "pedidoId": {
+            "title": "Pedidoid",
+            "type": "string"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "devolucionId",
+          "pedidoId",
+          "tipo",
+          "estado",
+          "motivo",
+          "fechaRegistro"
+        ],
+        "title": "ReturnSummaryDTO",
         "type": "object"
       },
       "SavedAddressDTO": {
@@ -1914,6 +2603,48 @@
           },
           {
             "in": "query",
+            "name": "talla",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Talla"
+            }
+          },
+          {
+            "in": "query",
+            "name": "color",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Color"
+            }
+          },
+          {
+            "in": "query",
+            "name": "soloOfertas",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Soloofertas",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "precioMin",
             "required": false,
             "schema": {
@@ -2055,6 +2786,25 @@
           }
         },
         "summary": "Product Detail",
+        "tags": [
+          "catalogo"
+        ]
+      }
+    },
+    "/api/v1/catalogo/promociones": {
+      "get": {
+        "operationId": "promotions_api_v1_catalogo_promociones_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Promotions",
         "tags": [
           "catalogo"
         ]
@@ -2459,6 +3209,175 @@
         ]
       }
     },
+    "/api/v1/devoluciones": {
+      "get": {
+        "operationId": "list_returns_api_v1_devoluciones_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "estado",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estado"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tipo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tipo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Returns",
+        "tags": [
+          "devoluciones"
+        ]
+      },
+      "post": {
+        "operationId": "create_return_api_v1_devoluciones_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReturnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Return",
+        "tags": [
+          "devoluciones"
+        ]
+      }
+    },
+    "/api/v1/devoluciones/{devolucion_id}": {
+      "get": {
+        "operationId": "get_return_api_v1_devoluciones__devolucion_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "devolucion_id",
+            "required": true,
+            "schema": {
+              "title": "Devolucion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Return",
+        "tags": [
+          "devoluciones"
+        ]
+      }
+    },
     "/api/v1/direcciones": {
       "get": {
         "operationId": "list_saved_addresses_api_v1_direcciones_get",
@@ -2518,6 +3437,47 @@
         "summary": "Quote Shipping",
         "tags": [
           "envio"
+        ]
+      }
+    },
+    "/api/v1/evidencias": {
+      "post": {
+        "operationId": "upload_evidence_api_v1_evidencias_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_evidence_api_v1_evidencias_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Evidence",
+        "tags": [
+          "devoluciones"
         ]
       }
     },
@@ -2635,6 +3595,56 @@
         ]
       }
     },
+    "/api/v1/pedidos/{pedido_id}/csat": {
+      "post": {
+        "operationId": "create_csat_api_v1_pedidos__pedido_id__csat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pedido_id",
+            "required": true,
+            "schema": {
+              "title": "Pedido Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCsatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Csat",
+        "tags": [
+          "csat"
+        ]
+      }
+    },
     "/api/v1/pedidos/{pedido_id}/reenviar-confirmacion": {
       "post": {
         "operationId": "resend_confirmation_api_v1_pedidos__pedido_id__reenviar_confirmacion_post",
@@ -2716,6 +3726,159 @@
         "summary": "Get Order Tracking",
         "tags": [
           "pedidos"
+        ]
+      }
+    },
+    "/api/v1/reclamos": {
+      "get": {
+        "operationId": "list_claims_api_v1_reclamos_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "estado",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estado"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Claims",
+        "tags": [
+          "reclamos"
+        ]
+      },
+      "post": {
+        "operationId": "create_claim_api_v1_reclamos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Claim",
+        "tags": [
+          "reclamos"
+        ]
+      }
+    },
+    "/api/v1/reclamos/{codigo}": {
+      "get": {
+        "operationId": "get_claim_api_v1_reclamos__codigo__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "codigo",
+            "required": true,
+            "schema": {
+              "title": "Codigo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Claim",
+        "tags": [
+          "reclamos"
         ]
       }
     },

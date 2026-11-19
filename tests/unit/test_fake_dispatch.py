@@ -54,11 +54,21 @@ async def test_responde_sin_cobertura_para_un_distrito_desconocido(fake):
 
 
 @pytest.mark.asyncio
-async def test_exige_destinatario_y_direccion(fake):
+async def test_exige_distrito(fake):
     with pytest.raises(ModuleRequestError) as exc:
-        await fake.quote_shipping(destino={"distrito": "Miraflores"}, lineas=LINEAS)
+        await fake.quote_shipping(destino={}, lineas=LINEAS)
 
     assert exc.value.code == "DESP_ERROR_DESTINO_REQUERIDO"
+
+
+@pytest.mark.asyncio
+async def test_solo_distrito_es_suficiente_para_cotizar(fake):
+    cotizacion = await fake.quote_shipping(
+        destino={"distrito": "Miraflores"}, lineas=LINEAS
+    )
+
+    assert cotizacion["coberturaDisponible"] is True
+    assert cotizacion["costoEnvio"] == COSTO_ENVIO
 
 
 @pytest.mark.asyncio

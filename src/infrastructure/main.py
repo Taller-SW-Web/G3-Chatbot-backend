@@ -7,10 +7,13 @@ from src.adapters.inbound.http.cart_router import create_cart_router
 from src.adapters.inbound.http.catalog_router import create_catalog_router
 from src.adapters.inbound.http.chatbot_router import ActionScope, TurnScope, create_chatbot_router
 from src.adapters.inbound.http.checkout_router import create_checkout_router
+from src.adapters.inbound.http.claims_router import create_claims_router
 from src.adapters.inbound.http.correlation import CorrelationMiddleware
+from src.adapters.inbound.http.csat_router import create_csat_router
 from src.adapters.inbound.http.health_router import router as health_router
 from src.adapters.inbound.http.orders_router import create_orders_router
 from src.adapters.inbound.http.problem import register_problem_handlers
+from src.adapters.inbound.http.returns_router import create_returns_router
 from src.adapters.inbound.http.session_router import create_session_router
 from src.adapters.inbound.http.shipping_router import create_shipping_router
 from src.infrastructure.config.container import (
@@ -21,6 +24,7 @@ from src.infrastructure.config.container import (
     provide_checkout_service,
     provide_manage_session,
     provide_orders_service,
+    provide_postventa_service,
     provide_rate_limiter,
     provide_shipping_service,
     provide_turn_scope,
@@ -55,10 +59,6 @@ def create_app(
             settings.app_env,
             settings.allow_fake_security,
         )
-    logger.warning(
-        "No HTTP adapter exists yet for sales and dispatch (SALES_MODE / DISPATCH_MODE "
-        "have no effect); the real modules are not called."
-    )
     app = FastAPI(title="G3 Chatbot backend", lifespan=outbox_worker_lifespan)
     app.add_middleware(CorrelationMiddleware)
     register_problem_handlers(app)
@@ -87,6 +87,9 @@ def create_app(
     )
     app.include_router(create_cart_router(provide_cart_service), prefix=API_PREFIX)
     app.include_router(create_orders_router(provide_orders_service), prefix=API_PREFIX)
+    app.include_router(create_csat_router(provide_postventa_service), prefix=API_PREFIX)
+    app.include_router(create_claims_router(provide_postventa_service), prefix=API_PREFIX)
+    app.include_router(create_returns_router(provide_postventa_service), prefix=API_PREFIX)
     app.include_router(create_checkout_router(provide_checkout_service), prefix=API_PREFIX)
     app.include_router(
         create_shipping_router(provide_shipping_service), prefix=API_PREFIX

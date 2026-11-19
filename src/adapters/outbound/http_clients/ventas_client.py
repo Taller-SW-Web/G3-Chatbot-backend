@@ -29,11 +29,16 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
         self._service_tokens = service_token_provider
 
     async def _get_service_headers(
-        self, correlation_id: str | None = None, scope: str | None = None
+        self,
+        correlation_id: str | None = None,
+        scope: str | None = None,
+        audience: str | None = "api-ventas",
     ) -> dict[str, str]:
         headers: dict[str, str] = {}
         if self._service_tokens:
-            token = await self._service_tokens.get_token(correlation_id=correlation_id, scope=scope)
+            token = await self._service_tokens.get_token(
+                correlation_id=correlation_id, scope=scope, audience=audience
+            )
             headers["Authorization"] = f"Bearer {token}"
         return headers
 
@@ -68,7 +73,7 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
     ) -> dict[str, Any]:
         """POST /api/v1/pedidos (SPEC-15 Req. 1)."""
         auth_headers = await self._get_service_headers(
-            correlation_id=correlation_id, scope="ventas:pedidos:crear"
+            correlation_id=correlation_id, scope="ventas:pedidos:crear", audience="api-ventas"
         )
         auth_headers["Idempotency-Key"] = idempotency_key
 
@@ -90,7 +95,7 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
     ) -> dict[str, Any]:
         """POST /api/v1/pedidos/{id}/pagos/notificacion (SPEC-15 Req. 2)."""
         auth_headers = await self._get_service_headers(
-            correlation_id=correlation_id, scope="ventas:pagos:webhook"
+            correlation_id=correlation_id, scope="ventas:pagos:webhook", audience="api-ventas"
         )
         response = await self._request(
             "POST",
@@ -111,7 +116,7 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
     ) -> dict[str, Any]:
         """POST /api/v1/pedidos/{id}/anulaciones (SPEC-15 Req. 3)."""
         auth_headers = await self._get_service_headers(
-            correlation_id=correlation_id, scope="ventas:pedidos:anular"
+            correlation_id=correlation_id, scope="ventas:pedidos:anular", audience="api-ventas"
         )
         payload = {"motivo": motivo, "comentario": comentario}
         response = await self._request(

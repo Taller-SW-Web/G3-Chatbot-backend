@@ -96,10 +96,9 @@ def test_unset_app_env_keeps_the_current_railway_config_booting(monkeypatch, cle
     assert get_settings().module_mode("security") == "fake"
 
 
-def test_startup_warns_that_sales_and_dispatch_have_no_http_adapter(monkeypatch, clean_settings, caplog):
+def test_startup_builds_with_fake_modules(monkeypatch, clean_settings):
     from src.infrastructure.main import create_app
 
-    monkeypatch.setenv("MODULES_MODE", "http")
-    with caplog.at_level("WARNING"):
-        create_app()
-    assert "No HTTP adapter exists yet for sales and dispatch" in caplog.text
+    monkeypatch.setenv("MODULES_MODE", "fake")
+    app = create_app()
+    assert app.title == "G3 Chatbot backend"
