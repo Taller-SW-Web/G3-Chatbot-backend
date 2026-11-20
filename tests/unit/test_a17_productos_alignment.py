@@ -114,24 +114,25 @@ async def test_spec_10_req1_indeterminate_is_accepted_with_warning_never_few_uni
 
 # -- SPEC-10 · Req. 3 · Respuesta incompleta o incompatible --------------------
 
-@pytest.mark.parametrize("rows", [
-    [],                                                    # missing requested SKU
-    [{"sku": "OTHER", "status": "DISPONIBLE"}],            # extra SKU only
-    [{"sku": "SKU-A", "status": "DESCONOCIDO"}],           # unpublished status
-    [{"sku": "SKU-A"}],                                    # incomplete row
-    [None, {"sku": "SKU-A", "status": "DISPONIBLE"},       # valid neighbour survives,
-     {"sku": "SKU-A", "status": "AGOTADO"}],                # duplicate is ignored
+@pytest.mark.parametrize("rows, expected", [
+    ([], []),                                              # missing requested SKU
+    ([{"sku": "OTHER", "status": "DISPONIBLE"}], []),      # extra SKU only
+    ([{"sku": "SKU-A", "status": "DESCONOCIDO"}], []),     # unpublished status
+    ([{"sku": "SKU-A"}], []),                              # incomplete row
+    ([None, {"sku": "SKU-A", "status": "DISPONIBLE"},      # valid neighbour survives,
+      {"sku": "SKU-A", "status": "AGOTADO"}],             # duplicate is ignored
+     [{"sku": "SKU-A", "status": "DISPONIBLE"}]),
 ])
 @pytest.mark.asyncio
-async def test_spec_10_req3_incomplete_or_incompatible_payload_is_not_obtained(rows):
+async def test_spec_10_req3_incomplete_or_incompatible_payload_is_not_obtained(rows, expected):
     """SPEC-10 Req. 3 · Scenario: Respuesta incompleta o incompatible."""
     async with httpx.AsyncClient(
         base_url=BASE,
         transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"items": rows})),
     ) as client:
         result = await InventoryClient(BASE, client=client).get_availability(["SKU-A"])
-    assert result in ([{"sku": "SKU-A", "status": "DISPONIBLE"}], [])
-    if not result:
+    assert result == expected
+    if not expected:
         assert StockValidator().check_row(None).code == "SERVICIO_NO_DISPONIBLE"
 
 

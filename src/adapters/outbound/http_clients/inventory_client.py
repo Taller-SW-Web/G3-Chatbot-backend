@@ -136,7 +136,8 @@ class InventoryClient(ProductsBaseClient):
             result = row.get("result")
             quantity = row.get("requested_quantity")
             if (not isinstance(sku, str) or sku.strip() not in requested
-                    or sku.strip() in seen or result not in KNOWN_RESULTS
+                    or sku.strip() in seen
+                    or not isinstance(result, str) or result not in KNOWN_RESULTS
                     or not isinstance(quantity, int) or isinstance(quantity, bool)):
                 continue
             valid.append({
@@ -181,6 +182,7 @@ class InventoryClient(ProductsBaseClient):
             raise ValueError(f"expected an availability row, got {type(row).__name__}")
         if not isinstance(row.get("sku"), str) or not row["sku"].strip():
             raise ValueError(f"row must carry a sku, got {row!r}")
-        if row.get("status") not in KNOWN_STATUSES:
+        status = row.get("status")
+        if not isinstance(status, str) or status not in KNOWN_STATUSES:
             raise ValueError(f"row {row.get('sku')!r} has an unpublished status, got {row!r}")
-        return {"sku": row["sku"], "status": row["status"]}
+        return {"sku": row["sku"], "status": status}

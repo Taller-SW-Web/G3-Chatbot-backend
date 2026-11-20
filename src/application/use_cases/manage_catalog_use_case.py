@@ -665,6 +665,10 @@ class ManageCatalogUseCase(DiscoveryMixin):
         description = data.get("description") or name
         images = data.get("images") or []
         missing_availability = not skus or any(sku not in statuses for sku in skus)
+        badge = None if missing_availability else self._badge(statuses, skus)
+        # Un badge None con todos los estados presentes también es dato
+        # faltante: mezclas como AGOTADO + INDETERMINADO no se representan.
+        availability_missing = missing_availability or badge is None
         return {
             "ref": position,
             "product_id": str(data.get("product_id", "")),
@@ -678,9 +682,9 @@ class ManageCatalogUseCase(DiscoveryMixin):
             "has_variants": bool(data.get("tiene_variantes") or variants),
             "single_sku": skus[0] if len(skus) == 1 else None,
             # An absent status leaves the card without a badge, never "Disponible" (A17).
-            "availability": None if missing_availability else self._badge(statuses, skus),
+            "availability": badge,
             "missing_data": (["price"] if price is None else []) + (
-                ["availability"] if missing_availability else []),
+                ["availability"] if availability_missing else []),
             "variants": [
                 {"sku": str(v.get("sku")), "talla": v.get("talla"), "color": v.get("color")}
                 for v in variants if v.get("sku")

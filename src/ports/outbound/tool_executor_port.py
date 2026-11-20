@@ -20,7 +20,8 @@ class ToolExecutionContext:
     conversation_id: uuid.UUID
     customer_id: uuid.UUID | None
     anonymous_sid: str | None
-    access_token: str | None = None
+    # repr=False: el JWT no debe aparecer en logs ni trazas de excepciones.
+    access_token: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)

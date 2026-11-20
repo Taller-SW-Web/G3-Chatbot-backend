@@ -78,7 +78,7 @@ uvicorn src.infrastructure.main:app --reload --env-file .env
 
 Comprobaciones mínimas antes de dar una corrida por válida:
 
-1. `GET /healthz` responde 200.
+1. `GET /health` responde 200.
 2. `GET /api/v1/catalogo/productos?q=zapatillas` devuelve `items` con
    `product_id` reales (no `prod-001` de las semillas).
 3. En los logs de G6/Seguridad aparece `POST /auth/token` con `audience=api-productos`
@@ -95,7 +95,7 @@ homologación formal (no la implementación):
 
 - **Entorno de G6** (local o staging): URL, versión, SHA y evidencia. Lo
   define Mathias con Productos.
-- **Seguridad (G7)**: registro y concesión de los siete scopes a
+- **Seguridad (G7)**: registro y concesión de los seis scopes a
   `modulo-chatbot` y entrega de credenciales (`SECURITY_CLIENT_SECRET`).
 - **Matriz de errores y límites B9-B10** de Productos.
 

@@ -13,6 +13,7 @@ from typing import Any, Protocol
 from src.application.tools.catalog_tools import OrderQueryArguments
 from src.application.tools.tool_context import caller_from_context
 from src.application.tools.tool_registry import ExecutionContext, ToolResult
+from src.application.use_cases.notification_service import NotificationError
 from src.domain.services.status_mapper import SALES_STATUS_LABELS, map_order_status_label
 from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 
@@ -151,14 +152,16 @@ def build_order_handlers(orders: OrdersQueryPort) -> dict[str, Any]:
                         {"id": "VER_OFERTAS", "etiqueta": "Ver ofertas", "payload": {}})],
                 })
             if len(items) == 1 and not args.estado:
-                detail = await orders.get_order_detail(
-                    caller.customer_id, str(items[0]["pedidoId"]),
-                    holder_token=context.access_token,
-                )
-                return ToolResult("OK", {
-                    "texto": _detail_text(detail),
-                    "bloques": [_detail_block(detail)],
-                })
+                pedido_id = items[0].get("pedidoId")
+                if isinstance(pedido_id, str) and pedido_id.strip():
+                    detail = await orders.get_order_detail(
+                        caller.customer_id, pedido_id,
+                        holder_token=context.access_token,
+                    )
+                    return ToolResult("OK", {
+                        "texto": _detail_text(detail),
+                        "bloques": [_detail_block(detail)],
+                    })
             summaries = [_summary(row) for row in items[:MAX_LISTED]]
             return ToolResult("OK", {
                 "texto": "Estos son tus pedidos. Dime cuál quieres ver en detalle.",
@@ -168,6 +171,12 @@ def build_order_handlers(orders: OrdersQueryPort) -> dict[str, Any]:
                 })],
             })
         except ModuleRequestError as exc:
+            if exc.status == 401:
+                return ToolResult("REQUIERE_SESION", {
+                    "texto": "Inicia sesión para consultar tus pedidos.",
+                    "accionPendiente": {"herramienta": "consultar_pedidos",
+                                        "argumentos": args.model_dump(mode="json")},
+                })
             if exc.status in (403, 404):
                 return ToolResult("OK", {
                     "texto": NOT_FOUND_TEXT,
@@ -180,6 +189,12 @@ def build_order_handlers(orders: OrdersQueryPort) -> dict[str, Any]:
                     {"id": "CONSULTAR_PEDIDOS", "etiqueta": "Reintentar", "payload": {}})],
             })
         except ModuleUnavailableError:
+            return ToolResult("OK", {
+                "texto": UNAVAILABLE_TEXT,
+                "bloques": [_actions(
+                    {"id": "CONSULTAR_PEDIDOS", "etiqueta": "Reintentar", "payload": {}})],
+            })
+        except NotificationError:
             return ToolResult("OK", {
                 "texto": UNAVAILABLE_TEXT,
                 "bloques": [_actions(

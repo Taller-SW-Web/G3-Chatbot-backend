@@ -6,6 +6,7 @@ System actions use the service token provider (client_credentials).
 Customer actions forward the customer's Bearer token.
 """
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -94,7 +95,7 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
         )
         response = await self._request(
             "POST",
-            f"/api/v1/pedidos/{order_id}/pagos/notificacion",
+            f"/api/v1/pedidos/{quote(order_id, safe='')}/pagos/notificacion",
             json=payload,
             headers=auth_headers,
             correlation_id=correlation_id,
@@ -116,7 +117,7 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
         payload = {"motivo": motivo, "comentario": comentario}
         response = await self._request(
             "POST",
-            f"/api/v1/pedidos/{order_id}/anulaciones",
+            f"/api/v1/pedidos/{quote(order_id, safe='')}/anulaciones",
             json=payload,
             headers=auth_headers,
             correlation_id=correlation_id,
@@ -158,7 +159,7 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
         headers = {"Authorization": f"Bearer {holder_token.strip()}"}
         response = await self._request(
             "GET",
-            f"/api/v1/pedidos/{order_id}",
+            f"/api/v1/pedidos/{quote(order_id, safe='')}",
             headers=headers,
             correlation_id=correlation_id,
         )
