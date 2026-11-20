@@ -255,7 +255,7 @@ jobs:
           merge-multiple: true
       - name: SonarCloud scan
         if: steps.token.outputs.available == 'true'
-        uses: SonarSource/sonarqube-scan-action@v8.4.1
+        uses: SonarSource/sonarqube-scan-action@v8.5.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io

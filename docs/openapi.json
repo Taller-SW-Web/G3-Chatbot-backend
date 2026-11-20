@@ -93,6 +93,24 @@
       "AvailabilityOut": {
         "additionalProperties": false,
         "properties": {
+          "mensaje": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mensaje"
+          },
+          "missing_data": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Data",
+            "type": "array"
+          },
           "sku": {
             "title": "Sku",
             "type": "string"
@@ -192,6 +210,43 @@
           "numeroDocumento"
         ],
         "title": "BuyerContactDTO",
+        "type": "object"
+      },
+      "CatalogSearchOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "mensaje": {
+            "title": "Mensaje",
+            "type": "string"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "total_scope": {
+            "title": "Total Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "total_scope",
+          "mensaje",
+          "partial"
+        ],
+        "title": "CatalogSearchOut",
         "type": "object"
       },
       "ClaimConsumerDTO": {
@@ -2722,9 +2777,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Search Products Api V1 Catalogo Productos Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/CatalogSearchOut"
                 }
               }
             },
