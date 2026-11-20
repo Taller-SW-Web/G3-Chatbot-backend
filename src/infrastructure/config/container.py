@@ -2,6 +2,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import lru_cache
+from typing import Any
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,6 +86,7 @@ from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
 from src.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, OutboxProcessor
 from src.ports.outbound.llm_provider_port import LLMProvider
+from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.ports.outbound.order_repository_port import SalesOrderPort
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
 
@@ -518,7 +520,8 @@ class OrdersService:
             raw = await self._sales.get_customer_order(order_id, holder_token)
             # G5 `PedidoDetalle` keeps money inside `pago` and history in
             # `historialEstados`; the channel contract exposes them at the root.
-            payment = raw.get("pago") if isinstance(raw.get("pago"), dict) else {}
+            payment_raw = raw.get("pago")
+            payment: dict[str, Any] = payment_raw if isinstance(payment_raw, dict) else {}
             total = raw.get("total", payment.get("total", 0))
             moneda = raw.get("moneda", payment.get("moneda", "PEN"))
             history = raw.get("historial") or raw.get("historialEstados") or []
@@ -552,8 +555,9 @@ class OrdersService:
             )
         order = await self._sales.get_customer_order(order_id, holder_token)
         estado = str(order.get("estado") or "").strip().upper()
-        envio = order.get("envio") if isinstance(order.get("envio"), dict) else {}
-        fallback = {
+        envio_raw = order.get("envio")
+        envio: dict[str, Any] = envio_raw if isinstance(envio_raw, dict) else {}
+        fallback: dict[str, Any] = {
             "pedidoId": order_id,
             "estado": estado,
             "estadoEtiqueta": map_order_status_label(estado),
