@@ -10,7 +10,7 @@ from src.application.dto.incoming_message_dto import SendMessageRequest
 from src.application.tools.tool_contracts import TOOL_CONTRACTS, get_tool_contract
 from src.domain.value_objects.block import BlockType, FormKind, QuickActionId
 from src.infrastructure.config.container import provide_module_client
-from src.infrastructure.config.settings import get_settings
+from src.infrastructure.config.settings import _is_onrender_host, get_settings
 
 
 def test_settings_module_urls_from_env(monkeypatch):
@@ -21,6 +21,13 @@ def test_settings_module_urls_from_env(monkeypatch):
     assert settings.products_timeout_seconds == 4.0
     assert settings.security_timeout_seconds == 5.0
     get_settings.cache_clear()
+
+
+def test_onrender_host_requires_the_hostname_not_a_path_substring():
+    assert _is_onrender_host("https://g5-servicio-ventas.onrender.com")
+    assert _is_onrender_host("https://onrender.com")
+    assert not _is_onrender_host("https://example.com/onrender.com")
+    assert not _is_onrender_host("https://notonrender.com")
 
 
 def test_normalize_codigo_to_code():

@@ -2,6 +2,7 @@
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from urllib.parse import urlparse
 
 LLM_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
 
@@ -167,6 +168,12 @@ def _origins(name: str, default: str) -> tuple[str, ...]:
     return tuple(origin.strip().rstrip("/").lower() for origin in raw.split(",") if origin.strip())
 
 
+def _is_onrender_host(url: str) -> bool:
+    """True only when the URL host is Render, not a lookalike in the path."""
+    host = (urlparse(url).hostname or "").lower()
+    return host == "onrender.com" or host.endswith(".onrender.com")
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings(
@@ -204,13 +211,13 @@ def get_settings() -> Settings:
         products_timeout_seconds=_number("PRODUCTS_TIMEOUT_SECONDS", "4", float, minimum=0.1),
         sales_timeout_seconds=_number(
             "SALES_TIMEOUT_SECONDS",
-            "180" if "onrender.com" in sales_base else "5",
+            "180" if _is_onrender_host(sales_base) else "5",
             float,
             minimum=0.1,
         ),
         postventa_timeout_seconds=_number(
             "POSTVENTA_TIMEOUT_SECONDS",
-            "180" if "onrender.com" in postventa_base else "5",
+            "180" if _is_onrender_host(postventa_base) else "5",
             float,
             minimum=0.1,
         ),
