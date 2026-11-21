@@ -138,6 +138,46 @@
         "title": "AvailabilityOut",
         "type": "object"
       },
+      "Body_create_suggestion_api_v1_sugerencias_post": {
+        "properties": {
+          "captura": {
+            "anyOf": [
+              {
+                "contentMediaType": "application/octet-stream",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captura"
+          },
+          "correoContacto": {
+            "title": "Correocontacto",
+            "type": "string"
+          },
+          "descripcion": {
+            "title": "Descripcion",
+            "type": "string"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          },
+          "titulo": {
+            "title": "Titulo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "titulo",
+          "descripcion",
+          "correoContacto"
+        ],
+        "title": "Body_create_suggestion_api_v1_sugerencias_post",
+        "type": "object"
+      },
       "Body_upload_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos_post": {
         "properties": {
           "archivo": {
@@ -1363,6 +1403,67 @@
           "cvv"
         ],
         "title": "ProcessPaymentRequest",
+        "type": "object"
+      },
+      "PurchaseRatingIn": {
+        "additionalProperties": false,
+        "properties": {
+          "comentario": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comentario"
+          },
+          "estrellas": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Estrellas",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "estrellas"
+        ],
+        "title": "PurchaseRatingIn",
+        "type": "object"
+      },
+      "ReactionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reaccion": {
+            "pattern": "^(POSITIVE|NEGATIVE|LIKE|DISLIKE|like|dislike|positive|negative)$",
+            "title": "Reaccion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reaccion"
+        ],
+        "title": "ReactionIn",
+        "type": "object"
+      },
+      "ReactionOut": {
+        "properties": {
+          "mensajeId": {
+            "title": "Mensajeid",
+            "type": "string"
+          },
+          "reaccion": {
+            "title": "Reaccion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mensajeId",
+          "reaccion"
+        ],
+        "title": "ReactionOut",
         "type": "object"
       },
       "ReenviarVerificacionIn": {
@@ -3925,6 +4026,59 @@
         ]
       }
     },
+    "/api/v1/mensajes/{message_id}/reaccion": {
+      "post": {
+        "operationId": "react_api_v1_mensajes__message_id__reaccion_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReactionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "React",
+        "tags": [
+          "mod-chat"
+        ]
+      }
+    },
     "/api/v1/pedidos": {
       "get": {
         "operationId": "list_orders_api_v1_pedidos_get",
@@ -4170,6 +4324,60 @@
         "summary": "Get Order Tracking",
         "tags": [
           "mod-orders"
+        ]
+      }
+    },
+    "/api/v1/pedidos/{pedido_id}/valoracion-compra": {
+      "post": {
+        "operationId": "create_rating_api_v1_pedidos__pedido_id__valoracion_compra_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pedido_id",
+            "required": true,
+            "schema": {
+              "title": "Pedido Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurchaseRatingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Rating Api V1 Pedidos  Pedido Id  Valoracion Compra Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Rating",
+        "tags": [
+          "mod-checkout"
         ]
       }
     },
@@ -4654,6 +4862,67 @@
         "summary": "Resend Verification",
         "tags": [
           "mod-auth"
+        ]
+      }
+    },
+    "/api/v1/sugerencias": {
+      "post": {
+        "operationId": "create_suggestion_api_v1_sugerencias_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_suggestion_api_v1_sugerencias_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Suggestion Api V1 Sugerencias Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Suggestion",
+        "tags": [
+          "mod-chat"
         ]
       }
     },

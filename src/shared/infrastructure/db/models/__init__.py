@@ -33,3 +33,12 @@ from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
 from src.shared.infrastructure.db.models.return_ref import ReturnRef
 
 __all__ += ["Checkout", "PaymentAttempt", "Notification", "ClaimRef", "ReturnRef"]
+
+# Retroalimentación del cliente (SPEC-24).
+from src.shared.infrastructure.db.models.feedback import (
+    FeedbackSuggestion,
+    MessageReaction,
+    PurchaseRating,
+)
+
+__all__ += ["FeedbackSuggestion", "MessageReaction", "PurchaseRating"]

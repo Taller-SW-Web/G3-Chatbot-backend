@@ -134,6 +134,8 @@ class Settings:
     frontend_base_url: str = "http://localhost:3000"
     # Send right after enqueueing; the outbox worker then only closes already sent e-mails.
     notification_send_inline: bool = True
+    # SPEC-24: internal inbox for suggestions and bugs.
+    feedback_inbox_email: str = "soporte@g3-chatbot.local"
     # In-process outbox worker (SPEC-15): polled from the FastAPI lifespan.
     outbox_worker_enabled: bool = True
     outbox_poll_interval_seconds: float = 5.0
@@ -266,6 +268,10 @@ def get_settings() -> Settings:
         smtp_timeout_seconds=_number("SMTP_TIMEOUT_SECONDS", "10", float, minimum=0.1),
         frontend_base_url=os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").strip().rstrip("/"),
         notification_send_inline=os.getenv("NOTIFICATION_SEND_INLINE", "true").strip().lower() != "false",
+        feedback_inbox_email=(
+            os.getenv("FEEDBACK_INBOX_EMAIL", "soporte@g3-chatbot.local").strip()
+            or "soporte@g3-chatbot.local"
+        ),
         outbox_worker_enabled=os.getenv("OUTBOX_WORKER_ENABLED", "true").strip().lower() != "false",
         outbox_poll_interval_seconds=_number("OUTBOX_POLL_INTERVAL_SECONDS", "5", float, minimum=0.5),
         require_phone_verification=(

@@ -27,6 +27,7 @@ pedidos ni gestiona postventa.
 | POST | `/api/v1/checkout` | `ManageCheckoutUseCase.create_checkout` |
 | GET | `/api/v1/checkout/{checkout_id}` | `ManageCheckoutUseCase.get_checkout` |
 | POST | `/api/v1/checkout/{checkout_id}/pago` | `ManageCheckoutUseCase.process_payment` |
+| POST | `/api/v1/pedidos/{pedido_id}/valoracion-compra` | `PurchaseRatingService.create` |
 
 ## Dependencias externas
 
@@ -62,6 +63,13 @@ llama a `POST /usuarios/{id}/direcciones` de Seguridad con su token; si falla,
 el checkout continúa y la respuesta incluye `avisoDireccion` ("No pudimos
 guardar tu dirección para la próxima vez"). `CHECKOUT_SAVE_ADDRESS_ENABLED`
 (default true) permite apagar la llamada sin tocar código.
+
+## Valoración de compra (SPEC-24)
+
+`POST /pedidos/{id}/valoracion-compra` guarda una única valoración por pedido
+(estrellas 1–5 y comentario opcional) en `purchase_rating`, previa validación
+de propiedad en Ventas. No se envía a Ventas; la CSAT de la entrega sigue en
+`mod-postventa`.
 
 ## Capacidades que registra
 

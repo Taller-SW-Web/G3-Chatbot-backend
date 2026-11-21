@@ -13,6 +13,7 @@ ORDER_CONFIRMATION = "order_confirmation"
 OUTBOX_PROCESSOR = "outbox_processor"
 ACTION_SCOPE = "action_scope"
 ATTACHMENT_CLEANUP = "attachment_cleanup"
+FEEDBACK_NOTIFIER = "feedback_notifier"
 
 __all__ = [
     "ACTION_SCOPE",
@@ -20,6 +21,7 @@ __all__ = [
     "CHECKOUT_DOCUMENT",
     "CONVERSATION_CONTEXT",
     "DISPATCH_PORT",
+    "FEEDBACK_NOTIFIER",
     "ORDER_CONFIRMATION",
     "OUTBOX_PROCESSOR",
 ]

@@ -52,6 +52,10 @@ class MessagePostgresAdapter:
         result = await self.session.execute(stmt)
         return list(reversed(result.scalars().all()))
 
+    async def obtener_por_id(self, message_id: uuid.UUID) -> MessageEntity | None:
+        row = await self.session.get(Message, message_id)
+        return _to_entity(row) if row is not None else None
+
     # Implements MessageRepositoryPort (English name, domain objects).
     async def list_recent(self, conversation_id: uuid.UUID, *, limit: int) -> list[MessageEntity]:
         rows = await self.listar_recientes(conversation_id, limite=limit)

@@ -14,7 +14,18 @@ Fuente: G3-Chatbot-specs/docs/modelo-datos.md (seccion `order_ref`).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, FetchedValue, ForeignKey, Index, Numeric, Text, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    FetchedValue,
+    ForeignKey,
+    Index,
+    Numeric,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,6 +49,9 @@ class OrderRef(Base):
         Text, nullable=False, server_default=text("'CREATED'")
     )
     total: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    csat_sent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )

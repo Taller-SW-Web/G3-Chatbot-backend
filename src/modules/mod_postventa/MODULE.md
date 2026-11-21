@@ -41,6 +41,13 @@ también las mismas líneas), responde `409 RECLAMO_DUPLICADO` /
 reintentar con `forzar: true` para registrar igual; `forzar` no se envía a G5.
 Un caso ya `ATENDIDO`/`DERIVADO` (o `RECHAZADA`/`COMPLETADA`) no es duplicado.
 
+## CSAT (SPEC-24)
+
+`POST /pedidos/{id}/csat` sigue delegando en Ventas y ahora marca
+`order_ref.csat_sent` cuando Ventas responde 201 o `409 CSAT_ALREADY_SUBMITTED`,
+para no volver a mostrar el bloque de calificación. Solo actualiza si existe
+una fila local de `order_ref` para el pedido.
+
 ## Dependencias externas
 
 - **G5 M2 Postventa** `POST /devoluciones`, `POST /reclamos`, `POST /csat`,

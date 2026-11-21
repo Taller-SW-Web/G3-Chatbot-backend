@@ -248,6 +248,9 @@ class AttachmentService:
             removed += 1
         known = await self._attachments.listar_claves()
         for key in await self._storage.listar_claves():
+            if not key.startswith("attachments/"):
+                # Feedback screenshots (SPEC-24) live in the same bucket under `feedback/`.
+                continue
             if key not in known:
                 try:
                     await self._storage.eliminar(key)

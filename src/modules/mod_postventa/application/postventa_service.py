@@ -34,12 +34,16 @@ class PostventaService:
         claim_refs: Any | None = None,
         return_refs: Any | None = None,
         evidence: Any | None = None,
+        order_refs: Any | None = None,
+        uow: Any | None = None,
     ) -> None:
         self._postventa = postventa
         self._sales = sales
         self._claim_refs = claim_refs
         self._return_refs = return_refs
         self._evidence = evidence
+        self._order_refs = order_refs
+        self._uow = uow
 
     async def upload_evidence(
         self,
@@ -116,6 +120,7 @@ class PostventaService:
                     idempotency_key=idempotency_key,
                 )
             )
+            await self._commit()
         return await self._postventa.get_customer_return(
             str(result["devolucionId"]), holder_token, correlation_id=correlation_id
         )
@@ -213,6 +218,7 @@ class PostventaService:
                     idempotency_key=idempotency_key,
                 )
             )
+            await self._commit()
         return await self._postventa.get_claim(
             str(result["codigoSeguimiento"]), holder_token, correlation_id=correlation_id
         )
@@ -273,9 +279,30 @@ class PostventaService:
             "puntuacion": payload["puntuacion"],
             "comentario": payload.get("comentario"),
         }
-        return await self._postventa.create_csat(
-            g5_payload, holder_token=holder_token, correlation_id=correlation_id
-        )
+        try:
+            answer = await self._postventa.create_csat(
+                g5_payload, holder_token=holder_token, correlation_id=correlation_id
+            )
+        except ModuleRequestError as exc:
+            if exc.code == "CSAT_ALREADY_SUBMITTED":
+                await self._mark_csat_sent(order_id)
+            raise
+        await self._mark_csat_sent(order_id)
+        return answer
+
+    async def _mark_csat_sent(self, order_id: str) -> None:
+        if self._order_refs is None:
+            return
+        try:
+            await self._order_refs.marcar_csat_enviado(order_id)
+            await self._commit()
+        except Exception:
+            # The survey answer is already authoritative in Ventas; a local flag is best effort.
+            pass
+
+    async def _commit(self) -> None:
+        if self._uow is not None:
+            await self._uow.commit()
 
     async def _duplicate_claim(
         self, holder_token: str, order_id: str, normalized: dict[str, Any]

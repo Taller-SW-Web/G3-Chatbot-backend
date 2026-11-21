@@ -17,19 +17,23 @@ from src.modules.mod_chat import MODULE_ID
 from src.modules.mod_chat.adapters.conversation_context_adapter import (
     ConversationContextAdapter,
 )
+from src.modules.mod_chat.adapters.feedback_postgres_adapter import FeedbackPostgresAdapter
 from src.modules.mod_chat.adapters.http.attachment_router import create_attachment_router
 from src.modules.mod_chat.adapters.http.chatbot_router import (
     ActionScope,
     TurnScope,
     create_chatbot_router,
 )
+from src.modules.mod_chat.adapters.http.feedback_router import create_feedback_router
 from src.modules.mod_chat.adapters.openai_nlp_adapter import OpenAILLMProvider
 from src.modules.mod_chat.adapters.pillow_image_processor import PillowImageProcessor
+from src.modules.mod_chat.adapters.reaction_postgres_adapter import ReactionPostgresAdapter
 from src.modules.mod_chat.adapters.registry_tool_adapter import RegistryToolAdapter
 from src.modules.mod_chat.application.attachment_service import AttachmentService
 from src.modules.mod_chat.application.dispatch_direct_action_use_case import (
     DispatchDirectActionUseCase,
 )
+from src.modules.mod_chat.application.feedback_service import FeedbackService
 from src.modules.mod_chat.application.interpret_and_respond_use_case import (
     InterpretAndRespondUseCase,
 )
@@ -49,7 +53,13 @@ from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db import connection
 from src.shared.infrastructure.db.connection import get_session
-from src.shared.infrastructure.di.capabilities import ACTION_SCOPE, ATTACHMENT_CLEANUP, CONVERSATION_CONTEXT
+from src.shared.infrastructure.di.capabilities import (
+    ACTION_SCOPE,
+    ATTACHMENT_CLEANUP,
+    CONVERSATION_CONTEXT,
+    FEEDBACK_NOTIFIER,
+)
+from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.attachment_postgres_adapter import AttachmentPostgresAdapter
@@ -57,6 +67,7 @@ from src.shared.infrastructure.persistence.conversation_postgres_adapter import 
     ConversationPostgresAdapter,
 )
 from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.shared.infrastructure.storage.local_attachment_storage import LocalAttachmentStorage
 
@@ -94,6 +105,37 @@ def provide_chatbot_service(
         messages=MessagePostgresAdapter(session),
         uow=SqlAlchemyUnitOfWork(session),
         attachments=provide_attachment_service(session),
+    )
+
+
+def provide_feedback_service(
+    session: AsyncSession = Depends(get_session),
+) -> FeedbackService:
+    """Reactions and suggestions/bugs (SPEC-24)."""
+    settings = get_settings()
+    notifier = (
+        registry.resolve(FEEDBACK_NOTIFIER) if registry.is_registered(FEEDBACK_NOTIFIER) else None
+    )
+    return FeedbackService(
+        reactions=ReactionPostgresAdapter(session),
+        messages=MessagePostgresAdapter(session),
+        conversations=ConversationPostgresAdapter(session),
+        suggestions=FeedbackPostgresAdapter(session),
+        outbox=OutboxPostgresAdapter(session),
+        uow=SqlAlchemyUnitOfWork(session),
+        storage=LocalAttachmentStorage(
+            settings.attachment_storage_path,
+            public_base_url=settings.attachment_public_base_url,
+            secret=settings.attachment_signing_secret,
+        ),
+        processor=PillowImageProcessor(
+            max_bytes=settings.attachment_max_bytes,
+            max_side=settings.attachment_max_side,
+            stored_side=settings.attachment_stored_side,
+            thumbnail_side=settings.attachment_thumbnail_side,
+        ),
+        notifier=notifier,
+        send_inline=settings.notification_send_inline,
     )
 
 
@@ -213,6 +255,9 @@ def build_router(options: RouterOptions) -> APIRouter:
             rate_limiter=provide_rate_limiter(),
         )
     )
+    router.include_router(
+        create_feedback_router(provide_feedback_service, rate_limiter=provide_rate_limiter())
+    )
     return router
 
 
@@ -248,6 +293,7 @@ __all__ = [
     "provide_attachment_service",
     "provide_chatbot_service",
     "provide_conversation_context",
+    "provide_feedback_service",
     "provide_interpret_and_respond",
     "provide_llm_provider",
     "provide_tool_executor",

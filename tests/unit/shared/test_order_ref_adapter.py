@@ -29,10 +29,10 @@ def test_modelo_registrado_en_base():
 def test_columnas_y_nulabilidad():
     assert set(table.columns.keys()) == {
         "order_id", "customer_id", "checkout_id", "local_status",
-        "total", "created_at", "updated_at",
+        "total", "csat_sent", "created_at", "updated_at",
     }
     for required in ("order_id", "customer_id", "checkout_id", "local_status",
-                     "total", "created_at", "updated_at"):
+                     "total", "csat_sent", "created_at", "updated_at"):
         assert table.columns[required].nullable is False
     # order_id es el ID de Ventas (text), no un uuid generado.
     assert table.columns["order_id"].server_default is None

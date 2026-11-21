@@ -57,6 +57,21 @@ memoria de conversación y la auditoría TOOL sin importar la persistencia de ch
   un mensaje solo-imagen degrada con el aviso correspondiente.
 - Un job horario borra `PENDING` de más de 24 h y archivos huérfanos.
 
+## Retroalimentación (SPEC-24)
+
+| Método | Ruta | Caso de uso |
+|---|---|---|
+| POST | `/api/v1/mensajes/{mensajeId}/reaccion` | `FeedbackService.react` (👍/👎 idempotente) |
+| POST | `/api/v1/sugerencias` | `FeedbackService.create_suggestion` (multipart, captura opcional) |
+
+- Una reacción vigente por mensaje y por cliente/`chat_sid`; 30/min y el exceso
+  se ignora en silencio (204).
+- Sugerencias/bugs: título 3–120, descripción 6–1000, correo válido, captura
+  JPG/PNG opcional en el bucket privado (`feedback/...`); 5/hora y
+  `Idempotency-Key` obligatoria.
+- La notificación interna se encola como `SEND_FEEDBACK_EMAIL` y reutiliza el
+  `EmailSender` de SPEC-16; si falla, el outbox reintenta sin perder el registro.
+
 ## Dependencias externas
 
 - **LLM** (`LLM_PROVIDER=openai`) vía `ports/llm_provider_port.py`; sin API key
