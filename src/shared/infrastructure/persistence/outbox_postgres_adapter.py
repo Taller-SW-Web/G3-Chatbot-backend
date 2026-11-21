@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.shared.application.dto.outbox_task_dto import NewOutboxTask
 from src.shared.application.ports.notification_repository_port import EmailTask
 from src.shared.infrastructure.db.models.outbox import Outbox
 
@@ -21,7 +22,14 @@ class OutboxPostgresAdapter:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def guardar(self, row: Outbox) -> Outbox:
+    async def guardar(self, row: Outbox | NewOutboxTask) -> Outbox:
+        if not isinstance(row, Outbox):
+            row = Outbox(
+                type=row.type,
+                payload=row.payload,
+                status=row.status,
+                attempts=row.attempts,
+            )
         self.session.add(row)
         await self.session.flush()
         return row

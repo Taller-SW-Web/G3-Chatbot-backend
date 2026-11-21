@@ -16,6 +16,11 @@ from src.modules.mod_postventa.application.postventa_dto import (
     to_g5_return_reason,
     to_g5_return_type,
 )
+from src.modules.mod_postventa.domain.references import (
+    NewClaimReference,
+    NewEvidenceReference,
+    NewReturnReference,
+)
 from src.modules.mod_postventa.ports.postventa_port import PostventaPort
 from src.shared.application.ports.order_repository_port import SalesOrderPort
 from src.shared.domain.module_errors import ModuleRequestError
@@ -54,9 +59,7 @@ class PostventaService:
             correlation_id=correlation_id,
         )
         if conversation_id and self._evidence is not None:
-            from src.shared.infrastructure.db.models.evidence import Evidence
-
-            row = Evidence(
+            row = NewEvidenceReference(
                 conversation_id=conversation_id,
                 type=str(result.get("tipo") or "IMAGEN"),
                 url=str(result["url"]),
@@ -92,10 +95,8 @@ class PostventaService:
             normalized, holder_token=holder_token, correlation_id=correlation_id
         )
         if self._return_refs is not None:
-            from src.shared.infrastructure.db.models.return_ref import ReturnRef
-
             await self._return_refs.guardar(
-                ReturnRef(
+                NewReturnReference(
                     return_id=str(result["devolucionId"]),
                     code=str(result["devolucionId"]),
                     order_id=str(payload["pedidoId"]),
@@ -183,10 +184,8 @@ class PostventaService:
             normalized, holder_token=holder_token, correlation_id=correlation_id
         )
         if self._claim_refs is not None:
-            from src.shared.infrastructure.db.models.claim_ref import ClaimRef
-
             await self._claim_refs.guardar(
-                ClaimRef(
+                NewClaimReference(
                     claim_id=str(result["reclamoId"]),
                     code=str(result["codigoSeguimiento"]),
                     order_id=str(order_id or ""),

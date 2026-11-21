@@ -10,13 +10,13 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.modules.mod_checkout.adapters.checkout_postgres_adapter import CheckoutPostgresAdapter
-from src.modules.mod_checkout.adapters.payment_attempt_postgres_adapter import (
-    PaymentAttemptPostgresAdapter,
-)
 from src.modules.mod_checkout.adapters.payment_simulator_adapter import CardValidationError
-from src.modules.mod_checkout.domain.checkout import CheckoutStatus
-from src.modules.mod_checkout.domain.payment_attempt import PaymentRejectReason, PaymentResult
+from src.modules.mod_checkout.domain.checkout import CheckoutStatus, NewCheckout
+from src.modules.mod_checkout.domain.payment_attempt import (
+    NewPaymentAttempt,
+    PaymentRejectReason,
+    PaymentResult,
+)
 from src.modules.mod_checkout.ports.payment_gateway_port import PaymentGatewayPort
 from src.modules.mod_shipping.public import (
     build_destination,
@@ -24,9 +24,9 @@ from src.modules.mod_shipping.public import (
     parse_quote,
 )
 from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteRequest
+from src.shared.application.dto.order_ref_dto import NewOrderReference
+from src.shared.application.dto.outbox_task_dto import NewOutboxTask
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
-from src.shared.infrastructure.db.models.checkout import Checkout
-from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
 
 logger = logging.getLogger(__name__)
 DOCUMENT_PATTERNS = {
@@ -82,8 +82,8 @@ class ProcessPaymentInput:
 class ManageCheckoutUseCase:
     def __init__(
         self,
-        checkouts: CheckoutPostgresAdapter,
-        payment_attempts: PaymentAttemptPostgresAdapter,
+        checkouts: Any,
+        payment_attempts: Any,
         payment_gateway: PaymentGatewayPort,
         uow: Any | None = None,
         security_client: Any | None = None,
@@ -112,7 +112,7 @@ class ManageCheckoutUseCase:
 
     @staticmethod
     def _is_reusable(
-        checkout: Checkout, input_data: CreateCheckoutInput, lineas: list[dict[str, Any]], subtotal: float
+        checkout: Any, input_data: CreateCheckoutInput, lineas: list[dict[str, Any]], subtotal: float
     ) -> bool:
         """True when a pending checkout still matches the address, contact and cart content."""
         summary = checkout.summary if isinstance(checkout.summary, dict) else {}
@@ -134,7 +134,7 @@ class ManageCheckoutUseCase:
         except (ArithmeticError, ValueError, TypeError):
             return False
 
-    async def create_checkout(self, input_data: CreateCheckoutInput) -> Checkout:
+    async def create_checkout(self, input_data: CreateCheckoutInput) -> Any:
         if not input_data.idempotency_key:
             raise CheckoutError("VALIDACION", "Se requiere Idempotency-Key", {"campo": "Idempotency-Key"})
 
@@ -153,7 +153,7 @@ class ManageCheckoutUseCase:
 
         # 1. Idempotencia real previa por clave
         existing = await _safe_call(self.checkouts, "obtener_por_idempotency_key", input_data.idempotency_key)
-        if existing and isinstance(existing, Checkout):
+        if isinstance(getattr(existing, "customer_id", None), uuid.UUID):
             if existing.customer_id != input_data.customer_id:
                 raise CheckoutError("CONFLICTO", "Idempotency-Key ya usada por otro usuario")
             return existing
@@ -173,11 +173,11 @@ class ManageCheckoutUseCase:
             raise CheckoutError("CARRITO_VACIO", "No se encontró un carrito activo para iniciar checkout")
 
         # 3. Comprobar checkout vivo por carrito garantizando pertenencia
-        pending_checkout: Checkout | None = None
+        pending_checkout: Any | None = None
         existing_cart_chk = await _safe_call(
             self.checkouts, "obtener_vivo_por_cart", cart_id, customer_id=input_data.customer_id
         )
-        if existing_cart_chk and isinstance(existing_cart_chk, Checkout):
+        if isinstance(getattr(existing_cart_chk, "id", None), uuid.UUID):
             if existing_cart_chk.customer_id != input_data.customer_id:
                 raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
             if existing_cart_chk.idempotency_key == input_data.idempotency_key:
@@ -350,7 +350,7 @@ class ManageCheckoutUseCase:
             "orderId": order_id,
         }
 
-        checkout_row = Checkout(
+        checkout_row = NewCheckout(
             cart_id=cart_id,
             customer_id=input_data.customer_id,
             status=CheckoutStatus.PENDING_PAYMENT.value,
@@ -368,13 +368,11 @@ class ManageCheckoutUseCase:
 
         # Registrar referencia del pedido en Ventas (SPEC-14, SPEC-15)
         if self.orders:
-            from src.shared.infrastructure.db.models.order_ref import OrderRef
-
             try:
                 await _safe_call(
                     self.orders,
                     "guardar",
-                    OrderRef(
+                    NewOrderReference(
                         order_id=order_id,
                         customer_id=input_data.customer_id,
                         checkout_id=saved.id,
@@ -465,7 +463,7 @@ class ManageCheckoutUseCase:
             "total": round(subtotal + costo_envio, 2),
         }
 
-    async def get_checkout(self, checkout_id: uuid.UUID, customer_id: uuid.UUID) -> Checkout:
+    async def get_checkout(self, checkout_id: uuid.UUID, customer_id: uuid.UUID) -> Any:
         row = await self.checkouts.obtener_por_id(checkout_id)
         if not row or row.customer_id != customer_id:
             raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
@@ -483,13 +481,13 @@ class ManageCheckoutUseCase:
 
         return row
 
-    async def process_payment(self, input_data: ProcessPaymentInput) -> PaymentAttempt:
+    async def process_payment(self, input_data: ProcessPaymentInput) -> Any:
         if not input_data.idempotency_key:
             raise CheckoutError("VALIDACION", "Se requiere Idempotency-Key", {"campo": "Idempotency-Key"})
 
         # 1. Idempotencia real: buscar por clave antes de ejecutar
         existing_attempt = await _safe_call(self.payment_attempts, "obtener_por_idempotency_key", input_data.idempotency_key)
-        if existing_attempt and isinstance(existing_attempt, PaymentAttempt):
+        if isinstance(getattr(existing_attempt, "checkout_id", None), uuid.UUID):
             existing_checkout = await self.checkouts.obtener_por_id(existing_attempt.checkout_id)
             if not existing_checkout or existing_checkout.customer_id != input_data.customer_id:
                 raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
@@ -512,17 +510,13 @@ class ManageCheckoutUseCase:
                 if ord_row and getattr(ord_row, "order_id", None):
                     await _safe_call(self.orders, "actualizar_estado", ord_row.order_id, "CANCELLED")
                     if self.outbox:
-                        from src.shared.infrastructure.db.models.outbox import Outbox
-
-                        outbox_entry = Outbox(
+                        outbox_entry = NewOutboxTask(
                             type="REQUEST_CANCELLATION",
                             payload={
                                 "order_id": ord_row.order_id,
                                 "motivo": "PAGO_NO_COMPLETADO",
                                 "comentario": "Checkout expirado por tiempo límite",
                             },
-                            status="PENDING",
-                            attempts=0,
                         )
                         await _safe_call(self.outbox, "guardar", outbox_entry)
                 if self.uow:
@@ -584,7 +578,7 @@ class ManageCheckoutUseCase:
             if not order_id and isinstance(row.summary, dict):
                 order_id = row.summary.get("orderId")
 
-            attempt = PaymentAttempt(
+            attempt = NewPaymentAttempt(
                 checkout_id=row.id,
                 idempotency_key=input_data.idempotency_key,
                 result=PaymentResult.APPROVED.value,
@@ -597,8 +591,6 @@ class ManageCheckoutUseCase:
 
             # Encolar notificación a Ventas en outbox (SPEC-15 Req. 2)
             if order_id and self.outbox:
-                from src.shared.infrastructure.db.models.outbox import Outbox
-
                 payment_payload = {
                     "transaccionId": payment_res.transaction_id or f"SIM-{uuid.uuid4().hex[:8].upper()}",
                     "resultado": "APROBADO",
@@ -610,14 +602,12 @@ class ManageCheckoutUseCase:
                     "fechaPago": datetime.now(timezone.utc).isoformat(),
                     "codigoAutorizacion": f"AUTH-{uuid.uuid4().hex[:6].upper()}",
                 }
-                outbox_entry = Outbox(
+                outbox_entry = NewOutboxTask(
                     type="NOTIFY_SALES_PAYMENT",
                     payload={
                         "order_id": order_id,
                         "payment_data": payment_payload,
                     },
-                    status="PENDING",
-                    attempts=0,
                 )
                 await _safe_call(self.outbox, "guardar", outbox_entry)
 
@@ -650,21 +640,17 @@ class ManageCheckoutUseCase:
             if ord_row and getattr(ord_row, "order_id", None):
                 await _safe_call(self.orders, "actualizar_estado", ord_row.order_id, "CANCELLED")
                 if self.outbox:
-                    from src.shared.infrastructure.db.models.outbox import Outbox
-
-                    outbox_entry = Outbox(
+                    outbox_entry = NewOutboxTask(
                         type="REQUEST_CANCELLATION",
                         payload={
                             "order_id": ord_row.order_id,
                             "motivo": "PAGO_NO_COMPLETADO",
                             "comentario": "Intentos de pago con tarjeta agotados (3 rechazos)",
                         },
-                        status="PENDING",
-                        attempts=0,
                     )
                     await _safe_call(self.outbox, "guardar", outbox_entry)
 
-        attempt = PaymentAttempt(
+        attempt = NewPaymentAttempt(
             checkout_id=row.id,
             idempotency_key=input_data.idempotency_key,
             result=payment_res.result,

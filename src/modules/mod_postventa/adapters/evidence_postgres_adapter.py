@@ -9,6 +9,7 @@ import uuid
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_postventa.domain.references import NewEvidenceReference
 from src.shared.infrastructure.db.models.evidence import Evidence
 
 
@@ -34,7 +35,15 @@ class EvidencePostgresAdapter:
             return "DOCUMENTO"
         return tipo
 
-    async def guardar(self, evidence: Evidence) -> Evidence:
+    async def guardar(self, evidence: Evidence | NewEvidenceReference) -> Evidence:
+        if not isinstance(evidence, Evidence):
+            evidence = Evidence(
+                conversation_id=evidence.conversation_id,
+                type=evidence.type,
+                url=evidence.url,
+                original_file_name=evidence.original_file_name,
+                size_bytes=evidence.size_bytes,
+            )
         evidence.type = self.tipo_desde_ventas(evidence.type)
         self.session.add(evidence)
         await self.session.flush()

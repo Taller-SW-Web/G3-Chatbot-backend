@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_postventa.domain.references import NewClaimReference
 from src.shared.infrastructure.db.models.claim_ref import ClaimRef
 
 
@@ -14,7 +15,15 @@ class ClaimRefPostgresAdapter:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def guardar(self, row: ClaimRef) -> ClaimRef:
+    async def guardar(self, row: ClaimRef | NewClaimReference) -> ClaimRef:
+        if not isinstance(row, ClaimRef):
+            row = ClaimRef(
+                claim_id=row.claim_id,
+                code=row.code,
+                order_id=row.order_id,
+                customer_id=row.customer_id,
+                idempotency_key=row.idempotency_key,
+            )
         self.session.add(row)
         try:
             await self.session.flush()
