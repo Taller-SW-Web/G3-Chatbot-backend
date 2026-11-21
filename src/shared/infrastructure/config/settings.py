@@ -158,7 +158,13 @@ class Settings:
     # Test-only: return the simulated OTP in the response (SPEC-04 RNF).
     modo_qa: bool = False
     # SPEC-23: private attachment storage (local adapter until Supabase is wired).
+    # `local` (default, ephemeral disk) or `supabase` (private bucket, ADR-0028).
+    attachment_storage: str = "local"
     attachment_storage_path: str = "var/attachments"
+    supabase_url: str = ""
+    supabase_service_key: str = ""
+    attachment_bucket: str = "chat-attachments"
+    attachment_storage_timeout_seconds: float = 10.0
     attachment_public_base_url: str = "http://localhost:8000/api/v1"
     attachment_signing_secret: str = DEV_ATTACHMENT_SECRET
     attachment_signed_url_ttl_seconds: int = 300
@@ -170,6 +176,10 @@ class Settings:
     attachment_thumbnail_side: int = 320
 
     def __post_init__(self) -> None:
+        if self.attachment_storage not in ("local", "supabase"):
+            raise ValueError("ATTACHMENT_STORAGE must be one of local, supabase")
+        if self.attachment_storage == "supabase" and not (self.supabase_url and self.supabase_service_key):
+            raise ValueError("ATTACHMENT_STORAGE=supabase requires SUPABASE_URL and SUPABASE_SERVICE_KEY")
         if self.products_auth_mode not in ("service", "public"):
             raise ValueError("PRODUCTS_AUTH_MODE must be one of service, public")
         if (
@@ -383,7 +393,14 @@ def _build_settings() -> Settings:
             "PHONE_OTP_SEND_WINDOW_SECONDS", "900", int, minimum=60
         ),
         modo_qa=_flag("MODO_QA"),
+        attachment_storage=_choice("ATTACHMENT_STORAGE", "local", ("local", "supabase")),
         attachment_storage_path=os.getenv("ATTACHMENT_STORAGE_PATH", "var/attachments").strip(),
+        supabase_url=os.getenv("SUPABASE_URL", "").strip().rstrip("/"),
+        supabase_service_key=os.getenv("SUPABASE_SERVICE_KEY", "").strip(),
+        attachment_bucket=os.getenv("ATTACHMENT_BUCKET", "chat-attachments").strip() or "chat-attachments",
+        attachment_storage_timeout_seconds=_number(
+            "ATTACHMENT_STORAGE_TIMEOUT_SECONDS", "10", float, minimum=0.5
+        ),
         attachment_public_base_url=(
             os.getenv("ATTACHMENT_PUBLIC_BASE_URL", "http://localhost:8000/api/v1").strip().rstrip("/")
         ),

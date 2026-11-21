@@ -35,6 +35,12 @@ def create_app(
     if turn_scope is not None:
         limiter.reset()
     warn_unsafe_defaults(settings, logger)
+    if settings.is_production and settings.attachment_storage == "local":
+        logger.warning(
+            "ATTACHMENT_STORAGE=local in production: uploads sit on the ephemeral container disk "
+            "and are lost on every redeploy. Create the private Supabase bucket and set "
+            "ATTACHMENT_STORAGE=supabase."
+        )
     fake_modules = tuple(m for m in settings.fake_modules() if m in MODULES_WITH_ADAPTERS)
     if fake_modules:
         logger.warning(

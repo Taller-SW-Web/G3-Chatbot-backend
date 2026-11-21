@@ -1,26 +1,20 @@
 """Local private attachment storage (SPEC-23).
 
-The spec targets Supabase Storage; this adapter implements the same port on a
-configurable local directory so development and tests work without credentials.
-Signed URLs point to `GET /api/v1/chat/adjuntos/archivo` and are HMAC-protected:
-the signature is the authorization, and it expires.
+Development and test adapter of the storage port on a configurable local directory
+(production uses `SupabaseAttachmentStorage`). Signed URLs are HMAC-protected,
+see `signed_urls`.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
-import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlencode
 
 from src.shared.application.ports.attachment_storage_port import (
     AttachmentStorageError,
     SignedUrl,
 )
-
-_SAFE_KEY = re.compile(r"^[A-Za-z0-9/_\-.]+$")
+from src.shared.infrastructure.storage.signed_urls import HmacUrlSigner, validate_key
 
 
 class LocalAttachmentStorage:
@@ -33,14 +27,10 @@ class LocalAttachmentStorage:
         clock=lambda: datetime.now(timezone.utc),
     ):
         self._root = Path(root).resolve()
-        self._base = public_base_url.rstrip("/")
-        self._secret = secret.encode()
-        self._clock = clock
+        self._signer = HmacUrlSigner(public_base_url=public_base_url, secret=secret, clock=clock)
 
     def _path(self, key: str) -> Path:
-        if not key or not _SAFE_KEY.fullmatch(key) or ".." in Path(key).parts:
-            raise AttachmentStorageError("invalid storage key")
-        return self._root / key
+        return self._root / validate_key(key)
 
     async def guardar(self, key: str, data: bytes, content_type: str) -> None:
         path = self._path(key)
@@ -64,19 +54,11 @@ class LocalAttachmentStorage:
         except OSError as exc:
             raise AttachmentStorageError(f"cannot delete {key}: {exc}") from exc
 
-    def _signature(self, key: str, exp: int) -> str:
-        return hmac.new(self._secret, f"{key}:{exp}".encode(), hashlib.sha256).hexdigest()
-
     def url_firmada(self, key: str, ttl_seconds: int) -> SignedUrl:
-        expires_at = self._clock() + timedelta(seconds=ttl_seconds)
-        exp = int(expires_at.timestamp())
-        query = urlencode({"clave": key, "exp": exp, "sig": self._signature(key, exp)})
-        return SignedUrl(f"{self._base}/chat/adjuntos/archivo?{query}", expires_at)
+        return self._signer.url_firmada(key, ttl_seconds)
 
     def verificar_firma(self, key: str, exp: int, sig: str) -> bool:
-        if exp < int(self._clock().timestamp()):
-            return False
-        return hmac.compare_digest(self._signature(key, exp), sig)
+        return self._signer.verificar_firma(key, exp, sig)
 
     async def listar_claves(self) -> list[str]:
         if not self._root.exists():

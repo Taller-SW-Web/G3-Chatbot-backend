@@ -48,6 +48,7 @@ from src.modules.mod_chat.application.tools.phone_handlers import build_phone_ha
 from src.modules.mod_chat.ports.llm_provider_port import LLMProvider
 from src.modules.mod_chat.ports.tool_executor_port import ToolExecutorPort
 from src.modules.mod_orders.public import provide_orders_service
+from src.shared.application.ports.attachment_storage_port import AttachmentStoragePort
 from src.shared.application.tools.tool_registry import ToolRegistry
 from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
 from src.shared.infrastructure.config.settings import Settings, get_settings
@@ -69,22 +70,18 @@ from src.shared.infrastructure.persistence.conversation_postgres_adapter import 
 from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
 from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
-from src.shared.infrastructure.storage.local_attachment_storage import LocalAttachmentStorage
+from src.shared.infrastructure.storage.factory import build_attachment_storage
 
 
 def provide_attachment_service(
     session: AsyncSession = Depends(get_session),
 ) -> AttachmentService:
-    """Attachments (SPEC-23): local private storage and Pillow normalization."""
+    """Attachments (SPEC-23): private storage (local or Supabase) and Pillow normalization."""
     settings = get_settings()
     return AttachmentService(
         attachments=AttachmentPostgresAdapter(session),
         conversations=ConversationPostgresAdapter(session),
-        storage=LocalAttachmentStorage(
-            settings.attachment_storage_path,
-            public_base_url=settings.attachment_public_base_url,
-            secret=settings.attachment_signing_secret,
-        ),
+        storage=build_attachment_storage(settings),
         processor=PillowImageProcessor(
             max_bytes=settings.attachment_max_bytes,
             max_side=settings.attachment_max_side,
@@ -123,11 +120,7 @@ def provide_feedback_service(
         suggestions=FeedbackPostgresAdapter(session),
         outbox=OutboxPostgresAdapter(session),
         uow=SqlAlchemyUnitOfWork(session),
-        storage=LocalAttachmentStorage(
-            settings.attachment_storage_path,
-            public_base_url=settings.attachment_public_base_url,
-            secret=settings.attachment_signing_secret,
-        ),
+        storage=build_attachment_storage(settings),
         processor=PillowImageProcessor(
             max_bytes=settings.attachment_max_bytes,
             max_side=settings.attachment_max_side,
@@ -261,13 +254,8 @@ def build_router(options: RouterOptions) -> APIRouter:
     return router
 
 
-def _provide_storage() -> LocalAttachmentStorage:
-    settings = get_settings()
-    return LocalAttachmentStorage(
-        settings.attachment_storage_path,
-        public_base_url=settings.attachment_public_base_url,
-        secret=settings.attachment_signing_secret,
-    )
+def _provide_storage() -> AttachmentStoragePort:
+    return build_attachment_storage(get_settings())
 
 
 router = build_router(RouterOptions())
