@@ -27,6 +27,7 @@ pedidos ni gestiona postventa.
 | POST | `/api/v1/checkout` | `ManageCheckoutUseCase.create_checkout` |
 | GET | `/api/v1/checkout/{checkout_id}` | `ManageCheckoutUseCase.get_checkout` |
 | POST | `/api/v1/checkout/{checkout_id}/pago` | `ManageCheckoutUseCase.process_payment` |
+| POST | `/api/v1/pedidos/{pedido_id}/valoracion-compra` | `PurchaseRatingService.create` |
 
 ## Dependencias externas
 
@@ -37,6 +38,39 @@ pedidos ni gestiona postventa.
 - **G7 correo** (confirmación) a través de la capacidad `order_confirmation`
   que registra `mod-orders`; el outbox vive en `src/shared`.
 
+## Celular verificado (SPEC-04)
+
+`POST /checkout` exige que el celular vigente de `GET /auth/me` tenga una
+verificación local exacta (`local_phone_verification`). Con
+`REQUIRE_PHONE_VERIFICATION` activo, una falta de verificación responde
+`403 CELULAR_NO_VERIFICADO` con el número enmascarado; si Seguridad no responde,
+el checkout se bloquea con el mismo código y `motivo=SEGURIDAD_NO_DISPONIBLE`.
+En desarrollo/fake el flag está apagado por defecto para no romper los E2E.
+
+## Stock (SPEC-10)
+
+Antes de cotizar y crear el pedido, `create_checkout` invoca
+`ManageCartUseCase.validate_cart` (una consulta masiva de disponibilidad y una
+verificación por cantidad). Si alguna línea está `AGOTADO`/`INSUFICIENTE` o no
+se pudo confirmar, responde `409 CARRITO_DESACTUALIZADO` con
+`lineas[{sku, nombre, cantidad, motivo, mensaje}]`; nada se degrada en silencio.
+`STOCK_BAJO` e `INDETERMINADO` no bloquean (la decisión final sigue en Ventas).
+
+## Dirección guardada (SPEC-12)
+
+`POST /checkout` acepta `guardarDireccion: true`. Con el cliente autenticado se
+llama a `POST /usuarios/{id}/direcciones` de Seguridad con su token; si falla,
+el checkout continúa y la respuesta incluye `avisoDireccion` ("No pudimos
+guardar tu dirección para la próxima vez"). `CHECKOUT_SAVE_ADDRESS_ENABLED`
+(default true) permite apagar la llamada sin tocar código.
+
+## Valoración de compra (SPEC-24)
+
+`POST /pedidos/{id}/valoracion-compra` guarda una única valoración por pedido
+(estrellas 1–5 y comentario opcional) en `purchase_rating`, previa validación
+de propiedad en Ventas. No se envía a Ventas; la CSAT de la entrega sigue en
+`mod-postventa`.
+
 ## Capacidades que registra
 
 | Capacidad | Consumidor | Motivo |
@@ -44,6 +78,7 @@ pedidos ni gestiona postventa.
 | `checkout_document` | `mod-auth` (opcional) | `ultimoDocumento` del perfil sin acoplar auth a checkout |
 | `outbox_processor` | worker compartido | el lifespan no importa módulos |
 | `order_confirmation` (consumida) | este módulo | el correo pertenece a `mod-orders`; es requisito de arranque |
+| `feedback_notifier` (consumida) | worker de outbox | correo interno de SPEC-24; opcional, si falta el job reintenta |
 
 ## Pruebas
 

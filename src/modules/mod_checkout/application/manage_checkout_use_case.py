@@ -26,6 +26,7 @@ from src.modules.mod_shipping.public import (
 from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteRequest
 from src.shared.application.dto.order_ref_dto import NewOrderReference
 from src.shared.application.dto.outbox_task_dto import NewOutboxTask
+from src.shared.domain.masking import mask_phone
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,8 @@ class CreateCheckoutInput:
     cart_id: uuid.UUID | None = None
     direccion: dict[str, Any] | None = None
     contacto: dict[str, Any] | None = None
+    access_token: str | None = None
+    guardar_direccion: bool = False
 
 
 @dataclass
@@ -95,6 +98,9 @@ class ManageCheckoutUseCase:
         sales_client: Any | None = None,
         outbox: Any | None = None,
         dispatch: Any | None = None,
+        require_phone_verification: bool = False,
+        cart_validator: Any | None = None,
+        save_address_enabled: bool = True,
     ):
         self.checkouts = checkouts
         self.payment_attempts = payment_attempts
@@ -109,6 +115,9 @@ class ManageCheckoutUseCase:
         self.sales_client = sales_client
         self.outbox = outbox
         self.dispatch = dispatch
+        self.require_phone_verification = require_phone_verification
+        self.cart_validator = cart_validator
+        self.save_address_enabled = save_address_enabled
 
     @staticmethod
     def _is_reusable(
@@ -134,6 +143,43 @@ class ManageCheckoutUseCase:
         except (ArithmeticError, ValueError, TypeError):
             return False
 
+    async def _ensure_phone_verified(self, input_data: CreateCheckoutInput) -> None:
+        """SPEC-04 Req. 1: exact-match between today's phone and the local verification."""
+        if not self.require_phone_verification:
+            return
+        if self.security_client is None or not input_data.access_token:
+            raise CheckoutError(
+                "CELULAR_NO_VERIFICADO",
+                "No pudimos confirmar tu celular ahora.",
+                {"motivo": "SIN_SESION"},
+            )
+        try:
+            profile = dict(await self.security_client.me(input_data.access_token))
+        except Exception as exc:
+            logger.warning("Seguridad profile unavailable while checking the phone: %s", exc)
+            raise CheckoutError(
+                "CELULAR_NO_VERIFICADO",
+                "No pudimos confirmar tu celular ahora.",
+                {"motivo": "SEGURIDAD_NO_DISPONIBLE"},
+            ) from exc
+        phone = profile.get("celular") or profile.get("telefono")
+        if not phone:
+            raise CheckoutError(
+                "CELULAR_NO_VERIFICADO",
+                "Tu perfil no tiene un celular registrado.",
+                {"motivo": "SIN_CELULAR"},
+            )
+        phone = str(phone)
+        verified = await _safe_call(
+            self.phone_verifications, "existe", input_data.customer_id, phone
+        )
+        if not verified:
+            raise CheckoutError(
+                "CELULAR_NO_VERIFICADO",
+                f"Para coordinar la entrega necesitamos confirmar tu celular {mask_phone(phone)}",
+                {"celularEnmascarado": mask_phone(phone)},
+            )
+
     async def create_checkout(self, input_data: CreateCheckoutInput) -> Any:
         if not input_data.idempotency_key:
             raise CheckoutError("VALIDACION", "Se requiere Idempotency-Key", {"campo": "Idempotency-Key"})
@@ -150,6 +196,9 @@ class ManageCheckoutUseCase:
         pattern = DOCUMENT_PATTERNS.get(contacto["tipoDocumento"])
         if pattern is None or pattern.fullmatch(contacto["numeroDocumento"]) is None:
             raise CheckoutError("DATO_INVALIDO", "El documento no tiene un formato válido", {"campo": "contacto.numeroDocumento"})
+
+        # SPEC-04: the checkout demands the *current* phone verified locally.
+        await self._ensure_phone_verified(input_data)
 
         # 1. Idempotencia real previa por clave
         existing = await _safe_call(self.checkouts, "obtener_por_idempotency_key", input_data.idempotency_key)
@@ -195,14 +244,7 @@ class ManageCheckoutUseCase:
             else:
                 pending_checkout = existing_cart_chk
 
-        # 4. Validar celular verificado si existe el verificador
-        if self.phone_verifications and input_data.contacto and input_data.contacto.get("celular"):
-            celular = str(input_data.contacto["celular"])
-            verificado = await _safe_call(self.phone_verifications, "existe", input_data.customer_id, celular)
-            if verificado is False:
-                raise CheckoutError("CELULAR_NO_VERIFICADO", "El celular no ha sido verificado")
-
-        # 5. Cálculo y revalidación de importes en el servidor
+        # 4. Cálculo y revalidación de importes en el servidor
         items = await _safe_call(self.cart_items, "listar_por_cart", cart_id)
         if not items:
             raise CheckoutError("CARRITO_VACIO", "Tu carrito no tiene productos disponibles para comprar")
@@ -218,6 +260,8 @@ class ManageCheckoutUseCase:
             }
             for it in items
         ]
+        # SPEC-10 Req. 2: revalidate every line before quoting or creating the order.
+        await self._revalidate_stock(cart, lineas, items, subtotal)
         if pending_checkout is not None:
             if self._is_reusable(pending_checkout, input_data, lineas, subtotal):
                 return pending_checkout
@@ -348,6 +392,7 @@ class ManageCheckoutUseCase:
             "direccion": input_data.direccion or {},
             "contacto": input_data.contacto or {},
             "orderId": order_id,
+            "avisoDireccion": await self._save_address(input_data),
         }
 
         checkout_row = NewCheckout(
@@ -386,6 +431,70 @@ class ManageCheckoutUseCase:
         if self.uow:
             await _safe_call(self.uow, "commit")
         return saved
+
+    async def _revalidate_stock(self, cart: Any, lineas: list[dict[str, Any]], items: list[Any], subtotal: float) -> None:
+        """Block the checkout when a line is out of stock or cannot be confirmed (SPEC-10)."""
+        if self.cart_validator is None:
+            return
+        try:
+            validation = await self.cart_validator(cart)
+        except Exception as exc:
+            logger.warning("Cart stock revalidation failed for cart %s: %s", getattr(cart, "id", "?"), exc)
+            raise CheckoutError(
+                "MODULO_NO_DISPONIBLE",
+                "No pudimos confirmar el stock ahora. Intenta de nuevo en unos segundos.",
+                {"modulo": getattr(exc, "module", "products")},
+            ) from exc
+        invalid: list[dict[str, Any]] = []
+        for line in lineas:
+            outcome = validation.get(line["sku"]) if isinstance(validation, dict) else None
+            if isinstance(outcome, dict) and outcome.get("ok"):
+                continue
+            projection = str((outcome or {}).get("projection") or "SERVICIO_NO_DISPONIBLE")
+            quantity = str((outcome or {}).get("quantity") or "SERVICIO_NO_DISPONIBLE")
+            if projection == "SKU_AGOTADO":
+                motivo, mensaje = "AGOTADO", f"{line['nombre']} se agotó mientras elegías."
+            elif quantity == "STOCK_INSUFICIENTE":
+                motivo, mensaje = "STOCK_INSUFICIENTE", f"No hay stock suficiente para {line['nombre']}."
+            else:
+                motivo, mensaje = "NO_CONFIRMADO", f"No pudimos confirmar el stock de {line['nombre']}."
+            invalid.append(
+                {
+                    "sku": line["sku"],
+                    "nombre": line["nombre"],
+                    "cantidad": line["cantidad"],
+                    "motivo": motivo,
+                    "mensaje": mensaje,
+                }
+            )
+        if invalid:
+            raise CheckoutError(
+                "CARRITO_DESACTUALIZADO",
+                "Algunos productos de tu carrito cambiaron. Revisa tu carrito antes de continuar.",
+                {
+                    "lineas": invalid,
+                    "summary": self._stale_summary(items, subtotal, 0.0),
+                },
+            )
+
+    async def _save_address(self, input_data: CreateCheckoutInput) -> str | None:
+        """SPEC-12 Req. 3: optional saved address; a Seguridad failure never blocks checkout."""
+        if not input_data.guardar_direccion or not self.save_address_enabled:
+            return None
+        message = "No pudimos guardar tu dirección para la próxima vez."
+        if self.security_client is None or not input_data.access_token:
+            logger.warning("Address not saved: no holder token available")
+            return message
+        try:
+            await self.security_client.save_address(
+                str(input_data.customer_id),
+                input_data.access_token,
+                input_data.direccion or {},
+            )
+        except Exception as exc:
+            logger.warning("Seguridad refused to save the address; checkout continues: %s", exc)
+            return message
+        return None
 
     async def _quote_shipping(self, input_data: CreateCheckoutInput, items: list[Any]):
         """Server-side Despacho quote for the cart lines (`SPEC-14` Req. 2).

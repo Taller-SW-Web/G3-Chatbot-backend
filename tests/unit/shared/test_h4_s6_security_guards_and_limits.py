@@ -253,7 +253,7 @@ class _FakeChatTurnUseCase:
     async def scope(self):
         yield self
 
-    async def send_message(self, caller, conversation_id, text: str):
+    async def send_message(self, caller, conversation_id, text: str, attachment_ids=None):
         self.count += 1
         now = datetime(2026, 11, 6, tzinfo=timezone.utc)
         user_msg = Message(

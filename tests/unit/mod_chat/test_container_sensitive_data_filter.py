@@ -13,6 +13,7 @@ def test_interpret_and_respond_wires_sensitive_data_filter(monkeypatch):
     monkeypatch.setattr(chat_module, "SqlAlchemyUnitOfWork", lambda _: object())
     monkeypatch.setattr(chat_module, "provide_llm_provider", lambda _: object())
     monkeypatch.setattr(chat_module, "provide_tool_executor", lambda _: object())
+    monkeypatch.setattr(chat_module, "provide_attachment_service", lambda _: object())
 
     use_case = chat_module.build_interpret_and_respond(object())
 

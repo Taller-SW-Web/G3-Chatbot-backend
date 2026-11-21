@@ -75,3 +75,13 @@ class OrderRefPostgresAdapter:
         row.updated_at = datetime.now(timezone.utc)
         await self.session.flush()
         return row
+
+    async def marcar_csat_enviado(self, order_id: str) -> OrderRef | None:
+        """SPEC-24: mark the CSAT as sent only when this channel has an `order_ref`."""
+        row = await self.obtener_por_order_id(order_id)
+        if row is None:
+            return None
+        row.csat_sent = True
+        row.updated_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return row

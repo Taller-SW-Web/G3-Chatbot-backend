@@ -34,6 +34,7 @@ TOOL_CONTRACTS: tuple[ToolContract, ...] = (
     ToolContract("nueva_conversacion", "manage_conversation"),
     ToolContract("buscar_conversaciones", "manage_conversation"),
     ToolContract("consultar_pedidos", "manage_orders", requires_session=True),
+    ToolContract("verificar_celular", "manage_phone_verification", requires_session=True),
 )
 
 

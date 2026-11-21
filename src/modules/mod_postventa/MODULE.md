@@ -32,6 +32,22 @@ propiedad del pedido en Ventas. **No** anula pedidos ni reembolsa.
 | GET | `/api/v1/reclamos/{codigo}` | `PostventaService.get_claim` |
 | POST | `/api/v1/pedidos/{pedido_id}/csat` | `PostventaService.create_csat` |
 
+## Duplicados (SPEC-19/21)
+
+Antes de crear un reclamo o una devolución se consulta el listado real del
+cliente (`/me`). Si hay otro **abierto** del mismo pedido + motivo (devolución:
+también las mismas líneas), responde `409 RECLAMO_DUPLICADO` /
+`409 DEVOLUCION_DUPLICADA` con el código y estado existentes. El cliente puede
+reintentar con `forzar: true` para registrar igual; `forzar` no se envía a G5.
+Un caso ya `ATENDIDO`/`DERIVADO` (o `RECHAZADA`/`COMPLETADA`) no es duplicado.
+
+## CSAT (SPEC-24)
+
+`POST /pedidos/{id}/csat` sigue delegando en Ventas y ahora marca
+`order_ref.csat_sent` cuando Ventas responde 201 o `409 CSAT_ALREADY_SUBMITTED`,
+para no volver a mostrar el bloque de calificación. Solo actualiza si existe
+una fila local de `order_ref` para el pedido.
+
 ## Dependencias externas
 
 - **G5 M2 Postventa** `POST /devoluciones`, `POST /reclamos`, `POST /csat`,

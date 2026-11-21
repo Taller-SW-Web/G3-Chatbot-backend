@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from src.modules.mod_chat.application.attachment_service import AttachmentError
 from src.modules.mod_chat.application.dto.conversation_events import (
     BlockEvent,
     DegradedEvent,
@@ -23,6 +24,7 @@ from src.modules.mod_chat.application.interpret_and_respond_use_case import (
 from src.modules.mod_chat.ports.chatbot_service_port import ConversationNotFoundError
 from src.modules.mod_chat.ports.llm_provider_port import (
     Completed,
+    ImagePart,
     LLMRole,
     LLMTimeoutError,
     LLMUnavailableError,
@@ -116,7 +118,7 @@ class FakeUow:
         self.rollbacks += 1
 
 
-def build(turns, *, tools=None, history=(), conversation=None, sanitize=None, timeout=5.0):
+def build(turns, *, tools=None, history=(), conversation=None, sanitize=None, timeout=5.0, attachments=None):
     conversation = conversation or FakeConversations()
     messages = FakeMessages(history)
     uow = FakeUow()
@@ -125,12 +127,17 @@ def build(turns, *, tools=None, history=(), conversation=None, sanitize=None, ti
     use_case = InterpretAndRespondUseCase(
         conversation, messages, uow, llm, tools,
         assistant_name="Botleta", llm_timeout_seconds=timeout, sanitize_text=sanitize,
+        attachments=attachments,
     )
     return use_case, conversation, messages, uow, llm, tools
 
 
-async def run(use_case, conversation, text="hola", caller=ANA):
-    return [e async for e in await use_case.send_message(caller, conversation.id, text)]
+async def run(use_case, conversation, text="hola", caller=ANA, attachment_ids=None):
+    return [
+        e async for e in await use_case.send_message(
+            caller, conversation.id, text, attachment_ids=attachment_ids
+        )
+    ]
 
 
 def reply(*texts, usage=None):
@@ -608,3 +615,81 @@ async def test_cancelling_the_turn_ends_the_unit_of_work_and_is_not_swallowed():
     with pytest.raises(asyncio.CancelledError):
         await task
     assert uow.rollbacks == 1
+
+
+class FakeAttachments:
+    def __init__(self, *, valid=True, images=None):
+        self.valid = valid
+        self.images = images or {}
+        self.linked: list[tuple[list, uuid.UUID]] = []
+
+    async def validate_for_message(self, caller, conversation_id, attachment_ids):
+        if not self.valid:
+            raise AttachmentError("RECURSO_NO_ENCONTRADO", "Adjunto no encontrado.", status=404)
+        return [type("Row", (), {"id": attachment_id})() for attachment_id in attachment_ids]
+
+    async def link(self, rows, message_id):
+        self.linked.append(([row.id for row in rows], message_id))
+
+    async def context_images(self, messages):
+        return self.images
+
+
+@pytest.mark.asyncio
+async def test_message_with_attachments_validates_and_links_them():
+    attachments = FakeAttachments()
+    uc, conv, messages, _, _, _ = build([reply("Veo la imagen")], attachments=attachments)
+    attachment_id = uuid.uuid4()
+
+    events = await run(uc, conv, "", attachment_ids=[attachment_id])
+
+    assert isinstance(events[0], MessageAcceptedEvent)
+    assert attachments.linked[0][0] == [attachment_id]
+    assert attachments.linked[0][1] == events[0].message.id
+
+
+@pytest.mark.asyncio
+async def test_invalid_attachment_is_propagated_before_persisting_the_message():
+    attachments = FakeAttachments(valid=False)
+    uc, conv, messages, uow, _, _ = build([reply("x")], attachments=attachments)
+
+    with pytest.raises(AttachmentError):
+        await uc.send_message(ANA, conv.id, "hola", attachment_ids=[uuid.uuid4()])
+
+    assert messages.rows == []
+    assert uow.commits == 0
+
+
+@pytest.mark.asyncio
+async def test_image_only_message_is_sent_to_the_llm_as_base64_parts():
+    image = ImagePart(media_type="image/png", data_base64="aGVsbG8=")
+    attachments = FakeAttachments()
+    uc, conv, _, _, llm, _ = build([reply("Veo zapatillas")], attachments=attachments)
+    attachment_id = uuid.uuid4()
+    stream = await uc.send_message(ANA, conv.id, "", attachment_ids=[attachment_id])
+    first = await stream.__anext__()
+    attachments.images = {first.message.id: [image]}
+
+    events = [first, *[event async for event in stream]]
+
+    assert any(isinstance(event, FinalEvent) for event in events)
+    user_messages = [m for m in llm.calls[0][0] if m.role is LLMRole.USER]
+    assert any(any(isinstance(part, ImagePart) for part in message.content) for message in user_messages)
+
+
+@pytest.mark.asyncio
+async def test_image_only_without_vision_degrades_but_text_still_works():
+    attachments = FakeAttachments()
+    uc, conv, _, _, _, _ = build(
+        [reply("respuesta de texto")], attachments=attachments,
+    )
+    uc._llm._supports_vision = False
+    attachment_id = uuid.uuid4()
+    stream = await uc.send_message(ANA, conv.id, "", attachment_ids=[attachment_id])
+    await stream.__anext__()  # accepted; the image is not in context_images
+
+    events = [event async for event in stream]
+
+    assert any(isinstance(event, DegradedEvent) and event.reason == "image_unavailable" for event in events)
+    final = next(event for event in events if isinstance(event, FinalEvent))
+    assert "No pude analizar la imagen" in final.message.text

@@ -49,7 +49,7 @@ class Outbox(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "type IN ('NOTIFY_SALES_PAYMENT','REQUEST_CANCELLATION','SEND_EMAIL')",
+            "type IN ('NOTIFY_SALES_PAYMENT','REQUEST_CANCELLATION','SEND_EMAIL','SEND_FEEDBACK_EMAIL')",
             name="ck_outbox_type",
         ),
         CheckConstraint("jsonb_typeof(payload) = 'object'", name="ck_outbox_payload_object"),

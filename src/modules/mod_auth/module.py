@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.mod_auth import MODULE_ID
+from src.modules.mod_auth.adapters.http.phone_router import create_phone_router
 from src.modules.mod_auth.adapters.http.session_router import create_session_router
+from src.modules.mod_auth.adapters.simulated_sms_sender import SimulatedSmsSender
+from src.modules.mod_auth.application.manage_phone_verification_use_case import (
+    ManagePhoneVerificationUseCase,
+)
 from src.modules.mod_auth.application.manage_session_use_case import ManageSessionUseCase
 from src.shared.infrastructure.auth.providers import (
     provide_access_token_validator,
@@ -22,6 +27,8 @@ from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.local_phone_verification_postgres_adapter import (
     LocalPhoneVerificationPostgresAdapter,
 )
+from src.shared.infrastructure.persistence.phone_otp_postgres_adapter import PhoneOtpPostgresAdapter
+from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 # Capability registered by `mod-checkout`; optional because auth is the base of
 # the dependency graph and must still serve the profile without a checkout
@@ -58,11 +65,36 @@ def provide_manage_session(session: AsyncSession = Depends(get_session)) -> Mana
 
 def build_router(options: RouterOptions) -> APIRouter:
     settings = get_settings()
-    return create_session_router(
-        provide_manage_session,
-        cookie_secure=settings.cookie_secure,
-        allowed_origins=settings.allowed_origins,
-        rate_limiter=provide_rate_limiter(),
+    router = APIRouter()
+    router.include_router(
+        create_session_router(
+            provide_manage_session,
+            cookie_secure=settings.cookie_secure,
+            allowed_origins=settings.allowed_origins,
+            rate_limiter=provide_rate_limiter(),
+        )
+    )
+    router.include_router(create_phone_router(provide_phone_service))
+    return router
+
+
+def provide_phone_service(
+    session: AsyncSession = Depends(get_session),
+) -> ManagePhoneVerificationUseCase:
+    """Local OTP verification (SPEC-04), independent from Seguridad."""
+    settings = get_settings()
+    return ManagePhoneVerificationUseCase(
+        security=provide_security_port(settings),
+        otp_store=PhoneOtpPostgresAdapter(session),
+        sms=SimulatedSmsSender(log_code=settings.app_env not in ("production", "prod")),
+        verifications=LocalPhoneVerificationPostgresAdapter(session),
+        uow=SqlAlchemyUnitOfWork(session),
+        secret=settings.phone_otp_secret,
+        ttl_seconds=settings.phone_otp_ttl_seconds,
+        max_attempts=settings.phone_otp_max_attempts,
+        max_sends=settings.phone_otp_max_sends,
+        send_window_seconds=settings.phone_otp_send_window_seconds,
+        modo_qa=settings.modo_qa,
     )
 
 
@@ -79,5 +111,6 @@ __all__ = [
     "build_router",
     "configure",
     "provide_manage_session",
+    "provide_phone_service",
     "router",
 ]

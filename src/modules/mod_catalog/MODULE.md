@@ -40,6 +40,14 @@ es privado.
   `InventoryPort`), `adapters/products_client.py` e `inventory_client.py`.
 - Fixtures de demo en `adapters/seeds/` para `PRODUCTS_MODE=fake`.
 
+## Orden de resultados (SPEC-06)
+
+`GET /catalogo/productos` acepta `orden`: `relevancia` (default), `precio_asc`,
+`precio_desc`, `nombre_asc`, `nombre_desc`. Productos solo ordena por nombre; el
+BFF aplica el orden sobre la página devuelta (hasta 10) y deja los productos sin
+precio al final. El orden es de página hasta que Productos publique precio
+(A16); `NOVEDAD`/`RELEVANCIA` conservan el orden del proveedor.
+
 ## Pruebas
 
 - Unitarias: `tests/unit/mod_catalog/`

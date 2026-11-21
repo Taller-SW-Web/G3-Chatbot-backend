@@ -98,9 +98,35 @@ async def test_post_checkout_creates_session_201(test_app, mock_service, custome
         submitted = mock_service.create_checkout.call_args.args[0]
         assert submitted.direccion == FRONTEND_PAYLOAD["direccion"]
         assert submitted.contacto == FRONTEND_PAYLOAD["contacto"]
+        assert submitted.guardar_direccion is False
         assert not any(hasattr(submitted, field) for field in (
             "lineas", "subtotal", "costo_envio", "descuento", "total"
         ))
+
+
+@pytest.mark.asyncio
+async def test_post_checkout_returns_aviso_direccion_without_blocking(test_app, mock_service, customer_id):
+    chk_id = uuid.uuid4()
+    mock_service.create_checkout.return_value = Checkout(
+        id=chk_id,
+        cart_id=uuid.uuid4(),
+        customer_id=customer_id,
+        status="PENDING_PAYMENT",
+        summary={"avisoDireccion": "No pudimos guardar tu dirección para la próxima vez."},
+        total=120.0,
+        payment_attempts=0,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+        idempotency_key="idemp-addr",
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_app), base_url="http://test") as client:
+        res = await client.post(
+            "/api/v1/checkout",
+            headers={"Idempotency-Key": "idemp-addr"},
+            json={**FRONTEND_PAYLOAD, "guardarDireccion": True},
+        )
+    assert res.status_code == 201
+    assert res.json()["avisoDireccion"] == "No pudimos guardar tu dirección para la próxima vez."
+    assert mock_service.create_checkout.call_args.args[0].guardar_direccion is True
 
 
 @pytest.mark.asyncio

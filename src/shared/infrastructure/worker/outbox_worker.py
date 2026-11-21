@@ -48,6 +48,7 @@ class OutboxProcessor:
         notification_service: Any | None = None,
         uow: UnitOfWorkPort | None = None,
         email_grace: timedelta | None = None,
+        feedback_notifier: Any | None = None,
     ):
         self.outbox_repo = outbox_repo
         self.order_ref_repo = order_ref_repo
@@ -55,6 +56,7 @@ class OutboxProcessor:
         self.notification_service = notification_service
         self.uow = uow
         self.email_grace = email_grace
+        self.feedback_notifier = feedback_notifier
 
     async def process_one(self, job: Outbox) -> bool:
         """Processes a single outbox record. Returns True if processed, False if retry scheduled/failed."""
@@ -74,6 +76,13 @@ class OutboxProcessor:
                     await self.notification_service.handle_send_email_task(task)
                     return True
                 logger.info("SEND_EMAIL dispatched for payload: %s", job.payload)
+                await self.outbox_repo.marcar_procesado(job.id)
+                return True
+            elif job.type == "SEND_FEEDBACK_EMAIL":
+                if self.feedback_notifier is None:
+                    logger.error("SEND_FEEDBACK_EMAIL without a notifier; keeping the job PENDING")
+                    return await self._handle_retry(job, "feedback notifier unavailable")
+                await self.feedback_notifier.send(job.payload)
                 await self.outbox_repo.marcar_procesado(job.id)
                 return True
             else:

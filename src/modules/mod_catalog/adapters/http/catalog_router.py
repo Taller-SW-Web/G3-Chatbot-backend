@@ -4,7 +4,7 @@ Thin: no business rules. Anonymous reads need no session; explicit ids
 work without a chat context (carousel ordinals stay unavailable then).
 """
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -77,20 +77,22 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         soloOfertas: bool = Query(default=False),
         precioMin: float | None = Query(default=None, ge=0),
         precioMax: float | None = Query(default=None, ge=0),
-        orden: str | None = Query(default=None),
+        orden: Literal[
+            "relevancia", "precio_asc", "precio_desc", "nombre_asc", "nombre_desc"
+        ] | None = Query(default=None),
         pagina: int = Query(default=1, ge=1),
         tamanio: int = Query(default=10, ge=1, le=10),
         service: ManageCatalogUseCase = Depends(catalog_provider),
     ) -> dict[str, Any]:
         from src.shared.application.tools.tool_registry import ExecutionContext
 
-        _ = orden  # server-side ordering is name-only; kept for the contract shape
         try:
             result = await service.search(
                 SearchArguments(
                     q=q, categoria=categoria, marca=marca, talla=talla, color=color,
                     soloOfertas=soloOfertas,
                     precioMin=_decimal(precioMin), precioMax=_decimal(precioMax),
+                    orden=orden,
                     pagina=pagina, tamanio=tamanio,
                 ),
                 ExecutionContext(),

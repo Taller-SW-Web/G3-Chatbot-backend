@@ -7,9 +7,10 @@ fila es vincular_a_mensaje (PENDING -> SENT).
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.shared.application.dto.attachment_dto import NewAttachment
 from src.shared.infrastructure.db.models.attachment import Attachment
 
 
@@ -17,7 +18,18 @@ class AttachmentPostgresAdapter:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def guardar(self, row: Attachment) -> Attachment:
+    async def guardar(self, row: Attachment | NewAttachment) -> Attachment:
+        if not isinstance(row, Attachment):
+            row = Attachment(
+                conversation_id=row.conversation_id,
+                status=row.status,
+                storage_key=row.storage_key,
+                thumbnail_key=row.thumbnail_key,
+                mime_type=row.mime_type,
+                size_bytes=row.size_bytes,
+                width=row.width,
+                height=row.height,
+            )
         self.session.add(row)
         await self.session.flush()
         return row
@@ -51,3 +63,31 @@ class AttachmentPostgresAdapter:
         )
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
+
+    async def contar_pendientes(self, conversation_id: uuid.UUID) -> int:
+        stmt = select(func.count(Attachment.id)).where(
+            Attachment.conversation_id == conversation_id, Attachment.status == "PENDING"
+        )
+        return int((await self.session.execute(stmt)).scalar_one())
+
+    async def listar_por_mensajes(self, message_ids: list[uuid.UUID]) -> list[Attachment]:
+        if not message_ids:
+            return []
+        stmt = (
+            select(Attachment)
+            .where(Attachment.message_id.in_(message_ids))
+            .order_by(Attachment.created_at)
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+    async def eliminar(self, attachment_id: uuid.UUID) -> None:
+        row = await self.obtener_por_id(attachment_id)
+        if row is not None:
+            await self.session.delete(row)
+            await self.session.flush()
+
+    async def listar_claves(self) -> set[str]:
+        stmt = select(Attachment.storage_key, Attachment.thumbnail_key)
+        res = await self.session.execute(stmt)
+        return {key for row in res.all() for key in row if key}

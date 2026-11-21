@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.shared.domain.entities.conversation import ConversationSummary, HighlightSegment
 from src.shared.domain.entities.message import Message, MessageRole
@@ -69,6 +69,7 @@ class MessageOut(BaseModel):
     rol: str  # "user" | "bot", as in the frontend `MensajeRol`
     texto: str
     bloques: Any | None = None
+    adjuntos: list[dict[str, Any]] = Field(default_factory=list)
     creadoEn: datetime
 
     @classmethod
@@ -76,5 +77,5 @@ class MessageOut(BaseModel):
         rol = "user" if m.role is MessageRole.CUSTOMER else "bot"
         return cls(
             id=m.id, conversacionId=m.conversation_id, rol=rol, texto=m.text,
-            bloques=m.blocks, creadoEn=m.created_at,
+            bloques=m.blocks, adjuntos=list(m.adjuntos), creadoEn=m.created_at,
         )

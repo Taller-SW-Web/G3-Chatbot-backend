@@ -32,10 +32,12 @@ class OrdersService:
         notifications: NotificationService,
         sales_client: SalesOrderPort | None = None,
         dispatch=None,
+        order_refs=None,
     ):
         self._notifications = notifications
         self._sales = sales_client
         self._dispatch = dispatch
+        self._order_refs = order_refs
 
     async def resend_confirmation(self, customer_id, order_id, *, holder_token, idempotency_key):
         return await self._notifications.resend_confirmation(
@@ -77,13 +79,19 @@ class OrdersService:
             total = raw.get("total", payment.get("total", 0))
             moneda = raw.get("moneda", payment.get("moneda", "PEN"))
             history = raw.get("historial") or raw.get("historialEstados") or []
-            return {
+            detail = {
                 **_with_status_label({**raw, "total": total, "moneda": moneda}),
                 "historial": [
                     {**_with_status_label(m, key="etiqueta"), "completado": m.get("completado", True)}
                     for m in history
                 ],
             }
+            if self._order_refs is not None:
+                ref = await self._order_refs.obtener_por_order_id(order_id)
+                if ref is not None:
+                    # SPEC-24: the frontend hides the CSAT block without asking Ventas again.
+                    detail["csatEnviado"] = bool(ref.csat_sent)
+            return detail
         raise NotificationError("SERVICIO_NO_DISPONIBLE", "La consulta de pedidos aún no está disponible.")
 
     async def get_order_tracking(

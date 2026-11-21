@@ -138,6 +138,60 @@
         "title": "AvailabilityOut",
         "type": "object"
       },
+      "Body_create_suggestion_api_v1_sugerencias_post": {
+        "properties": {
+          "captura": {
+            "anyOf": [
+              {
+                "contentMediaType": "application/octet-stream",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captura"
+          },
+          "correoContacto": {
+            "title": "Correocontacto",
+            "type": "string"
+          },
+          "descripcion": {
+            "title": "Descripcion",
+            "type": "string"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          },
+          "titulo": {
+            "title": "Titulo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "titulo",
+          "descripcion",
+          "correoContacto"
+        ],
+        "title": "Body_create_suggestion_api_v1_sugerencias_post",
+        "type": "object"
+      },
+      "Body_upload_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos_post": {
+        "properties": {
+          "archivo": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Archivo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "archivo"
+        ],
+        "title": "Body_upload_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos_post",
+        "type": "object"
+      },
       "Body_upload_evidence_api_v1_evidencias_post": {
         "properties": {
           "conversacionId": {
@@ -693,6 +747,11 @@
             "title": "Detalle",
             "type": "string"
           },
+          "forzar": {
+            "default": false,
+            "title": "Forzar",
+            "type": "boolean"
+          },
           "motivo": {
             "minLength": 1,
             "title": "Motivo",
@@ -786,6 +845,11 @@
             },
             "title": "Evidencias",
             "type": "array"
+          },
+          "forzar": {
+            "default": false,
+            "title": "Forzar",
+            "type": "boolean"
           },
           "items": {
             "items": {
@@ -916,6 +980,14 @@
       },
       "MessageOut": {
         "properties": {
+          "adjuntos": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Adjuntos",
+            "type": "array"
+          },
           "bloques": {
             "anyOf": [
               {},
@@ -1330,6 +1402,67 @@
           "cvv"
         ],
         "title": "ProcessPaymentRequest",
+        "type": "object"
+      },
+      "PurchaseRatingIn": {
+        "additionalProperties": false,
+        "properties": {
+          "comentario": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comentario"
+          },
+          "estrellas": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Estrellas",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "estrellas"
+        ],
+        "title": "PurchaseRatingIn",
+        "type": "object"
+      },
+      "ReactionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reaccion": {
+            "pattern": "^(POSITIVE|NEGATIVE|LIKE|DISLIKE|like|dislike|positive|negative)$",
+            "title": "Reaccion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reaccion"
+        ],
+        "title": "ReactionIn",
+        "type": "object"
+      },
+      "ReactionOut": {
+        "properties": {
+          "mensajeId": {
+            "title": "Mensajeid",
+            "type": "string"
+          },
+          "reaccion": {
+            "title": "Reaccion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mensajeId",
+          "reaccion"
+        ],
+        "title": "ReactionOut",
         "type": "object"
       },
       "ReenviarVerificacionIn": {
@@ -1809,6 +1942,17 @@
             ]
           },
           "adjuntoIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Adjuntoids"
           },
           "texto": {
@@ -1999,6 +2143,40 @@
         "title": "ShippingQuoteResponse",
         "type": "object"
       },
+      "SolicitarOtpOut": {
+        "properties": {
+          "celularEnmascarado": {
+            "title": "Celularenmascarado",
+            "type": "string"
+          },
+          "codigo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo"
+          },
+          "enviado": {
+            "default": true,
+            "title": "Enviado",
+            "type": "boolean"
+          },
+          "expiraEn": {
+            "title": "Expiraen",
+            "type": "string"
+          }
+        },
+        "required": [
+          "celularEnmascarado",
+          "expiraEn"
+        ],
+        "title": "SolicitarOtpOut",
+        "type": "object"
+      },
       "ToolAction": {
         "additionalProperties": false,
         "properties": {
@@ -2098,6 +2276,41 @@
           "token"
         ],
         "title": "VerificarCorreoIn",
+        "type": "object"
+      },
+      "VerificarOtpIn": {
+        "additionalProperties": false,
+        "properties": {
+          "codigo": {
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^\\d{6}$",
+            "title": "Codigo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "codigo"
+        ],
+        "title": "VerificarOtpIn",
+        "type": "object"
+      },
+      "VerificarOtpOut": {
+        "properties": {
+          "celularEnmascarado": {
+            "title": "Celularenmascarado",
+            "type": "string"
+          },
+          "celularVerificado": {
+            "title": "Celularverificado",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "celularVerificado",
+          "celularEnmascarado"
+        ],
+        "title": "VerificarOtpOut",
         "type": "object"
       },
       "VerifyMfaIn": {
@@ -2739,6 +2952,13 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "relevancia",
+                    "precio_asc",
+                    "precio_desc",
+                    "nombre_asc",
+                    "nombre_desc"
+                  ],
                   "type": "string"
                 },
                 {
@@ -2863,6 +3083,114 @@
         ]
       }
     },
+    "/api/v1/chat/adjuntos/archivo": {
+      "get": {
+        "operationId": "read_signed_file_api_v1_chat_adjuntos_archivo_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "clave",
+            "required": true,
+            "schema": {
+              "maxLength": 300,
+              "minLength": 1,
+              "title": "Clave",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exp",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Exp",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sig",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 64,
+              "title": "Sig",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Signed File",
+        "tags": [
+          "mod-chat"
+        ]
+      }
+    },
+    "/api/v1/chat/adjuntos/{attachment_id}": {
+      "get": {
+        "operationId": "signed_urls_api_v1_chat_adjuntos__attachment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Signed Urls Api V1 Chat Adjuntos  Attachment Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Signed Urls",
+        "tags": [
+          "mod-chat"
+        ]
+      }
+    },
     "/api/v1/chat/conversaciones": {
       "get": {
         "operationId": "list_conversations_api_v1_chat_conversaciones_get",
@@ -2983,6 +3311,107 @@
           }
         },
         "summary": "Search Conversations",
+        "tags": [
+          "mod-chat"
+        ]
+      }
+    },
+    "/api/v1/chat/conversaciones/{conversation_id}/adjuntos": {
+      "post": {
+        "operationId": "upload_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Attachment Api V1 Chat Conversaciones  Conversation Id  Adjuntos Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Attachment",
+        "tags": [
+          "mod-chat"
+        ]
+      }
+    },
+    "/api/v1/chat/conversaciones/{conversation_id}/adjuntos/{attachment_id}": {
+      "delete": {
+        "operationId": "delete_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos__attachment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Attachment",
         "tags": [
           "mod-chat"
         ]
@@ -3262,6 +3691,68 @@
         ]
       }
     },
+    "/api/v1/contacto/celular/solicitar-otp": {
+      "post": {
+        "operationId": "request_otp_api_v1_contacto_celular_solicitar_otp_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolicitarOtpOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Request Otp",
+        "tags": [
+          "mod-auth"
+        ]
+      }
+    },
+    "/api/v1/contacto/celular/verificar-otp": {
+      "post": {
+        "operationId": "verify_otp_api_v1_contacto_celular_verificar_otp_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerificarOtpIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificarOtpOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Otp",
+        "tags": [
+          "mod-auth"
+        ]
+      }
+    },
     "/api/v1/devoluciones": {
       "get": {
         "operationId": "list_returns_api_v1_devoluciones_get",
@@ -3534,6 +4025,59 @@
         ]
       }
     },
+    "/api/v1/mensajes/{message_id}/reaccion": {
+      "post": {
+        "operationId": "react_api_v1_mensajes__message_id__reaccion_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReactionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "React",
+        "tags": [
+          "mod-chat"
+        ]
+      }
+    },
     "/api/v1/pedidos": {
       "get": {
         "operationId": "list_orders_api_v1_pedidos_get",
@@ -3779,6 +4323,60 @@
         "summary": "Get Order Tracking",
         "tags": [
           "mod-orders"
+        ]
+      }
+    },
+    "/api/v1/pedidos/{pedido_id}/valoracion-compra": {
+      "post": {
+        "operationId": "create_rating_api_v1_pedidos__pedido_id__valoracion_compra_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pedido_id",
+            "required": true,
+            "schema": {
+              "title": "Pedido Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurchaseRatingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Rating Api V1 Pedidos  Pedido Id  Valoracion Compra Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Rating",
+        "tags": [
+          "mod-checkout"
         ]
       }
     },
@@ -4263,6 +4861,67 @@
         "summary": "Resend Verification",
         "tags": [
           "mod-auth"
+        ]
+      }
+    },
+    "/api/v1/sugerencias": {
+      "post": {
+        "operationId": "create_suggestion_api_v1_sugerencias_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_suggestion_api_v1_sugerencias_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Suggestion Api V1 Sugerencias Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Suggestion",
+        "tags": [
+          "mod-chat"
         ]
       }
     },

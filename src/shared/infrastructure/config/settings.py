@@ -41,6 +41,14 @@ def _flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
 
 
+def _optional_flag(name: str) -> bool | None:
+    """Unset/blank inherits the caller's default; otherwise a normal boolean flag."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return None
+    return raw.strip().lower() in ("1", "true", "yes")
+
+
 def _modules_mode() -> str:
     value = os.getenv("MODULES_MODE", "http").strip().lower()
     if value not in MODULE_MODES:
@@ -126,9 +134,35 @@ class Settings:
     frontend_base_url: str = "http://localhost:3000"
     # Send right after enqueueing; the outbox worker then only closes already sent e-mails.
     notification_send_inline: bool = True
+    # SPEC-24: internal inbox for suggestions and bugs.
+    feedback_inbox_email: str = "soporte@g3-chatbot.local"
     # In-process outbox worker (SPEC-15): polled from the FastAPI lifespan.
     outbox_worker_enabled: bool = True
     outbox_poll_interval_seconds: float = 5.0
+    # SPEC-04: the checkout demands a locally verified phone. Production defaults
+    # to true; development/fake keeps it off so the E2E flow does not need an OTP.
+    require_phone_verification: bool = False
+    # SPEC-12: optional address save in Seguridad. A failure never blocks checkout.
+    checkout_save_address_enabled: bool = True
+    # HMAC key for the OTP hashes. Never a real secret in development.
+    phone_otp_secret: str = "dev-phone-otp-secret"
+    phone_otp_ttl_seconds: int = 300
+    phone_otp_max_attempts: int = 3
+    phone_otp_max_sends: int = 3
+    phone_otp_send_window_seconds: int = 900
+    # Test-only: return the simulated OTP in the response (SPEC-04 RNF).
+    modo_qa: bool = False
+    # SPEC-23: private attachment storage (local adapter until Supabase is wired).
+    attachment_storage_path: str = "var/attachments"
+    attachment_public_base_url: str = "http://localhost:8000/api/v1"
+    attachment_signing_secret: str = "dev-attachment-secret"
+    attachment_signed_url_ttl_seconds: int = 300
+    attachment_max_images_per_turn: int = 6
+    attachment_cleanup_interval_seconds: float = 3600.0
+    attachment_max_bytes: int = 5 * 1024 * 1024
+    attachment_max_side: int = 4096
+    attachment_stored_side: int = 2048
+    attachment_thumbnail_side: int = 320
 
     def __post_init__(self) -> None:
         if self.products_auth_mode not in ("service", "public"):
@@ -176,6 +210,9 @@ def _is_onrender_host(url: str) -> bool:
 
 @lru_cache
 def get_settings() -> Settings:
+    app_env = _app_env()
+    require_phone_verification = _optional_flag("REQUIRE_PHONE_VERIFICATION")
+    save_address_enabled = _optional_flag("CHECKOUT_SAVE_ADDRESS_ENABLED")
     return Settings(
         cookie_secure=os.getenv("COOKIE_SECURE", "true").strip().lower() != "false",
         allowed_origins=_origins("ALLOWED_ORIGINS", "http://localhost:3000"),
@@ -189,7 +226,7 @@ def get_settings() -> Settings:
         llm_reasoning_effort=_choice("LLM_REASONING_EFFORT", "none", LLM_REASONING_EFFORTS),
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
         modules_mode=_modules_mode(),
-        app_env=_app_env(),
+        app_env=app_env,
         allow_fake_security=_flag("ALLOW_FAKE_SECURITY"),
         allow_public_products=_flag("ALLOW_PUBLIC_PRODUCTS"),
         security_mode=_module_mode_override("security"),
@@ -231,6 +268,49 @@ def get_settings() -> Settings:
         smtp_timeout_seconds=_number("SMTP_TIMEOUT_SECONDS", "10", float, minimum=0.1),
         frontend_base_url=os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").strip().rstrip("/"),
         notification_send_inline=os.getenv("NOTIFICATION_SEND_INLINE", "true").strip().lower() != "false",
+        feedback_inbox_email=(
+            os.getenv("FEEDBACK_INBOX_EMAIL", "soporte@g3-chatbot.local").strip()
+            or "soporte@g3-chatbot.local"
+        ),
         outbox_worker_enabled=os.getenv("OUTBOX_WORKER_ENABLED", "true").strip().lower() != "false",
         outbox_poll_interval_seconds=_number("OUTBOX_POLL_INTERVAL_SECONDS", "5", float, minimum=0.5),
+        require_phone_verification=(
+            require_phone_verification
+            if require_phone_verification is not None
+            else app_env in PRODUCTION_ENVIRONMENTS
+        ),
+        checkout_save_address_enabled=(
+            save_address_enabled if save_address_enabled is not None else True
+        ),
+        phone_otp_secret=(
+            os.getenv("PHONE_OTP_SECRET", "").strip()
+            or os.getenv("SECURITY_CLIENT_SECRET", "").strip()
+            or "dev-phone-otp-secret"
+        ),
+        phone_otp_ttl_seconds=_number("PHONE_OTP_TTL_SECONDS", "300", int, minimum=30),
+        phone_otp_max_attempts=_number("PHONE_OTP_MAX_ATTEMPTS", "3", int, minimum=1),
+        phone_otp_max_sends=_number("PHONE_OTP_MAX_SENDS", "3", int, minimum=1),
+        phone_otp_send_window_seconds=_number(
+            "PHONE_OTP_SEND_WINDOW_SECONDS", "900", int, minimum=60
+        ),
+        modo_qa=_flag("MODO_QA"),
+        attachment_storage_path=os.getenv("ATTACHMENT_STORAGE_PATH", "var/attachments").strip(),
+        attachment_public_base_url=(
+            os.getenv("ATTACHMENT_PUBLIC_BASE_URL", "http://localhost:8000/api/v1").strip().rstrip("/")
+        ),
+        attachment_signing_secret=(
+            os.getenv("ATTACHMENT_SIGNING_SECRET", "").strip()
+            or os.getenv("PHONE_OTP_SECRET", "").strip()
+            or os.getenv("SECURITY_CLIENT_SECRET", "").strip()
+            or "dev-attachment-secret"
+        ),
+        attachment_signed_url_ttl_seconds=_number(
+            "ATTACHMENT_SIGNED_URL_TTL_SECONDS", "300", int, minimum=30
+        ),
+        attachment_max_images_per_turn=_number(
+            "ATTACHMENT_MAX_IMAGES_PER_TURN", "6", int, minimum=1
+        ),
+        attachment_cleanup_interval_seconds=_number(
+            "ATTACHMENT_CLEANUP_INTERVAL_SECONDS", "3600", float, minimum=60
+        ),
     )

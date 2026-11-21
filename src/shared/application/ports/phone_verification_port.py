@@ -7,3 +7,7 @@ class PhoneVerificationPort(Protocol):
     async def existe(self, customer_id: uuid.UUID, phone: str) -> bool:
         """True when this customer already verified this exact, current phone number."""
         ...
+
+    async def guardar(self, customer_id: uuid.UUID, phone: str):
+        """Record a successful verification for this exact phone (idempotent)."""
+        ...

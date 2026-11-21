@@ -20,10 +20,12 @@ class ManageConversationUseCase:
         conversations: ConversationRepositoryPort,
         messages: MessageRepositoryPort,
         uow: UnitOfWorkPort,
+        attachments=None,
     ):
         self._conversations = conversations
         self._messages = messages
         self._uow = uow
+        self._attachments = attachments
 
     async def create_conversation(self, caller: CallerIdentity) -> Conversation:
         try:
@@ -61,4 +63,7 @@ class ManageConversationUseCase:
             raise ConversationNotFoundError(conversation_id)
         messages = await self._messages.list_recent(conversation_id, limit=HISTORY_LIMIT)
         # Tool-call rows are internal; the client only renders customer and assistant turns.
-        return [m for m in messages if m.role is not MessageRole.TOOL]
+        visible = [m for m in messages if m.role is not MessageRole.TOOL]
+        if self._attachments is not None:
+            return await self._attachments.attach_history(visible)
+        return visible

@@ -7,18 +7,25 @@ shared worker lifespan resolves, and the `checkout_document` capability that
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.mod_cart.public import provide_cart_repositories
+from src.modules.mod_cart.public import provide_cart_repositories, provide_cart_service
 from src.modules.mod_checkout import MODULE_ID
 from src.modules.mod_checkout.adapters.checkout_postgres_adapter import CheckoutPostgresAdapter
 from src.modules.mod_checkout.adapters.checkout_snapshot_adapter import (
     CheckoutSnapshotPostgresAdapter,
 )
 from src.modules.mod_checkout.adapters.http.checkout_router import create_checkout_router
+from src.modules.mod_checkout.adapters.http.purchase_rating_router import (
+    create_purchase_rating_router,
+)
 from src.modules.mod_checkout.adapters.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
 )
 from src.modules.mod_checkout.adapters.payment_simulator_adapter import PaymentSimulatorAdapter
+from src.modules.mod_checkout.adapters.purchase_rating_postgres_adapter import (
+    PurchaseRatingPostgresAdapter,
+)
 from src.modules.mod_checkout.application.manage_checkout_use_case import ManageCheckoutUseCase
+from src.modules.mod_checkout.application.purchase_rating_service import PurchaseRatingService
 from src.modules.mod_shipping.public import provide_despacho_client
 from src.shared.application.ports.order_repository_port import SalesOrderPort
 from src.shared.infrastructure.auth.providers import (
@@ -29,6 +36,7 @@ from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
 from src.shared.infrastructure.di.capabilities import (
     CHECKOUT_DOCUMENT,
+    FEEDBACK_NOTIFIER,
     ORDER_CONFIRMATION,
     OUTBOX_PROCESSOR,
 )
@@ -104,6 +112,9 @@ def provide_checkout_service(
         sales_client=provide_sales_port(settings),
         outbox=OutboxPostgresAdapter(session),
         dispatch=provide_despacho_client(settings),
+        require_phone_verification=settings.require_phone_verification,
+        cart_validator=provide_cart_service(session).validate_cart,
+        save_address_enabled=settings.checkout_save_address_enabled,
     )
 
 
@@ -117,11 +128,28 @@ def provide_outbox_processor(session: AsyncSession) -> OutboxProcessor:
         uow=SqlAlchemyUnitOfWork(session),
         # With inline sending on, fresh SEND_EMAIL jobs are left to the request that created them.
         email_grace=INLINE_EMAIL_GRACE if settings.notification_send_inline else None,
+        feedback_notifier=(
+            registry.resolve(FEEDBACK_NOTIFIER) if registry.is_registered(FEEDBACK_NOTIFIER) else None
+        ),
+    )
+
+
+def provide_purchase_rating_service(
+    session: AsyncSession = Depends(get_session),
+) -> PurchaseRatingService:
+    settings = get_settings()
+    return PurchaseRatingService(
+        ratings=PurchaseRatingPostgresAdapter(session),
+        sales=provide_sales_port(settings),
+        uow=SqlAlchemyUnitOfWork(session),
     )
 
 
 def build_router(options: RouterOptions) -> APIRouter:
-    return create_checkout_router(provide_checkout_service)
+    router = APIRouter()
+    router.include_router(create_checkout_router(provide_checkout_service))
+    router.include_router(create_purchase_rating_router(provide_purchase_rating_service))
+    return router
 
 
 router = build_router(RouterOptions())
@@ -146,6 +174,7 @@ __all__ = [
     "provide_confirmation_outbox",
     "provide_outbox_processor",
     "provide_payment_gateway",
+    "provide_purchase_rating_service",
     "provide_sales_port",
     "router",
 ]

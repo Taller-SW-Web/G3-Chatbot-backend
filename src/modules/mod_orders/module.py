@@ -15,6 +15,7 @@ from src.modules.mod_checkout.public import (
 from src.modules.mod_orders import MODULE_ID
 from src.modules.mod_orders.adapters.fake_email_sender import FakeEmailSender
 from src.modules.mod_orders.adapters.http.orders_router import create_orders_router
+from src.modules.mod_orders.adapters.internal_email_notifier import InternalEmailNotifier
 from src.modules.mod_orders.adapters.jinja_email_renderer import JinjaEmailRenderer
 from src.modules.mod_orders.adapters.notification_postgres_adapter import (
     NotificationPostgresAdapter,
@@ -24,9 +25,10 @@ from src.modules.mod_orders.application.notification_service import Notification
 from src.modules.mod_orders.application.orders_service import OrdersService
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
-from src.shared.infrastructure.di.capabilities import DISPATCH_PORT, ORDER_CONFIRMATION
+from src.shared.infrastructure.di.capabilities import DISPATCH_PORT, FEEDBACK_NOTIFIER, ORDER_CONFIRMATION
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
+from src.shared.infrastructure.persistence.order_ref_postgres_adapter import OrderRefPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 # Without SMTP_HOST the confirmations land here (process-wide, inspectable in local runs).
@@ -53,6 +55,12 @@ def provide_email_sender(settings: Settings | None = None):
     )
 
 
+def provide_feedback_notifier(settings: Settings | None = None) -> InternalEmailNotifier:
+    """Internal e-mail for SPEC-24, reusing the same EmailSender as SPEC-16."""
+    settings = settings or get_settings()
+    return InternalEmailNotifier(provide_email_sender(settings), settings.feedback_inbox_email)
+
+
 def build_notification_service(session: AsyncSession) -> NotificationService:
     """Order confirmation e-mail (SPEC-16). The outbox worker builds one per
     SEND_EMAIL batch and calls `handle_send_email_task`; checkout calls
@@ -77,6 +85,7 @@ def provide_orders_service(session: AsyncSession = Depends(get_session)) -> Orde
         notifications=build_notification_service(session),
         sales_client=provide_sales_port(settings),
         dispatch=dispatch,
+        order_refs=OrderRefPostgresAdapter(session),
     )
 
 
@@ -90,6 +99,7 @@ router = build_router(RouterOptions())
 def configure(container) -> None:
     """The confirmation service is consumed by checkout and the outbox worker."""
     container.register(ORDER_CONFIRMATION, build_notification_service)
+    container.register(FEEDBACK_NOTIFIER, provide_feedback_notifier)
 
 
 __all__ = [
@@ -101,6 +111,7 @@ __all__ = [
     "build_router",
     "configure",
     "provide_email_sender",
+    "provide_feedback_notifier",
     "provide_orders_service",
     "router",
 ]

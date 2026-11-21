@@ -57,3 +57,9 @@ class SecurityPort(Protocol):
     async def me(self, holder_token: str) -> dict[str, Any]:
         """Profile of the holder of `holder_token` (A15 pattern: forwards the customer token)."""
         ...
+
+    async def save_address(
+        self, user_id: str, holder_token: str, address: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Save one address in Seguridad (`POST /usuarios/{id}/direcciones`, SPEC-12)."""
+        ...

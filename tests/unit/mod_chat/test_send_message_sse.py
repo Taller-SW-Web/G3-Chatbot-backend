@@ -60,12 +60,13 @@ class FakeTurnService:
         finally:
             self.closed += 1
 
-    async def send_message(self, caller, conversation_id, text):
-        if not text.strip() or len(text) > 1000:
+    async def send_message(self, caller, conversation_id, text, attachment_ids=None):
+        if (not text.strip() and not attachment_ids) or len(text) > 1000:
             raise InvalidMessageError("message must have 1 to 1000 characters")
         if caller != OWNER or conversation_id != CID:
             raise ConversationNotFoundError(conversation_id)
         self.sent.append((caller, conversation_id, text))
+        self.attachments = list(attachment_ids or [])
         return self._stream()
 
     async def _stream(self):
@@ -199,7 +200,9 @@ def test_blank_or_too_long_text_is_a_400_before_any_stream(body):
     assert res.status_code == 400
     assert res.headers["content-type"].startswith("application/problem+json")
     assert res.json()["code"] == "VALIDACION"
-    assert service.sent == [] and service.opened == service.closed == 1
+    assert service.sent == []
+    expected_opened = 1 if body.get("texto", "").strip() else 0
+    assert service.opened == service.closed == expected_opened
 
 
 def test_malformed_body_is_a_400_validation_error():
@@ -232,12 +235,9 @@ def test_invalid_bearer_is_401_before_anything_runs():
 
 @pytest.mark.parametrize(
     "body",
-    [
-        {"accion": {"tipo": "VER_OFERTAS", "payload": {}}},
-        {"texto": "hola", "adjuntoIds": ["a1"]},
-    ],
+    [{"accion": {"tipo": "VER_OFERTAS", "payload": {}}}],
 )
-def test_actions_and_attachments_are_501_without_touching_the_use_case(body):
+def test_actions_are_501_without_touching_the_use_case(body):
     service = FakeTurnService()
     res = make_client(service).post(URL, json=body)
     assert res.status_code == 501 and res.json()["code"] == "FUNCIONALIDAD_NO_DISPONIBLE"
