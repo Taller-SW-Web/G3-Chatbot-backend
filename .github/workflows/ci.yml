@@ -152,12 +152,12 @@ jobs:
           path: coverage-integration.xml
           if-no-files-found: error
 
-  # Advisory during Fase 2: a finding is reported but does not block the gate yet.
+  # Fase 4 de ADR-0024: el checker es bloqueante. Si falla, hay imports
+  # cruzados entre módulos o falta la estructura obligatoria.
   modules:
     name: Module boundaries
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
         with:

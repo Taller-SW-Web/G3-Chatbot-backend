@@ -1,14 +1,14 @@
-"""Convención: todos los modelos se importan aquí para que Alembic autogenerate los detecte vía Base.metadata."""
-from src.shared.infrastructure.db.connection import Base
+"""Convención: todos los modelos se importan aquí para que Alembic autogenerate los detecte vía Base.metadata.
 
-try:
-    from src.shared.infrastructure.db.models.attachment import Attachment
-    from src.shared.infrastructure.db.models.conversation import Conversation
-    from src.shared.infrastructure.db.models.local_phone_verification import LocalPhoneVerification
-    __all__ = ["Base", "LocalPhoneVerification", "Conversation", "Attachment"]
-except ImportError:
-    # Base sin modelos aún; los modelos agregan aquí sus imports.
-    __all__ = ["Base"]
+Sin `try/except`: un modelo que no importe debe romper el arranque y el
+autogenerate, no dejar `Base.metadata` incompleto en silencio.
+"""
+from src.shared.infrastructure.db.connection import Base
+from src.shared.infrastructure.db.models.attachment import Attachment
+from src.shared.infrastructure.db.models.conversation import Conversation
+from src.shared.infrastructure.db.models.local_phone_verification import LocalPhoneVerification
+
+__all__ = ["Base", "LocalPhoneVerification", "Conversation", "Attachment"]
 
 from src.shared.infrastructure.db.models.evidence import Evidence
 from src.shared.infrastructure.db.models.message import Message
