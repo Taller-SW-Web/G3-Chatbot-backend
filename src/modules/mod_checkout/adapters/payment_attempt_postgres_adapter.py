@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_checkout.domain.payment_attempt import NewPaymentAttempt
 from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
 
 
@@ -16,7 +17,18 @@ class PaymentAttemptPostgresAdapter:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def guardar(self, row: PaymentAttempt) -> PaymentAttempt:
+    async def guardar(self, row: PaymentAttempt | NewPaymentAttempt) -> PaymentAttempt:
+        if not isinstance(row, PaymentAttempt):
+            row = PaymentAttempt(
+                checkout_id=row.checkout_id,
+                idempotency_key=row.idempotency_key,
+                result=row.result,
+                brand=row.brand,
+                last4=row.last4,
+                amount=row.amount,
+                reason=row.reason,
+                transaction_id=row.transaction_id,
+            )
         self.session.add(row)
         try:
             await self.session.flush()

@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.mod_cart.public import provide_cart_repositories
 from src.modules.mod_checkout import MODULE_ID
 from src.modules.mod_checkout.adapters.checkout_postgres_adapter import CheckoutPostgresAdapter
+from src.modules.mod_checkout.adapters.checkout_snapshot_adapter import (
+    CheckoutSnapshotPostgresAdapter,
+)
 from src.modules.mod_checkout.adapters.http.checkout_router import create_checkout_router
 from src.modules.mod_checkout.adapters.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
@@ -47,6 +50,9 @@ from src.shared.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, O
 # while `SALES_MODE=fake` (same lifecycle as the previous container singleton).
 _FAKE_SALES_PORT = FakeSalesPort()
 
+# Checkout cannot serve payment confirmation without the orders capability.
+REQUIRED_CAPABILITIES = (ORDER_CONFIRMATION,)
+
 
 def provide_sales_port(settings: Settings | None = None) -> SalesOrderPort:
     """Ventas order port (SPEC-15, SPEC-17): fake in-memory or typed HTTP client."""
@@ -64,10 +70,18 @@ def provide_payment_gateway() -> PaymentSimulatorAdapter:
     return PaymentSimulatorAdapter()
 
 
+def provide_checkout_snapshot(session: AsyncSession) -> CheckoutSnapshotPostgresAdapter:
+    """Read-only checkout/order snapshot consumed by `mod-orders` (SPEC-16)."""
+    return CheckoutSnapshotPostgresAdapter(session)
+
+
+def provide_confirmation_outbox(session: AsyncSession) -> OutboxPostgresAdapter:
+    """Outbox writes for the confirmation e-mail; checkout owns the transaction boundary."""
+    return OutboxPostgresAdapter(session)
+
+
 def _notification_service(session: AsyncSession):
-    """Order confirmation e-mail owned by `mod-orders`; absent only if that module is not discovered."""
-    if not registry.is_registered(ORDER_CONFIRMATION):
-        return None
+    """Order confirmation e-mail owned by `mod-orders`; validated at startup (H-08)."""
     return registry.resolve(ORDER_CONFIRMATION, session)
 
 
@@ -124,9 +138,12 @@ __all__ = [
     "MODULE_ID",
     "ORDER_CONFIRMATION",
     "OUTBOX_PROCESSOR",
+    "REQUIRED_CAPABILITIES",
     "build_router",
     "configure",
     "provide_checkout_service",
+    "provide_checkout_snapshot",
+    "provide_confirmation_outbox",
     "provide_outbox_processor",
     "provide_payment_gateway",
     "provide_sales_port",

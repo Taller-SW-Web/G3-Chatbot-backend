@@ -15,7 +15,7 @@ from src.modules.mod_catalog.application.tools import (
 from src.shared.application.tools.tool_registry import ExecutionContext
 from tests.fakes.fake_commerce import (
     FakeCatalogPort,
-    FakeConversations,
+    FakeConversationContext,
     FakeInventoryPort,
     FakeUow,
 )
@@ -28,7 +28,7 @@ def make_catalog(statuses=None, products=None, catalog=None, inventory=None):
     return ManageCatalogUseCase(
         catalog or FakeCatalogPort(products=products),
         inventory or FakeInventoryPort(statuses or {}, default="DISPONIBLE"),
-        FakeConversations(),
+        FakeConversationContext(),
         FakeUow(),
     )
 
@@ -41,7 +41,7 @@ def customer_context(conversation_id=CONVERSATION_ID):
 
 
 def owned_catalog(catalog, conversation_id=CONVERSATION_ID):
-    catalog._conversations.add_conversation(
+    catalog._conversation_context.add_conversation(
         conversation_id, customer_id=CUSTOMER_ID, context={}
     )
     return catalog
@@ -55,7 +55,7 @@ async def test_search_returns_carousel_and_saves_memory():
     )
     assert result["code"] == "OK"
     assert result["bloques"][0]["tipo"] == "CARRUSEL_PRODUCTOS"
-    memory = catalog._conversations.rows[CONVERSATION_ID].context
+    memory = catalog._conversation_context.rows[CONVERSATION_ID].context
     assert memory["ultimoCarrusel"]
     assert memory["filtrosVigentes"]["q"] == "Nike"
 
@@ -236,7 +236,7 @@ def make_seeded_catalog():
     return ManageCatalogUseCase(
         fake_products.FakeCatalogPort(),
         fake_products.FakeInventoryPort(),
-        FakeConversations(),
+        FakeConversationContext(),
         FakeUow(),
     )
 
@@ -301,7 +301,7 @@ async def test_detail_by_ambiguous_name_offers_a_carousel_and_keeps_ordinals():
     result = await catalog.detail(ProductArguments(nombre="Nike"), customer_context())
     assert result["bloques"][0]["tipo"] == "CARRUSEL_PRODUCTOS"
     assert "varios" in result["texto"]
-    assert catalog._conversations.rows[CONVERSATION_ID].context["ultimoCarrusel"]
+    assert catalog._conversation_context.rows[CONVERSATION_ID].context["ultimoCarrusel"]
 
 
 @pytest.mark.asyncio

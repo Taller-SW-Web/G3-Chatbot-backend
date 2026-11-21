@@ -19,10 +19,9 @@ from tests.fakes.fake_commerce import (
     FakeCartRow,
     FakeCarts,
     FakeCatalogPort,
-    FakeConversations,
+    FakeConversationContext,
     FakeInventoryPort,
     FakeItems,
-    FakeMessages,
     FakeRow,
     FakeUow,
 )
@@ -41,8 +40,7 @@ def make_use_case(attempts=None):
         items,
         FakeCatalogPort(),
         FakeInventoryPort({SKU: "DISPONIBLE"}),
-        FakeConversations(),
-        FakeMessages(),
+        FakeConversationContext(),
         FakeUow(),
         coupon_attempts=attempts,
     )

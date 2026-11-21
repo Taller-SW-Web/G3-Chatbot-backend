@@ -17,10 +17,9 @@ from src.shared.application.tools.tool_registry import ExecutionContext
 from tests.fakes.fake_commerce import (
     FakeCarts,
     FakeCatalogPort,
-    FakeConversations,
+    FakeConversationContext,
     FakeInventoryPort,
     FakeItems,
-    FakeMessages,
     FakeUow,
 )
 
@@ -34,16 +33,16 @@ STATUSES = {
 
 
 def make_registry():
-    conversations = FakeConversations()
-    conversations.add_conversation(
+    context = FakeConversationContext()
+    context.add_conversation(
         CONVERSATION_ID, customer_id=CUSTOMER_ID, context={})
     catalog_uc = ManageCatalogUseCase(
-        FakeCatalogPort(), FakeInventoryPort(dict(STATUSES)), conversations,
+        FakeCatalogPort(), FakeInventoryPort(dict(STATUSES)), context,
         FakeUow(),
     )
     cart_uc = ManageCartUseCase(
         FakeCarts(), FakeItems(), FakeCatalogPort(),
-        FakeInventoryPort(dict(STATUSES)), conversations, FakeMessages(),
+        FakeInventoryPort(dict(STATUSES)), context,
         FakeUow(),
     )
     handlers = {}

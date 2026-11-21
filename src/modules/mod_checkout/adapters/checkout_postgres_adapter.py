@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_checkout.domain.checkout import NewCheckout
 from src.shared.infrastructure.db.models.checkout import Checkout
 
 
@@ -19,7 +20,19 @@ class CheckoutPostgresAdapter:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def guardar(self, row: Checkout) -> Checkout:
+    async def guardar(self, row: Checkout | NewCheckout) -> Checkout:
+        if not isinstance(row, Checkout):
+            row = Checkout(
+                id=row.id,
+                cart_id=row.cart_id,
+                customer_id=row.customer_id,
+                status=row.status,
+                summary=row.summary,
+                total=row.total,
+                payment_attempts=row.payment_attempts,
+                expires_at=row.expires_at,
+                idempotency_key=row.idempotency_key,
+            )
         self.session.add(row)
         try:
             await self.session.flush()

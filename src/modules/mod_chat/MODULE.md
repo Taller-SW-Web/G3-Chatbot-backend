@@ -22,8 +22,10 @@ invoca por sus casos de uso públicos.
 | Backend | `public.py` | `provide_chatbot_service`, `provide_turn_scope`, `provide_action_scope`, `provide_tool_registry`, `InterpretAndRespondUseCase`, `DispatchDirectActionUseCase`, `QUICK_ACTIONS` |
 | Frontend | `public.ts` | Tipos de evento SSE, mensaje y bloque |
 
-Ningún módulo depende de `mod-chat` (es la cima del DAG). El composition root
-usa `ACTION_SCOPE` para montar el scope de acciones directas en producción.
+Ningún módulo importa `mod-chat` (es la cima del DAG). El composition root usa
+`ACTION_SCOPE` para montar el scope de acciones directas en producción. Chat
+registra además `conversation_context`, el puerto que cart/catalog usan para la
+memoria de conversación y la auditoría TOOL sin importar la persistencia de chat.
 
 ## Rutas
 
@@ -41,8 +43,8 @@ usa `ACTION_SCOPE` para montar el scope de acciones directas en producción.
   el turno degrada (`DegradedMode`) en lugar de fallar.
 - Herramientas de catálogo, carrito y pedidos, construidas sobre los casos de
   uso públicos de cada módulo.
-- Memoria de conversación y mensajes: adaptadores compartidos de `src/shared`
-  (los usan también catálogo y carrito).
+- Memoria de conversación y mensajes: adaptadores compartidos de `src/shared`;
+  cart/catalog los consumen solo a través de `ConversationContextPort`.
 
 ## Pruebas
 

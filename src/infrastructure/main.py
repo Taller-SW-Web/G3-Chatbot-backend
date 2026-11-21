@@ -9,8 +9,8 @@ import logging
 from fastapi import FastAPI
 
 from src.infrastructure.discovery import configure_modules, discover_modules
-from src.modules.mod_chat.module import ACTION_SCOPE, provide_action_scope
 from src.shared.infrastructure.config.settings import MODULES_WITH_ADAPTERS, get_settings
+from src.shared.infrastructure.di.capabilities import ACTION_SCOPE
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.correlation import CorrelationMiddleware
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
@@ -57,8 +57,17 @@ def create_app(
     return app
 
 
+def _default_action_scope():
+    """Resolve the capability lazily, after `configure_modules` registered it.
+
+    The composition root knows the capability name, not `mod-chat`; tests that
+    pass `action_scope=None` still keep direct actions disabled.
+    """
+    return registry.resolve(ACTION_SCOPE)
+
+
 # Production keeps the real action scope; tests pass their own or leave it None.
-app = create_app(action_scope=provide_action_scope)
+app = create_app(action_scope=_default_action_scope)
 
 
 __all__ = ["ACTION_SCOPE", "API_PREFIX", "app", "create_app"]

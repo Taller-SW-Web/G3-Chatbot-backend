@@ -23,6 +23,7 @@ Provider = Callable[..., Any]
 class CapabilityRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, Provider] = {}
+        self._optional_missing: tuple[str, ...] = ()
 
     def register(self, name: str, provider: Provider) -> None:
         self._providers[name] = provider
@@ -44,6 +45,15 @@ class CapabilityRegistry:
     def clear(self) -> None:
         """Test helper: forget every registered capability."""
         self._providers.clear()
+        self._optional_missing = ()
+
+    def mark_optional_missing(self, names: tuple[str, ...] | list[str]) -> None:
+        """Remember optional capabilities absent at startup (surfaced by `/health`)."""
+        self._optional_missing = tuple(sorted(set(names)))
+
+    @property
+    def optional_missing(self) -> tuple[str, ...]:
+        return self._optional_missing
 
     @property
     def names(self) -> tuple[str, ...]:

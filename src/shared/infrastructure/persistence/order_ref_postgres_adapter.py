@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.shared.application.dto.order_ref_dto import NewOrderReference
 from src.shared.infrastructure.db.models.order_ref import OrderRef
 
 
@@ -33,7 +34,15 @@ class OrderRefPostgresAdapter:
         """Usar al interpretar estados que viajan hacia Ventas."""
         return "ANULADO" if estado == "CANCELLED" else estado
 
-    async def guardar(self, row: OrderRef) -> OrderRef:
+    async def guardar(self, row: OrderRef | NewOrderReference) -> OrderRef:
+        if not isinstance(row, OrderRef):
+            row = OrderRef(
+                order_id=row.order_id,
+                customer_id=row.customer_id,
+                checkout_id=row.checkout_id,
+                local_status=row.local_status,
+                total=row.total,
+            )
         row.local_status = self.estado_desde_ventas(row.local_status)
         self.session.add(row)
         try:

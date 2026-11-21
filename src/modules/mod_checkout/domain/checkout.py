@@ -1,6 +1,6 @@
 """Domain entity for checkout (SPEC-12, SPEC-14)."""
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -12,6 +12,21 @@ class CheckoutStatus(str, Enum):
     CONFIRMED = "CONFIRMED"
     FAILED = "FAILED"
     EXPIRED = "EXPIRED"
+
+
+@dataclass
+class NewCheckout:
+    """Insert model handed to the checkout repository (no ORM in application)."""
+
+    cart_id: uuid.UUID
+    customer_id: uuid.UUID
+    status: str
+    summary: dict[str, Any]
+    total: float
+    payment_attempts: int
+    expires_at: datetime
+    idempotency_key: str
+    id: uuid.UUID = field(default_factory=uuid.uuid4)
 
 
 @dataclass

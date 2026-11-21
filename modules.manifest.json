@@ -25,7 +25,7 @@
       "id": "mod-shipping",
       "name": "Envío",
       "owner": "@SOoOnny",
-      "dependsOn": []
+      "dependsOn": ["mod-cart"]
     },
     {
       "id": "mod-checkout",

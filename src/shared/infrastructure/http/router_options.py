@@ -1,8 +1,8 @@
 """Options the composition root passes to every module router factory.
 
-Only `mod-chat` reads them today: tests replace the turn/action scopes behind
-the streaming and direct-action endpoints. Modules that do not need them
-accept the object and ignore it.
+The bag is generic: modules read only the fields they need and ignore the rest.
+Tests use `turn_scope`/`action_scope` to replace the chat scopes; production
+leaves them unset or resolves the `action_scope` capability in the root.
 """
 from dataclasses import dataclass
 from typing import Any

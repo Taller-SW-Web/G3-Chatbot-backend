@@ -11,6 +11,8 @@ from src.modules.mod_checkout.module import (
     ORDER_CONFIRMATION,
     OUTBOX_PROCESSOR,
     provide_checkout_service,
+    provide_checkout_snapshot,
+    provide_confirmation_outbox,
     provide_outbox_processor,
     provide_sales_port,
 )
@@ -23,6 +25,8 @@ __all__ = [
     "OUTBOX_PROCESSOR",
     "PaymentGatewayPort",
     "provide_checkout_service",
+    "provide_checkout_snapshot",
+    "provide_confirmation_outbox",
     "provide_outbox_processor",
     "provide_sales_port",
 ]

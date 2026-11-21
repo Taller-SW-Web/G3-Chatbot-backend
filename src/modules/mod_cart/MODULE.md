@@ -19,10 +19,9 @@ ni crea pedidos (eso es `mod-checkout`).
 | Backend | `public.py` | `provide_cart_service`, `provide_cart_repositories` (`CartRepositories`), `ManageCartUseCase`, `CartError` |
 | Frontend | `public.ts` | Tipos de carrito e ítem |
 
-`provide_cart_repositories` es lo que usa `mod-checkout` (dependencia declarada).
-`mod-shipping` no puede importar este paquete (su `dependsOn` está vacío), así
-que `configure()` registra la misma función como capacidad
-`cart_repositories` y shipping la resuelve en tiempo de request.
+`provide_cart_repositories` lo consumen `mod-checkout` y `mod-shipping`, ambos
+con la dependencia declarada en `modules.manifest.json`. No hay capacidad oculta:
+el import pasa por esta superficie pública y el checker de fronteras lo verifica.
 
 ## Rutas
 
@@ -40,7 +39,9 @@ que `configure()` registra la misma función como capacidad
 
 - **G6 Productos** a través de los puertos que expone `mod-catalog`
   (`ProductCatalogPort`, `InventoryPort`, evaluación de promociones).
-- Memoria de conversación y mensajes: adaptadores compartidos de `src/shared`.
+- Memoria de conversación y auditoría TOOL: `ConversationContextPort` de
+  `src/shared/application/ports`, implementado por `mod-chat` y resuelto por la
+  capacidad `conversation_context` (el DAG no permite importar chat).
 
 ## Pruebas
 

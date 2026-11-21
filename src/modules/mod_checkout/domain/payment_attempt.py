@@ -25,6 +25,20 @@ class CardBrand(str, Enum):
 
 
 @dataclass
+class NewPaymentAttempt:
+    """Insert model handed to the payment-attempt repository (no ORM in application)."""
+
+    checkout_id: uuid.UUID
+    idempotency_key: str
+    result: str
+    brand: str
+    last4: str
+    amount: float
+    reason: str | None = None
+    transaction_id: str | None = None
+
+
+@dataclass
 class PaymentAttemptEntity:
     id: uuid.UUID
     checkout_id: uuid.UUID

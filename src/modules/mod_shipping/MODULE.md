@@ -3,8 +3,8 @@
 - **Owner:** @SOoOnny
 - **Backend:** paquete `mod_shipping`, `basePath` `/direcciones` y `/envio`
 - **Frontend:** carpeta `mod-shipping`, bloque de envío en `[/checkout]`
-- **Depende de:** nadie. Consigue las líneas del carrito por la capacidad
-  `cart_repositories` que registra `mod-cart`.
+- **Depende de:** `mod-cart` (solo por `public.py`). Consigue las líneas del
+  carrito con `provide_cart_repositories`, declarado en el manifiesto.
 - **Contrato:** `docs/openapi.json`, tag `mod-shipping`.
 
 ## Responsabilidad
@@ -30,7 +30,7 @@ G1 Seguridad. **No** guarda direcciones propias ni modifica el carrito.
 
 - **G2 Despacho** `POST /api/v1/cotizaciones` con service token (4 s de timeout).
 - **G1 Seguridad** `GET /direcciones` con el token del titular.
-- Capacidad `cart_repositories` (proveedor en `mod-cart`).
+- `mod-cart.public.provide_cart_repositories` (dependencia declarada).
 
 ## Pruebas
 

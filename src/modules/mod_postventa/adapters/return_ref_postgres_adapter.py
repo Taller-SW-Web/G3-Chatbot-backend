@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_postventa.domain.references import NewReturnReference
 from src.shared.infrastructure.db.models.return_ref import ReturnRef
 
 
@@ -36,7 +37,16 @@ class ReturnRefPostgresAdapter:
             return "DEVOLUCION_DINERO"
         return tipo
 
-    async def guardar(self, row: ReturnRef) -> ReturnRef:
+    async def guardar(self, row: ReturnRef | NewReturnReference) -> ReturnRef:
+        if not isinstance(row, ReturnRef):
+            row = ReturnRef(
+                return_id=row.return_id,
+                code=row.code,
+                order_id=row.order_id,
+                customer_id=row.customer_id,
+                requested_type=row.requested_type,
+                idempotency_key=row.idempotency_key,
+            )
         row.requested_type = self.tipo_desde_ventas(row.requested_type)
         self.session.add(row)
         try:

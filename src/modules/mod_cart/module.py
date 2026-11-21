@@ -20,13 +20,13 @@ from src.modules.mod_catalog.public import (
 )
 from src.shared.infrastructure.config.settings import get_settings
 from src.shared.infrastructure.db.connection import get_session
-from src.shared.infrastructure.di.capabilities import CART_REPOSITORIES
+from src.shared.infrastructure.di.capabilities import CONVERSATION_CONTEXT
+from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
-from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
-    ConversationPostgresAdapter,
-)
-from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
+
+# Cart memory and audit rows live in chat; without its port the cart is unusable.
+REQUIRED_CAPABILITIES = (CONVERSATION_CONTEXT,)
 
 
 @dataclass(frozen=True)
@@ -48,8 +48,7 @@ def provide_cart_service(
         CartItemPostgresAdapter(session),
         provide_product_catalog(settings),
         provide_product_inventory(settings),
-        ConversationPostgresAdapter(session),
-        MessagePostgresAdapter(session),
+        registry.resolve(CONVERSATION_CONTEXT, session),
         SqlAlchemyUnitOfWork(session),
         discovery=provide_catalog_service(session),
     )
@@ -63,12 +62,12 @@ router = build_router(RouterOptions())
 
 
 def configure(container) -> None:
-    """Shipping depends on no module but needs the cart lines: expose them by capability."""
-    container.register(CART_REPOSITORIES, provide_cart_repositories)
+    """No cross-module capability: checkout and shipping import `public.py` directly."""
 
 
 __all__ = [
     "MODULE_ID",
+    "REQUIRED_CAPABILITIES",
     "build_router",
     "configure",
     "provide_cart_repositories",
