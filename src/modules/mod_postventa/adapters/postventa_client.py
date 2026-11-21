@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from src.ports.outbound.postventa_port import PostventaPort
+from src.modules.mod_postventa.ports.postventa_port import PostventaPort
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.http.base_client import BaseModuleClient
 

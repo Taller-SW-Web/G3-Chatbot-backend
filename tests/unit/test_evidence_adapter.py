@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.evidence_postgres_adapter import EvidencePostgresAdapter
+from src.modules.mod_postventa.adapters.evidence_postgres_adapter import EvidencePostgresAdapter
 from src.shared.infrastructure.db.models import Evidence
 
 

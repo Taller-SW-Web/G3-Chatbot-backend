@@ -5,11 +5,11 @@ import anyio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.claims_router import create_claims_router
-from src.adapters.inbound.http.csat_router import create_csat_router
-from src.adapters.inbound.http.returns_router import create_returns_router
-from src.adapters.outbound.fakes.fake_postventa import FakePostventaPort
-from src.application.use_cases.postventa_service import PostventaService
+from src.modules.mod_postventa.adapters.fake_postventa import FakePostventaPort
+from src.modules.mod_postventa.adapters.http.claims_router import create_claims_router
+from src.modules.mod_postventa.adapters.http.csat_router import create_csat_router
+from src.modules.mod_postventa.adapters.http.returns_router import create_returns_router
+from src.modules.mod_postventa.application.postventa_service import PostventaService
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer

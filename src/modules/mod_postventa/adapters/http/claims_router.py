@@ -3,8 +3,9 @@ from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
-from src.adapters.inbound.http.postventa_errors import translate_postventa_error
-from src.application.dto.postventa_dto import (
+from src.modules.mod_postventa import MODULE_ID
+from src.modules.mod_postventa.adapters.http.postventa_errors import translate_postventa_error
+from src.modules.mod_postventa.application.postventa_dto import (
     ClaimDetailResponse,
     ClaimListResponse,
     CreateClaimRequest,
@@ -40,7 +41,7 @@ class ClaimsServicePort(Protocol):
 
 
 def create_claims_router(service_provider: Callable[..., ClaimsServicePort]) -> APIRouter:
-    router = APIRouter(prefix="/reclamos", tags=["reclamos"])
+    router = APIRouter(prefix="/reclamos", tags=[MODULE_ID])
 
     @router.post("", status_code=status.HTTP_201_CREATED, response_model=ClaimDetailResponse)
     async def create_claim(

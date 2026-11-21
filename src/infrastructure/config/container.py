@@ -5,8 +5,6 @@ from contextlib import asynccontextmanager
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.fakes.fake_postventa import FakePostventaPort
-from src.adapters.outbound.http_clients.postventa_client import PostventaClient
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
 from src.application.tools.action_dispatcher import ActionDispatcher
@@ -21,7 +19,6 @@ from src.modules.mod_catalog.application.tools import build_tool_registry
 from src.modules.mod_catalog.public import (
     provide_catalog_service,
 )
-from src.modules.mod_checkout.public import provide_sales_port
 from src.modules.mod_orders.public import provide_orders_service
 from src.ports.outbound.llm_provider_port import LLMProvider
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
@@ -115,36 +112,6 @@ def provide_module_client(module: str, settings: Settings | None = None) -> Base
 
 
 _FAKE_SALES_PORT = FakeSalesPort()
-_FAKE_POSTVENTA_PORT = FakePostventaPort()
-
-
-def provide_postventa_port(settings: Settings | None = None):
-    """G5 M2 Postventa: in-process fake in `SALES_MODE=fake`, HTTP otherwise."""
-    settings = settings or get_settings()
-    if settings.module_mode("sales") == "fake":
-        return _FAKE_POSTVENTA_PORT
-    return PostventaClient(
-        base_url=settings.postventa_base_url,
-        timeout_seconds=settings.postventa_timeout_seconds,
-    )
-
-
-def provide_postventa_service(session: AsyncSession = Depends(get_session)):
-    """Postventa service with local idempotency and customer-token strategy."""
-    settings = get_settings()
-    from src.adapters.outbound.persistence.claim_ref_postgres_adapter import ClaimRefPostgresAdapter
-    from src.adapters.outbound.persistence.evidence_postgres_adapter import EvidencePostgresAdapter
-    from src.adapters.outbound.persistence.return_ref_postgres_adapter import ReturnRefPostgresAdapter
-    from src.application.use_cases.postventa_service import PostventaService
-
-    fake = settings.module_mode("sales") == "fake"
-    return PostventaService(
-        postventa=provide_postventa_port(settings),
-        sales=provide_sales_port(settings),
-        claim_refs=None if fake else ClaimRefPostgresAdapter(session),
-        return_refs=None if fake else ReturnRefPostgresAdapter(session),
-        evidence=None if fake else EvidencePostgresAdapter(session),
-    )
 
 
 def provide_outbox_processor(session: AsyncSession) -> OutboxProcessor:

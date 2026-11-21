@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from src.adapters.outbound.http_clients.postventa_client import PostventaClient
+from src.modules.mod_postventa.adapters.postventa_client import PostventaClient
 from src.shared.domain.module_errors import ModuleRequestError
 
 BASE_URL = "http://mock-postventa:8082"

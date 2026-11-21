@@ -4,13 +4,9 @@ import logging
 from fastapi import FastAPI
 
 from src.adapters.inbound.http.chatbot_router import ActionScope, TurnScope, create_chatbot_router
-from src.adapters.inbound.http.claims_router import create_claims_router
-from src.adapters.inbound.http.csat_router import create_csat_router
-from src.adapters.inbound.http.returns_router import create_returns_router
 from src.infrastructure.config.container import (
     provide_action_scope,
     provide_chatbot_service,
-    provide_postventa_service,
     provide_turn_scope,
 )
 from src.infrastructure.discovery import configure_modules
@@ -19,6 +15,7 @@ from src.modules.mod_cart.module import router as cart_router
 from src.modules.mod_catalog.module import router as catalog_router
 from src.modules.mod_checkout.module import router as checkout_router
 from src.modules.mod_orders.module import router as orders_router
+from src.modules.mod_postventa.module import router as postventa_router
 from src.modules.mod_shipping.module import router as shipping_router
 from src.shared.infrastructure.config.settings import MODULES_WITH_ADAPTERS, get_settings
 from src.shared.infrastructure.di.registry import registry
@@ -74,9 +71,7 @@ def create_app(
         prefix=API_PREFIX,
     )
     app.include_router(orders_router, prefix=API_PREFIX)
-    app.include_router(create_csat_router(provide_postventa_service), prefix=API_PREFIX)
-    app.include_router(create_claims_router(provide_postventa_service), prefix=API_PREFIX)
-    app.include_router(create_returns_router(provide_postventa_service), prefix=API_PREFIX)
+    app.include_router(postventa_router, prefix=API_PREFIX)
     app.include_router(checkout_router, prefix=API_PREFIX)
     app.include_router(shipping_router, prefix=API_PREFIX)
     return app

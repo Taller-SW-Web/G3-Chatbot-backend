@@ -1,5 +1,5 @@
 """Maps Postventa failures to `application/problem+json` (G5 F3/F5/F6)."""
-from src.application.dto.postventa_dto import POSTVENTA_ERROR_STATUS, PostventaError
+from src.modules.mod_postventa.application.postventa_dto import POSTVENTA_ERROR_STATUS, PostventaError
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.http.problem import ProblemError, not_found
 

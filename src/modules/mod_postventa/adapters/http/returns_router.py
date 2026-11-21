@@ -4,8 +4,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile, status
 
-from src.adapters.inbound.http.postventa_errors import translate_postventa_error
-from src.application.dto.postventa_dto import (
+from src.modules.mod_postventa import MODULE_ID
+from src.modules.mod_postventa.adapters.http.postventa_errors import translate_postventa_error
+from src.modules.mod_postventa.application.postventa_dto import (
     CreateReturnRequest,
     EvidenceResponse,
     ReturnDetailResponse,
@@ -58,7 +59,7 @@ class ReturnsServicePort(Protocol):
 
 
 def create_returns_router(service_provider: Callable[..., ReturnsServicePort]) -> APIRouter:
-    router = APIRouter(tags=["devoluciones"])
+    router = APIRouter(tags=[MODULE_ID])
 
     @router.post("/evidencias", status_code=status.HTTP_201_CREATED, response_model=EvidenceResponse)
     async def upload_evidence(

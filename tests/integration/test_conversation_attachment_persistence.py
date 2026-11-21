@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import insert, select, text
 from sqlalchemy.exc import IntegrityError
 
-from src.adapters.outbound.persistence.evidence_postgres_adapter import EvidencePostgresAdapter
+from src.modules.mod_postventa.adapters.evidence_postgres_adapter import EvidencePostgresAdapter
 from src.shared.infrastructure.db.models import Evidence, Message
 from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
 

@@ -3,8 +3,9 @@ from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Request, Response, status
 
-from src.adapters.inbound.http.postventa_errors import translate_postventa_error
-from src.application.dto.postventa_dto import CreateCsatRequest
+from src.modules.mod_postventa import MODULE_ID
+from src.modules.mod_postventa.adapters.http.postventa_errors import translate_postventa_error
+from src.modules.mod_postventa.application.postventa_dto import CreateCsatRequest
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
@@ -23,7 +24,7 @@ class CsatServicePort(Protocol):
 
 
 def create_csat_router(service_provider: Callable[..., CsatServicePort]) -> APIRouter:
-    router = APIRouter(prefix="/pedidos", tags=["csat"])
+    router = APIRouter(prefix="/pedidos", tags=[MODULE_ID])
 
     @router.post("/{pedido_id}/csat", status_code=status.HTTP_201_CREATED)
     async def create_csat(

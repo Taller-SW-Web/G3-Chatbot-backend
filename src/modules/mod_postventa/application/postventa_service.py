@@ -9,14 +9,14 @@ Owns the channel rules that G5 delegates to the caller:
 import uuid
 from typing import Any
 
-from src.application.dto.postventa_dto import (
+from src.modules.mod_postventa.application.postventa_dto import (
     PostventaError,
     to_g5_claim_reason,
     to_g5_evidence_type,
     to_g5_return_reason,
     to_g5_return_type,
 )
-from src.ports.outbound.postventa_port import PostventaPort
+from src.modules.mod_postventa.ports.postventa_port import PostventaPort
 from src.shared.application.ports.order_repository_port import SalesOrderPort
 from src.shared.domain.module_errors import ModuleRequestError
 

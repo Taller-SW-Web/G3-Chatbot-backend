@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from src.ports.outbound.postventa_port import PostventaPort
+from src.modules.mod_postventa.ports.postventa_port import PostventaPort
 from src.shared.domain.module_errors import ModuleRequestError
 from src.shared.infrastructure.fakes.fake_ventas import _holder_id
 

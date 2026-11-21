@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import CheckConstraint
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.return_ref_postgres_adapter import (
+from src.modules.mod_postventa.adapters.return_ref_postgres_adapter import (
     ReturnRefPostgresAdapter,
 )
 from src.shared.infrastructure.db.models import Base, ReturnRef
