@@ -11,13 +11,13 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from src.modules.mod_cart.ports.cart_repository_port import (
+    CartConflictError,
+    StaleCartError,
+)
 from src.modules.mod_catalog.adapters.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
-)
-from src.ports.outbound.cart_repository_port import (
-    CartConflictError,
-    StaleCartError,
 )
 
 __all__ = [

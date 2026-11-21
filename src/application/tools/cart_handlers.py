@@ -5,7 +5,7 @@ the dispatcher calls them with validated arguments while the router
 validates the explicit UI confirmation for `vaciar_carrito` beforehand.
 """
 
-from src.application.use_cases.manage_cart_use_case import CartError
+from src.modules.mod_cart.application.manage_cart_use_case import CartError
 from src.shared.application.tools.tool_context import (
     caller_from_context,
     conversation_id_from_context,

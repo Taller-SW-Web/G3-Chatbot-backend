@@ -10,8 +10,8 @@ import httpx
 import pytest
 import respx
 
-from src.adapters.inbound.http.cart_router import _problem
-from src.application.use_cases.manage_cart_use_case import CartError, ManageCartUseCase
+from src.modules.mod_cart.adapters.http.cart_router import _problem
+from src.modules.mod_cart.application.manage_cart_use_case import CartError, ManageCartUseCase
 from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort, FakeInventoryPort
 from src.modules.mod_catalog.adapters.inventory_client import InventoryClient
 from src.modules.mod_catalog.adapters.products_client import (

@@ -6,7 +6,7 @@ import pytest
 
 from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.cart_handlers import build_cart_handlers
-from src.application.use_cases.manage_cart_use_case import CartError
+from src.modules.mod_cart.application.manage_cart_use_case import CartError
 from src.modules.mod_catalog.application import manage_catalog_use_case as catalog_module
 from src.modules.mod_catalog.application.tools import AddArguments, SearchArguments, build_tool_registry
 from src.modules.mod_catalog.domain.product_projection import normalize_detail

@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
-from src.ports.outbound.cart_repository_port import (
+from src.modules.mod_cart.ports.cart_repository_port import (
     CartConflictError,
     StaleCartError,
 )

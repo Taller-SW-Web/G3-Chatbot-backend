@@ -10,7 +10,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
-from src.application.use_cases.manage_cart_use_case import (
+from src.modules.mod_cart import MODULE_ID
+from src.modules.mod_cart.application.manage_cart_use_case import (
     CartError,
     ManageCartUseCase,
 )
@@ -92,7 +93,7 @@ class ClearCartIn(BaseModel):
 
 
 def create_cart_router(cart_provider) -> APIRouter:
-    router = APIRouter(prefix="/carrito", tags=["carrito"])
+    router = APIRouter(prefix="/carrito", tags=[MODULE_ID])
 
     @router.get("")
     async def view_cart(

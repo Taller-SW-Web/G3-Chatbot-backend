@@ -16,20 +16,24 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from src.application.services.coupon_attempts import CouponAttempts
-from src.domain.services.cart_line_resolver import CartLineResolver
-from src.domain.services.totals_calculator import PricedLine, TotalsCalculator
-from src.modules.mod_catalog.application.product_lookup import (
-    find_product_by_name,
-    resolve_product_id,
-)
-from src.modules.mod_catalog.domain.offer_policy import amount, instant, price_projection
-from src.modules.mod_catalog.domain.product_projection import normalize_detail, sellable_skus
-from src.modules.mod_catalog.domain.stock_validator import StockValidator
-from src.modules.mod_catalog.domain.variant_resolver import VariantResolver, known_selection
-from src.ports.outbound.cart_repository_port import (
+from src.modules.mod_cart.application.coupon_attempts import CouponAttempts
+from src.modules.mod_cart.domain.cart_line_resolver import CartLineResolver
+from src.modules.mod_cart.domain.totals_calculator import PricedLine, TotalsCalculator
+from src.modules.mod_cart.ports.cart_repository_port import (
     CartConflictError,
     StaleCartError,
+)
+from src.modules.mod_catalog.public import (
+    StockValidator,
+    VariantResolver,
+    amount,
+    find_product_by_name,
+    instant,
+    known_selection,
+    normalize_detail,
+    price_projection,
+    resolve_product_id,
+    sellable_skus,
 )
 from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.entities.message import MessageRole

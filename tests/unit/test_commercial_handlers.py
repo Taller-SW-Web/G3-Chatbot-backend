@@ -10,7 +10,7 @@ import pytest
 
 from src.application.tools.cart_handlers import build_cart_handlers
 from src.application.tools.catalog_handlers import build_catalog_handlers
-from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
+from src.modules.mod_cart.application.manage_cart_use_case import ManageCartUseCase
 from src.modules.mod_catalog.application.manage_catalog_use_case import ManageCatalogUseCase
 from src.modules.mod_catalog.application.tools import build_tool_registry
 from src.shared.application.tools.tool_registry import ExecutionContext

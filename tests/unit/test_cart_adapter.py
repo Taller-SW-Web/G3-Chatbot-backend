@@ -12,8 +12,8 @@ from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.cart_item_postgres_adapter import CartItemPostgresAdapter
-from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
+from src.modules.mod_cart.adapters.cart_item_postgres_adapter import CartItemPostgresAdapter
+from src.modules.mod_cart.adapters.cart_postgres_adapter import CartPostgresAdapter
 from src.shared.infrastructure.db.models import Base, Cart, CartItem, Conversation
 
 cart_table = Base.metadata.tables["cart"]
@@ -161,7 +161,7 @@ async def test_cart_item_agregar_mismo_sku_suma_en_caso_de_uso(session):
 
 
 def test_unexpected_error_never_leaks_exception_name():
-    from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
+    from src.modules.mod_cart.application.manage_cart_use_case import ManageCartUseCase
     from src.shared.domain.module_errors import GENERIC_UNAVAILABLE_TEXT
 
     error = ManageCartUseCase._map_module_error(RuntimeError("boom"))

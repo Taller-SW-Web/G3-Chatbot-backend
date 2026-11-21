@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 from src.adapters.inbound.http.orders_router import create_orders_router
 from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
 from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
-from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
 from src.adapters.outbound.persistence.notification_postgres_adapter import (
     NotificationPostgresAdapter,
 )
@@ -30,6 +29,7 @@ from src.application.use_cases.notification_service import (
     SendOutcome,
 )
 from src.infrastructure.config.container import OrdersService
+from src.modules.mod_cart.adapters.cart_postgres_adapter import CartPostgresAdapter
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.db.models import Checkout, OrderRef
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort

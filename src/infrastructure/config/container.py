@@ -15,10 +15,6 @@ from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
 from src.adapters.outbound.notificaciones.smtp_email_adapter import SmtpEmailSender
 from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
-from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
-    CartItemPostgresAdapter,
-)
-from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
 from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
 from src.adapters.outbound.persistence.notification_postgres_adapter import NotificationPostgresAdapter
 from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
@@ -34,17 +30,15 @@ from src.application.tools.catalog_handlers import build_catalog_handlers
 from src.application.tools.order_handlers import build_order_handlers
 from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
-from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
 from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.application.use_cases.manage_shipping_use_case import ManageShippingUseCase
 from src.application.use_cases.notification_service import NotificationError, NotificationService
 from src.domain.services.status_mapper import map_order_status_label
+from src.modules.mod_cart.public import provide_cart_repositories, provide_cart_service
 from src.modules.mod_catalog.application.tools import build_tool_registry
 from src.modules.mod_catalog.public import (
     provide_catalog_service,
-    provide_product_catalog,
-    provide_product_inventory,
 )
 from src.ports.outbound.llm_provider_port import LLMProvider
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
@@ -127,22 +121,6 @@ def provide_action_dispatcher(session: AsyncSession) -> ActionDispatcher:
     return ActionDispatcher(provide_tool_registry(session))
 
 
-def provide_cart_service(
-    session: AsyncSession = Depends(get_session),
-) -> ManageCartUseCase:
-    settings = get_settings()
-    return ManageCartUseCase(
-        CartPostgresAdapter(session),
-        CartItemPostgresAdapter(session),
-        provide_product_catalog(settings),
-        provide_product_inventory(settings),
-        ConversationPostgresAdapter(session),
-        MessagePostgresAdapter(session),
-        SqlAlchemyUnitOfWork(session),
-        discovery=provide_catalog_service(session),
-    )
-
-
 def provide_shipping_service(
     session: AsyncSession = Depends(get_session),
 ) -> ManageShippingUseCase:
@@ -152,9 +130,10 @@ def provide_shipping_service(
     addresses and Despacho the real quote with the service token.
     """
     settings = get_settings()
+    repositories = provide_cart_repositories(session)
     return ManageShippingUseCase(
-        CartPostgresAdapter(session),
-        CartItemPostgresAdapter(session),
+        repositories.carts,
+        repositories.items,
         provide_despacho_client(settings),
         provide_security_port(settings),
     )
@@ -256,14 +235,15 @@ def provide_checkout_service(
     session: AsyncSession = Depends(get_session),
 ) -> ManageCheckoutUseCase:
     settings = get_settings()
+    cart_repositories = provide_cart_repositories(session)
     return ManageCheckoutUseCase(
         checkouts=CheckoutPostgresAdapter(session),
         payment_attempts=PaymentAttemptPostgresAdapter(session),
         payment_gateway=provide_payment_gateway(),
         uow=SqlAlchemyUnitOfWork(session),
         security_client=provide_security_port(settings),
-        carts=CartPostgresAdapter(session),
-        cart_items=CartItemPostgresAdapter(session),
+        carts=cart_repositories.carts,
+        cart_items=cart_repositories.items,
         orders=OrderRefPostgresAdapter(session),
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
         notification_service=build_notification_service(session),

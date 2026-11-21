@@ -6,9 +6,9 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
-from src.infrastructure.config.container import provide_cart_service
 from src.infrastructure.main import create_app
+from src.modules.mod_cart.application.manage_cart_use_case import ManageCartUseCase
+from src.modules.mod_cart.module import provide_cart_service
 from src.modules.mod_catalog.application.manage_catalog_use_case import ManageCatalogUseCase
 from src.modules.mod_catalog.module import provide_catalog_service
 from src.shared.domain.caller_identity import CallerIdentity

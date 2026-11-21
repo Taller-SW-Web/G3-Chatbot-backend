@@ -1,9 +1,10 @@
 """Per-module fake/http selection: `<MODULE>_MODE` overrides `MODULES_MODE`."""
 import pytest
 
-from src.infrastructure.config.container import provide_product_catalog, provide_security_port
 from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort
 from src.modules.mod_catalog.adapters.products_client import ProductsClient
+from src.modules.mod_catalog.module import provide_product_catalog
+from src.shared.infrastructure.auth.providers import provide_security_port
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.fakes.fake_security import FakeSecurityAdapter
 from src.shared.infrastructure.http.security_client import SecurityClient

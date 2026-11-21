@@ -1,8 +1,8 @@
 """Cart totals and line resolution (SPEC-11 Req. 2-3). No network, no database."""
 from decimal import Decimal
 
-from src.domain.services.cart_line_resolver import CartLineResolver
-from src.domain.services.totals_calculator import PricedLine, TotalsCalculator
+from src.modules.mod_cart.domain.cart_line_resolver import CartLineResolver
+from src.modules.mod_cart.domain.totals_calculator import PricedLine, TotalsCalculator
 
 LINES = [
     PricedLine(sku="A", name="Medias running", quantity=1, unit_price=Decimal("49.90")),

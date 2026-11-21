@@ -3,11 +3,11 @@ import uuid
 
 import pytest
 
-from src.application.use_cases.manage_cart_use_case import (
+from src.modules.mod_cart.application.manage_cart_use_case import (
     CartError,
     ManageCartUseCase,
 )
-from src.ports.outbound.cart_repository_port import StaleCartError
+from src.modules.mod_cart.ports.cart_repository_port import StaleCartError
 from src.shared.domain.caller_identity import CallerIdentity
 from tests.fakes.fake_commerce import (
     FakeCarts,
@@ -208,7 +208,7 @@ async def test_add_selector_keeps_known_size():
 @pytest.mark.asyncio
 async def test_first_concurrent_add_maps_unique_clash_to_conflict():
     """Two carts opened at once clash on the unique key -> CONFLICTO, not 503."""
-    from src.ports.outbound.cart_repository_port import CartConflictError
+    from src.modules.mod_cart.ports.cart_repository_port import CartConflictError
 
     cart_uc, conversations = make_cart_use_case(
         {"NIK-REV7-42-NEG": "DISPONIBLE"})

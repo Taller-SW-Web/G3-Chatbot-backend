@@ -3,8 +3,8 @@ import httpx
 import pytest
 import respx
 
-from src.infrastructure.config.container import provide_product_catalog, provide_product_inventory
 from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort, FakeInventoryPort
+from src.modules.mod_catalog.module import provide_product_catalog, provide_product_inventory
 from src.shared.domain.module_errors import ModuleUnavailableError
 from src.shared.infrastructure.config.settings import Settings, get_settings
 
