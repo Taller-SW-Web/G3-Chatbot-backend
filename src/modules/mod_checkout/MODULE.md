@@ -46,6 +46,15 @@ verificación local exacta (`local_phone_verification`). Con
 el checkout se bloquea con el mismo código y `motivo=SEGURIDAD_NO_DISPONIBLE`.
 En desarrollo/fake el flag está apagado por defecto para no romper los E2E.
 
+## Stock (SPEC-10)
+
+Antes de cotizar y crear el pedido, `create_checkout` invoca
+`ManageCartUseCase.validate_cart` (una consulta masiva de disponibilidad y una
+verificación por cantidad). Si alguna línea está `AGOTADO`/`INSUFICIENTE` o no
+se pudo confirmar, responde `409 CARRITO_DESACTUALIZADO` con
+`lineas[{sku, nombre, cantidad, motivo, mensaje}]`; nada se degrada en silencio.
+`STOCK_BAJO` e `INDETERMINADO` no bloquean (la decisión final sigue en Ventas).
+
 ## Capacidades que registra
 
 | Capacidad | Consumidor | Motivo |

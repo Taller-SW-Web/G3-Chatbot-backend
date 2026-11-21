@@ -98,6 +98,7 @@ class ManageCheckoutUseCase:
         outbox: Any | None = None,
         dispatch: Any | None = None,
         require_phone_verification: bool = False,
+        cart_validator: Any | None = None,
     ):
         self.checkouts = checkouts
         self.payment_attempts = payment_attempts
@@ -113,6 +114,7 @@ class ManageCheckoutUseCase:
         self.outbox = outbox
         self.dispatch = dispatch
         self.require_phone_verification = require_phone_verification
+        self.cart_validator = cart_validator
 
     @staticmethod
     def _is_reusable(
@@ -255,6 +257,8 @@ class ManageCheckoutUseCase:
             }
             for it in items
         ]
+        # SPEC-10 Req. 2: revalidate every line before quoting or creating the order.
+        await self._revalidate_stock(cart, lineas, items, subtotal)
         if pending_checkout is not None:
             if self._is_reusable(pending_checkout, input_data, lineas, subtotal):
                 return pending_checkout
@@ -423,6 +427,51 @@ class ManageCheckoutUseCase:
         if self.uow:
             await _safe_call(self.uow, "commit")
         return saved
+
+    async def _revalidate_stock(self, cart: Any, lineas: list[dict[str, Any]], items: list[Any], subtotal: float) -> None:
+        """Block the checkout when a line is out of stock or cannot be confirmed (SPEC-10)."""
+        if self.cart_validator is None:
+            return
+        try:
+            validation = await self.cart_validator(cart)
+        except Exception as exc:
+            logger.warning("Cart stock revalidation failed for cart %s: %s", getattr(cart, "id", "?"), exc)
+            raise CheckoutError(
+                "MODULO_NO_DISPONIBLE",
+                "No pudimos confirmar el stock ahora. Intenta de nuevo en unos segundos.",
+                {"modulo": getattr(exc, "module", "products")},
+            ) from exc
+        invalid: list[dict[str, Any]] = []
+        for line in lineas:
+            outcome = validation.get(line["sku"]) if isinstance(validation, dict) else None
+            if isinstance(outcome, dict) and outcome.get("ok"):
+                continue
+            projection = str((outcome or {}).get("projection") or "SERVICIO_NO_DISPONIBLE")
+            quantity = str((outcome or {}).get("quantity") or "SERVICIO_NO_DISPONIBLE")
+            if projection == "SKU_AGOTADO":
+                motivo, mensaje = "AGOTADO", f"{line['nombre']} se agotó mientras elegías."
+            elif quantity == "STOCK_INSUFICIENTE":
+                motivo, mensaje = "STOCK_INSUFICIENTE", f"No hay stock suficiente para {line['nombre']}."
+            else:
+                motivo, mensaje = "NO_CONFIRMADO", f"No pudimos confirmar el stock de {line['nombre']}."
+            invalid.append(
+                {
+                    "sku": line["sku"],
+                    "nombre": line["nombre"],
+                    "cantidad": line["cantidad"],
+                    "motivo": motivo,
+                    "mensaje": mensaje,
+                }
+            )
+        if invalid:
+            raise CheckoutError(
+                "CARRITO_DESACTUALIZADO",
+                "Algunos productos de tu carrito cambiaron. Revisa tu carrito antes de continuar.",
+                {
+                    "lineas": invalid,
+                    "summary": self._stale_summary(items, subtotal, 0.0),
+                },
+            )
 
     async def _quote_shipping(self, input_data: CreateCheckoutInput, items: list[Any]):
         """Server-side Despacho quote for the cart lines (`SPEC-14` Req. 2).

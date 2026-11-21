@@ -7,7 +7,7 @@ shared worker lifespan resolves, and the `checkout_document` capability that
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.mod_cart.public import provide_cart_repositories
+from src.modules.mod_cart.public import provide_cart_repositories, provide_cart_service
 from src.modules.mod_checkout import MODULE_ID
 from src.modules.mod_checkout.adapters.checkout_postgres_adapter import CheckoutPostgresAdapter
 from src.modules.mod_checkout.adapters.checkout_snapshot_adapter import (
@@ -105,6 +105,7 @@ def provide_checkout_service(
         outbox=OutboxPostgresAdapter(session),
         dispatch=provide_despacho_client(settings),
         require_phone_verification=settings.require_phone_verification,
+        cart_validator=provide_cart_service(session).validate_cart,
     )
 
 
