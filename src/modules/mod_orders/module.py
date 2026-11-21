@@ -7,16 +7,17 @@ capability registered by `mod-shipping`.
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.mod_checkout.public import provide_sales_port
+from src.modules.mod_checkout.public import (
+    provide_checkout_snapshot,
+    provide_confirmation_outbox,
+    provide_sales_port,
+)
 from src.modules.mod_orders import MODULE_ID
 from src.modules.mod_orders.adapters.fake_email_sender import FakeEmailSender
 from src.modules.mod_orders.adapters.http.orders_router import create_orders_router
 from src.modules.mod_orders.adapters.jinja_email_renderer import JinjaEmailRenderer
 from src.modules.mod_orders.adapters.notification_postgres_adapter import (
     NotificationPostgresAdapter,
-)
-from src.modules.mod_orders.adapters.order_confirmation_source import (
-    OrderConfirmationPostgresAdapter,
 )
 from src.modules.mod_orders.adapters.smtp_email_adapter import SmtpEmailSender
 from src.modules.mod_orders.application.notification_service import NotificationService
@@ -26,7 +27,6 @@ from src.shared.infrastructure.db.connection import get_session
 from src.shared.infrastructure.di.capabilities import DISPATCH_PORT, ORDER_CONFIRMATION
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
-from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 # Without SMTP_HOST the confirmations land here (process-wide, inspectable in local runs).
@@ -57,8 +57,8 @@ def build_notification_service(session: AsyncSession) -> NotificationService:
     settings = get_settings()
     return NotificationService(
         notifications=NotificationPostgresAdapter(session),
-        outbox=OutboxPostgresAdapter(session),
-        sources=OrderConfirmationPostgresAdapter(session),
+        outbox=provide_confirmation_outbox(session),
+        sources=provide_checkout_snapshot(session),
         sender=provide_email_sender(settings),
         templates=_EMAIL_RENDERER,
         uow=SqlAlchemyUnitOfWork(session),

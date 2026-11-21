@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.mod_cart.public import provide_cart_repositories
 from src.modules.mod_checkout import MODULE_ID
 from src.modules.mod_checkout.adapters.checkout_postgres_adapter import CheckoutPostgresAdapter
+from src.modules.mod_checkout.adapters.checkout_snapshot_adapter import (
+    CheckoutSnapshotPostgresAdapter,
+)
 from src.modules.mod_checkout.adapters.http.checkout_router import create_checkout_router
 from src.modules.mod_checkout.adapters.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
@@ -62,6 +65,16 @@ def provide_sales_port(settings: Settings | None = None) -> SalesOrderPort:
 
 def provide_payment_gateway() -> PaymentSimulatorAdapter:
     return PaymentSimulatorAdapter()
+
+
+def provide_checkout_snapshot(session: AsyncSession) -> CheckoutSnapshotPostgresAdapter:
+    """Read-only checkout/order snapshot consumed by `mod-orders` (SPEC-16)."""
+    return CheckoutSnapshotPostgresAdapter(session)
+
+
+def provide_confirmation_outbox(session: AsyncSession) -> OutboxPostgresAdapter:
+    """Outbox writes for the confirmation e-mail; checkout owns the transaction boundary."""
+    return OutboxPostgresAdapter(session)
 
 
 def _notification_service(session: AsyncSession):
@@ -127,6 +140,8 @@ __all__ = [
     "build_router",
     "configure",
     "provide_checkout_service",
+    "provide_checkout_snapshot",
+    "provide_confirmation_outbox",
     "provide_outbox_processor",
     "provide_payment_gateway",
     "provide_sales_port",

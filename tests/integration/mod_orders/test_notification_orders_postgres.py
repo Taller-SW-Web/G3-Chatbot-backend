@@ -16,14 +16,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.modules.mod_cart.adapters.cart_postgres_adapter import CartPostgresAdapter
+from src.modules.mod_checkout.adapters.checkout_snapshot_adapter import (
+    CheckoutSnapshotPostgresAdapter,
+)
 from src.modules.mod_orders.adapters.fake_email_sender import FakeEmailSender
 from src.modules.mod_orders.adapters.http.orders_router import create_orders_router
 from src.modules.mod_orders.adapters.jinja_email_renderer import JinjaEmailRenderer
 from src.modules.mod_orders.adapters.notification_postgres_adapter import (
     NotificationPostgresAdapter,
-)
-from src.modules.mod_orders.adapters.order_confirmation_source import (
-    OrderConfirmationPostgresAdapter,
 )
 from src.modules.mod_orders.application.notification_service import (
     NotificationService,
@@ -84,7 +84,7 @@ def _service(session, sender: FakeEmailSender, *, send_inline: bool = False) -> 
     return NotificationService(
         notifications=NotificationPostgresAdapter(session),
         outbox=OutboxPostgresAdapter(session),
-        sources=OrderConfirmationPostgresAdapter(session),
+        sources=CheckoutSnapshotPostgresAdapter(session),
         sender=sender,
         templates=JinjaEmailRenderer(),
         uow=SqlAlchemyUnitOfWork(session),

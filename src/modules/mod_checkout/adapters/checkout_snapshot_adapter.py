@@ -2,18 +2,20 @@
 
 Read-only join of `order_ref` (owner, local status), its `checkout` (the
 `summary` sent to Ventas) and the last APPROVED `payment_attempt` (card
-brand and last 4 digits, never the PAN).
+brand and last 4 digits, never the PAN). Checkout owns those tables; orders
+consumes this adapter through `CheckoutSnapshotPort`.
 """
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.shared.application.ports.checkout_snapshot_port import CheckoutSnapshotPort
 from src.shared.application.ports.notification_repository_port import ConfirmationSource
 from src.shared.infrastructure.db.models.checkout import Checkout
 from src.shared.infrastructure.db.models.order_ref import OrderRef
 from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
 
 
-class OrderConfirmationPostgresAdapter:
+class CheckoutSnapshotPostgresAdapter(CheckoutSnapshotPort):
     def __init__(self, session: AsyncSession):
         self.session = session
 

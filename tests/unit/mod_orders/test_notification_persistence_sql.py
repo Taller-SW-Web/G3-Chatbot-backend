@@ -10,10 +10,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from src.modules.mod_orders.adapters.notification_postgres_adapter import NotificationPostgresAdapter
-from src.modules.mod_orders.adapters.order_confirmation_source import (
-    OrderConfirmationPostgresAdapter,
+from src.modules.mod_checkout.adapters.checkout_snapshot_adapter import (
+    CheckoutSnapshotPostgresAdapter,
 )
+from src.modules.mod_orders.adapters.notification_postgres_adapter import NotificationPostgresAdapter
 from src.shared.infrastructure.db.models import Notification
 from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 
@@ -103,7 +103,7 @@ async def test_buscar_envio_por_clave_filtra_el_payload_jsonb():
 async def test_cargar_snapshot_une_order_ref_y_checkout_con_el_pago_aprobado():
     session = _session(_result(first=None))
 
-    assert await OrderConfirmationPostgresAdapter(session).cargar("PED-1") is None
+    assert await CheckoutSnapshotPostgresAdapter(session).cargar("PED-1") is None
     sql = _sql(session.execute.await_args.args[0])
     assert "JOIN checkout ON checkout.id = order_ref.checkout_id" in sql
     assert "order_ref.order_id = 'PED-1'" in sql
