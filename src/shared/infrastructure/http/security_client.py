@@ -332,6 +332,29 @@ class SecurityClient(SecurityBaseClient):
             f"unexpected addresses shape: {type(body).__name__}",
         )
 
+    async def save_address(
+        self, user_id: str, holder_token: str, address: dict[str, Any],
+        *, correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """`POST /usuarios/{id}/direcciones` with the holder token (SPEC-12 Req. 3)."""
+        payload = {
+            "etiqueta": address.get("etiqueta") or "Casa",
+            "departamento": address.get("departamento") or "Lima",
+            "provincia": address.get("provincia") or "Lima",
+            "distrito": address.get("distrito") or "",
+            "direccion": address.get("direccion") or address.get("direccionExacta") or "",
+            "referencia": address.get("referencia"),
+            "predeterminada": bool(address.get("predeterminada", False)),
+        }
+        response = await self._request(
+            "POST",
+            f"/usuarios/{quote(user_id, safe='')}/direcciones",
+            json=payload,
+            headers={"Authorization": f"Bearer {holder_token}"},
+            correlation_id=correlation_id,
+        )
+        return await self._parse_response(response)
+
     async def introspect(self, access_token: str, *, correlation_id: str | None = None) -> dict[str, Any]:
         """Pre-payment introspection (SPEC-14 RNF, A3): authenticates as the
         `modulo-chatbot` integration (service token, scope `tokens:introspeccion`)."""

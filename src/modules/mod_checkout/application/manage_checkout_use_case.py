@@ -67,6 +67,7 @@ class CreateCheckoutInput:
     direccion: dict[str, Any] | None = None
     contacto: dict[str, Any] | None = None
     access_token: str | None = None
+    guardar_direccion: bool = False
 
 
 @dataclass
@@ -99,6 +100,7 @@ class ManageCheckoutUseCase:
         dispatch: Any | None = None,
         require_phone_verification: bool = False,
         cart_validator: Any | None = None,
+        save_address_enabled: bool = True,
     ):
         self.checkouts = checkouts
         self.payment_attempts = payment_attempts
@@ -115,6 +117,7 @@ class ManageCheckoutUseCase:
         self.dispatch = dispatch
         self.require_phone_verification = require_phone_verification
         self.cart_validator = cart_validator
+        self.save_address_enabled = save_address_enabled
 
     @staticmethod
     def _is_reusable(
@@ -389,6 +392,7 @@ class ManageCheckoutUseCase:
             "direccion": input_data.direccion or {},
             "contacto": input_data.contacto or {},
             "orderId": order_id,
+            "avisoDireccion": await self._save_address(input_data),
         }
 
         checkout_row = NewCheckout(
@@ -472,6 +476,25 @@ class ManageCheckoutUseCase:
                     "summary": self._stale_summary(items, subtotal, 0.0),
                 },
             )
+
+    async def _save_address(self, input_data: CreateCheckoutInput) -> str | None:
+        """SPEC-12 Req. 3: optional saved address; a Seguridad failure never blocks checkout."""
+        if not input_data.guardar_direccion or not self.save_address_enabled:
+            return None
+        message = "No pudimos guardar tu dirección para la próxima vez."
+        if self.security_client is None or not input_data.access_token:
+            logger.warning("Address not saved: no holder token available")
+            return message
+        try:
+            await self.security_client.save_address(
+                str(input_data.customer_id),
+                input_data.access_token,
+                input_data.direccion or {},
+            )
+        except Exception as exc:
+            logger.warning("Seguridad refused to save the address; checkout continues: %s", exc)
+            return message
+        return None
 
     async def _quote_shipping(self, input_data: CreateCheckoutInput, items: list[Any]):
         """Server-side Despacho quote for the cart lines (`SPEC-14` Req. 2).

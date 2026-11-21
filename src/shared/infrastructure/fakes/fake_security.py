@@ -49,6 +49,7 @@ class FakeSecurityAdapter:
         source = customers if customers is not None else seed["customers"]
         self._customers = {_fold(item["email"]): dict(item) for item in source}
         self._verifications: dict[str, dict] = {}
+        self._addresses: dict[str, list[dict]] = {}
         self._clock = clock
 
     async def register(
@@ -142,11 +143,11 @@ class FakeSecurityAdapter:
     async def list_addresses(
         self, user_id: str, holder_token: str, *, correlation_id: str | None = None
     ) -> list[dict[str, Any]]:
-        """Saved addresses for the checkout prefill (SPEC-12). The seed has none."""
+        """Saved addresses for the checkout prefill (SPEC-12)."""
         customer = self._customer_by_id(user_id)
         if customer is None:
             raise ModuleRequestError(self.module, 404, "RECURSO_NO_ENCONTRADO")
-        return []
+        return list(self._addresses.get(user_id, []))
 
     def claims_for_token(self, token: str) -> dict[str, Any] | None:
         """Used by `FakeAccessTokenValidator`; `None` when the token is unknown."""
@@ -178,6 +179,26 @@ class FakeSecurityAdapter:
 
     def _customer_by_id(self, customer_id: str) -> dict | None:
         return next((item for item in self._customers.values() if item["id"] == customer_id), None)
+
+    async def save_address(
+        self, user_id: str, holder_token: str, address: dict[str, Any]
+    ) -> dict[str, Any]:
+        customer = self._customer_by_id(user_id)
+        if customer is None:
+            raise ModuleRequestError(self.module, 404, "RECURSO_NO_ENCONTRADO")
+        row = {
+            "id": str(uuid.uuid4()),
+            "etiqueta": address.get("etiqueta") or "Casa",
+            "destinatario": address.get("destinatario"),
+            "departamento": address.get("departamento") or "Lima",
+            "provincia": address.get("provincia") or "Lima",
+            "distrito": address.get("distrito") or "",
+            "direccion": address.get("direccion") or address.get("direccionExacta") or "",
+            "referencia": address.get("referencia"),
+            "predeterminada": bool(address.get("predeterminada", False)),
+        }
+        self._addresses.setdefault(user_id, []).append(row)
+        return row
 
     def _open_session(self, customer: dict) -> dict[str, Any]:
         return {

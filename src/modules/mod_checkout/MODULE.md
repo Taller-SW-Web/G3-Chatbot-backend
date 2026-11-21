@@ -55,6 +55,14 @@ se pudo confirmar, responde `409 CARRITO_DESACTUALIZADO` con
 `lineas[{sku, nombre, cantidad, motivo, mensaje}]`; nada se degrada en silencio.
 `STOCK_BAJO` e `INDETERMINADO` no bloquean (la decisión final sigue en Ventas).
 
+## Dirección guardada (SPEC-12)
+
+`POST /checkout` acepta `guardarDireccion: true`. Con el cliente autenticado se
+llama a `POST /usuarios/{id}/direcciones` de Seguridad con su token; si falla,
+el checkout continúa y la respuesta incluye `avisoDireccion` ("No pudimos
+guardar tu dirección para la próxima vez"). `CHECKOUT_SAVE_ADDRESS_ENABLED`
+(default true) permite apagar la llamada sin tocar código.
+
 ## Capacidades que registra
 
 | Capacidad | Consumidor | Motivo |

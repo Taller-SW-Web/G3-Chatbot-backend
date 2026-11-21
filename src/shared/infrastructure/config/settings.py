@@ -140,6 +140,8 @@ class Settings:
     # SPEC-04: the checkout demands a locally verified phone. Production defaults
     # to true; development/fake keeps it off so the E2E flow does not need an OTP.
     require_phone_verification: bool = False
+    # SPEC-12: optional address save in Seguridad. A failure never blocks checkout.
+    checkout_save_address_enabled: bool = True
     # HMAC key for the OTP hashes. Never a real secret in development.
     phone_otp_secret: str = "dev-phone-otp-secret"
     phone_otp_ttl_seconds: int = 300
@@ -197,6 +199,7 @@ def _is_onrender_host(url: str) -> bool:
 def get_settings() -> Settings:
     app_env = _app_env()
     require_phone_verification = _optional_flag("REQUIRE_PHONE_VERIFICATION")
+    save_address_enabled = _optional_flag("CHECKOUT_SAVE_ADDRESS_ENABLED")
     return Settings(
         cookie_secure=os.getenv("COOKIE_SECURE", "true").strip().lower() != "false",
         allowed_origins=_origins("ALLOWED_ORIGINS", "http://localhost:3000"),
@@ -258,6 +261,9 @@ def get_settings() -> Settings:
             require_phone_verification
             if require_phone_verification is not None
             else app_env in PRODUCTION_ENVIRONMENTS
+        ),
+        checkout_save_address_enabled=(
+            save_address_enabled if save_address_enabled is not None else True
         ),
         phone_otp_secret=(
             os.getenv("PHONE_OTP_SECRET", "").strip()

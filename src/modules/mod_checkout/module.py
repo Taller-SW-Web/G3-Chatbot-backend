@@ -106,6 +106,7 @@ def provide_checkout_service(
         dispatch=provide_despacho_client(settings),
         require_phone_verification=settings.require_phone_verification,
         cart_validator=provide_cart_service(session).validate_cart,
+        save_address_enabled=settings.checkout_save_address_enabled,
     )
 
 
