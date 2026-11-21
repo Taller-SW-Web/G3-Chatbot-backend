@@ -36,6 +36,26 @@ memoria de conversación y la auditoría TOOL sin importar la persistencia de ch
 | GET | `/api/v1/chat/conversaciones/buscar` | `ManageConversationUseCase.search_conversations` |
 | GET | `/api/v1/chat/conversaciones/{conversation_id}/mensajes` | `ManageConversationUseCase.get_history` |
 | POST | `/api/v1/chat/conversaciones/{conversation_id}/mensajes` | `InterpretAndRespondUseCase.send_message` (SSE) o `DispatchDirectActionUseCase.execute` (acción directa) |
+| POST | `/api/v1/chat/conversaciones/{id}/adjuntos` | `AttachmentService.upload` (multipart, campo `archivo`) |
+| DELETE | `/api/v1/chat/conversaciones/{id}/adjuntos/{adjuntoId}` | `AttachmentService.delete` |
+| GET | `/api/v1/chat/adjuntos/{adjuntoId}` | `AttachmentService.signed_urls` |
+| GET | `/api/v1/chat/adjuntos/archivo` | lectura del objeto con URL firmada |
+
+## Adjuntos (SPEC-23)
+
+- Hasta 3 imágenes por mensaje y 10 `PENDING` por conversación; `image/jpeg`,
+  `image/png` e `image/webp`, máx. 5 MB.
+- El tipo se detecta por firma binaria, se elimina EXIF/GPS, se acota a 2048 px
+  y se genera una miniatura de 320 px (`PillowImageProcessor`).
+- `AttachmentStorage` es un puerto con adaptador local privado
+  (`ATTACHMENT_STORAGE_PATH`); las URLs firmadas caducan
+  (`ATTACHMENT_SIGNED_URL_TTL_SECONDS`) y el archivo se sirve por
+  `/chat/adjuntos/archivo`.
+- `adjuntoIds` en `POST .../mensajes` valida pertenencia y estado `PENDING`,
+  liga los adjuntos al mensaje y los pasa al LLM como `ImagePart` base64 (máx.
+  6 imágenes por turno; nunca URLs). Sin visión, el texto sigue funcionando y
+  un mensaje solo-imagen degrada con el aviso correspondiente.
+- Un job horario borra `PENDING` de más de 24 h y archivos huérfanos.
 
 ## Dependencias externas
 

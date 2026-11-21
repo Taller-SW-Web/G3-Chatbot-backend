@@ -20,3 +20,5 @@ class Message:
     text: str
     blocks: Any | None
     created_at: datetime
+    # SPEC-23: signed-URL descriptors attached to this message (empty for text-only).
+    adjuntos: tuple[dict[str, Any], ...] = ()

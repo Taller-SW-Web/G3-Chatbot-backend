@@ -150,6 +150,17 @@ class Settings:
     phone_otp_send_window_seconds: int = 900
     # Test-only: return the simulated OTP in the response (SPEC-04 RNF).
     modo_qa: bool = False
+    # SPEC-23: private attachment storage (local adapter until Supabase is wired).
+    attachment_storage_path: str = "var/attachments"
+    attachment_public_base_url: str = "http://localhost:8000/api/v1"
+    attachment_signing_secret: str = "dev-attachment-secret"
+    attachment_signed_url_ttl_seconds: int = 300
+    attachment_max_images_per_turn: int = 6
+    attachment_cleanup_interval_seconds: float = 3600.0
+    attachment_max_bytes: int = 5 * 1024 * 1024
+    attachment_max_side: int = 4096
+    attachment_stored_side: int = 2048
+    attachment_thumbnail_side: int = 320
 
     def __post_init__(self) -> None:
         if self.products_auth_mode not in ("service", "public"):
@@ -277,4 +288,23 @@ def get_settings() -> Settings:
             "PHONE_OTP_SEND_WINDOW_SECONDS", "900", int, minimum=60
         ),
         modo_qa=_flag("MODO_QA"),
+        attachment_storage_path=os.getenv("ATTACHMENT_STORAGE_PATH", "var/attachments").strip(),
+        attachment_public_base_url=(
+            os.getenv("ATTACHMENT_PUBLIC_BASE_URL", "http://localhost:8000/api/v1").strip().rstrip("/")
+        ),
+        attachment_signing_secret=(
+            os.getenv("ATTACHMENT_SIGNING_SECRET", "").strip()
+            or os.getenv("PHONE_OTP_SECRET", "").strip()
+            or os.getenv("SECURITY_CLIENT_SECRET", "").strip()
+            or "dev-attachment-secret"
+        ),
+        attachment_signed_url_ttl_seconds=_number(
+            "ATTACHMENT_SIGNED_URL_TTL_SECONDS", "300", int, minimum=30
+        ),
+        attachment_max_images_per_turn=_number(
+            "ATTACHMENT_MAX_IMAGES_PER_TURN", "6", int, minimum=1
+        ),
+        attachment_cleanup_interval_seconds=_number(
+            "ATTACHMENT_CLEANUP_INTERVAL_SECONDS", "3600", float, minimum=60
+        ),
     )

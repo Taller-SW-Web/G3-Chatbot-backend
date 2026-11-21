@@ -88,6 +88,9 @@ ITERATION_LIMIT_TEXT = (
     "No pude completar tu solicitud. ¿Puedes reformularla o elegir una de estas opciones?"
 )
 INVALID_ARGUMENTS_TEXT = "No entendí bien lo que necesitas, ¿puedes darme más detalle?"
+IMAGE_DEGRADED_TEXT = (
+    "No pude analizar la imagen en este momento. Cuéntame con palabras qué buscas y te ayudo."
+)
 
 _MONEY_EVIDENCE_KEYS = frozenset({
     "amount", "coupon_discount", "descuento", "descuento_monto", "discount_amount",
@@ -128,6 +131,7 @@ class InterpretAndRespondUseCase:
         sanitize_text: Callable[[str], str] | None = None,
         output_validator: OutputValidator | None = None,
         degraded_mode: DegradedMode | None = None,
+        attachments=None,
     ):
         """`sanitize_text` redacts sensitive data (SPEC-05 Req. 9) before persistence or prompting.
 
@@ -144,42 +148,68 @@ class InterpretAndRespondUseCase:
         self._sanitize = sanitize_text or (lambda text: text)
         self._output_validator = output_validator or OutputValidator()
         self._degraded_mode = degraded_mode or DegradedMode()
+        self._attachments = attachments
 
     async def send_message(
-        self, caller: CallerIdentity | None, conversation_id: uuid.UUID, text: str
+        self,
+        caller: CallerIdentity | None,
+        conversation_id: uuid.UUID,
+        text: str,
+        attachment_ids: list[uuid.UUID] | None = None,
     ) -> AsyncIterator[ConversationEvent]:
         """Raises ConversationNotFoundError or InvalidMessageError. Awaiting persists the customer message;
         iterating the returned stream produces the assistant turn."""
         text = (text or "").strip()
-        if not text or len(text) > MAX_MESSAGE_CHARS:
-            raise InvalidMessageError(f"message must have 1 to {MAX_MESSAGE_CHARS} characters")
+        attachment_ids = list(attachment_ids or [])
+        if (not text and not attachment_ids) or len(text) > MAX_MESSAGE_CHARS:
+            raise InvalidMessageError(
+                f"message must have 1 to {MAX_MESSAGE_CHARS} characters or at least one image"
+            )
         if caller is None:
             raise ConversationNotFoundError(conversation_id)
         conversation = await self._conversations.find_owned(conversation_id, caller)
         if conversation is None:
             raise ConversationNotFoundError(conversation_id)
 
-        clean = self._sanitize(text)
+        if attachment_ids and self._attachments is None:
+            raise InvalidMessageError("attachments are not available")
+        attachment_rows = (
+            await self._attachments.validate_for_message(caller, conversation_id, attachment_ids)
+            if attachment_ids
+            else []
+        )
+        clean = self._sanitize(text) if text else ""
         try:
             customer_message = await self._messages.add(conversation_id, MessageRole.CUSTOMER, clean)
+            if attachment_rows:
+                await self._attachments.link(attachment_rows, customer_message.id)
             if conversation.title is None:  # first customer message of the conversation
-                await self._conversations.assign_title_if_missing(conversation_id, derive_title(clean))
+                await self._conversations.assign_title_if_missing(
+                    conversation_id, derive_title(clean or "Imagen adjunta")
+                )
             await self._conversations.touch(conversation_id)
             await self._uow.commit()
         except Exception:
             await self._uow.rollback()
             raise
-        return self._run_turn(caller, conversation, customer_message)
+        return self._run_turn(caller, conversation, customer_message, has_images=bool(attachment_ids))
 
     async def _run_turn(
-        self, caller: CallerIdentity, conversation: Conversation, customer_message: Message
+        self,
+        caller: CallerIdentity,
+        conversation: Conversation,
+        customer_message: Message,
+        *,
+        has_images: bool = False,
     ) -> AsyncIterator[ConversationEvent]:
         started = time.monotonic()
         turn = _Turn()
         correlation_token = correlation_id_var.set(str(uuid.uuid4()))
         try:
             yield MessageAcceptedEvent(customer_message)
-            async for event in self._loop(caller, conversation, turn, started, customer_message.text):
+            async for event in self._loop(
+                caller, conversation, turn, started, customer_message.text, has_images
+            ):
                 yield event
         except (GeneratorExit, asyncio.CancelledError):
             # Consumer gone (WebSocket closed) or task cancelled: leave the unit of work in a defined state.
@@ -199,10 +229,33 @@ class InterpretAndRespondUseCase:
         turn: "_Turn",
         started: float,
         customer_text: str,
+        has_images: bool = False,
     ) -> AsyncIterator[ConversationEvent]:
         try:
             dialogue = await self._messages.list_dialogue(conversation.id, limit=CONTEXT_MESSAGES)
-            context = self._build_context(conversation, dialogue)
+            images = (
+                await self._attachments.context_images(dialogue)
+                if self._attachments is not None
+                else {}
+            )
+            vision = bool(getattr(self._llm, "supports_vision", False))
+            if images and not vision:
+                # The model has no vision: process the text only (SPEC-23 Req. 8).
+                images = {}
+            if (has_images or any(images.values())) and not images and not customer_text.strip():
+                reply, fallback_blocks, _ = self._degraded_reply(
+                    "image_unavailable", self._degraded_mode, customer_text,
+                    available_tools={tool.name for tool in self._tools.definitions()},
+                )
+                yield DegradedEvent("image_unavailable")
+                final = await self._persist_reply(conversation.id, reply, fallback_blocks, turn, started)
+                if final.message.text:
+                    yield TokenEvent(final.message.text)
+                for block in fallback_blocks:
+                    yield BlockEvent(block)
+                yield FinalEvent(final.message)
+                return
+            context = self._build_context(conversation, dialogue, images)
             turn.authorize_history(dialogue)
             tool_definitions = self._tools.definitions()
             execution = ToolExecutionContext(
@@ -343,17 +396,28 @@ class InterpretAndRespondUseCase:
         )
         yield FinalEvent(final.message)
 
-    def _build_context(self, conversation: Conversation, dialogue: Sequence[Message]) -> list[LLMMessage]:
+    def _build_context(
+        self,
+        conversation: Conversation,
+        dialogue: Sequence[Message],
+        images: dict[uuid.UUID, list] | None = None,
+    ) -> list[LLMMessage]:
+        images = images or {}
         first_reply = not any(m.role is MessageRole.ASSISTANT for m in dialogue)
         system = build_system_prompt(self._assistant_name, first_reply=first_reply)
         if conversation.summary:
             system += "\n" + build_summary_message(conversation.summary)
         context = [LLMMessage(role=LLMRole.SYSTEM, content=(TextPart(system),))]
         for message in dialogue:
-            if not message.text:
+            if not message.text and not images.get(message.id):
                 continue
             role = LLMRole.USER if message.role is MessageRole.CUSTOMER else LLMRole.ASSISTANT
-            context.append(LLMMessage(role=role, content=(TextPart(message.text),)))
+            parts: list = []
+            if message.text:
+                parts.append(TextPart(message.text))
+            if role is LLMRole.USER:
+                parts.extend(images.get(message.id, []))
+            context.append(LLMMessage(role=role, content=tuple(parts)))
         return context
 
     async def _stream_llm(
@@ -414,9 +478,14 @@ class InterpretAndRespondUseCase:
     ) -> tuple[str, list[dict[str, Any]], str | None]:
         if reason == "invalid_arguments":
             return INVALID_ARGUMENTS_TEXT, [], None
-        if reason == "iteration_limit":
+        actions: tuple[tuple[str, str], ...]
+        if reason == "image_unavailable":
+            text = IMAGE_DEGRADED_TEXT
+            actions = tuple(QUICK_ACTIONS)
+            search_query = None
+        elif reason == "iteration_limit":
             text = ITERATION_LIMIT_TEXT
-            actions: tuple[tuple[str, str], ...] = QUICK_ACTIONS
+            actions = tuple(QUICK_ACTIONS)
             search_query = None
         else:
             mode = degraded_mode or DegradedMode()
@@ -436,6 +505,8 @@ class InterpretAndRespondUseCase:
                 if QUICK_ACTION_TO_TOOL.get(action_id) in available_tools
             )
         if not actions:
+            if reason == "image_unavailable":
+                return IMAGE_DEGRADED_TEXT, [], search_query
             return DEGRADED_NO_ACTIONS_TEXT, [], search_query
         block = {
             "id": str(uuid.uuid4()),

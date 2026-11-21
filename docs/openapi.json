@@ -138,6 +138,20 @@
         "title": "AvailabilityOut",
         "type": "object"
       },
+      "Body_upload_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos_post": {
+        "properties": {
+          "archivo": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Archivo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "archivo"
+        ],
+        "title": "Body_upload_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos_post",
+        "type": "object"
+      },
       "Body_upload_evidence_api_v1_evidencias_post": {
         "properties": {
           "conversacionId": {
@@ -926,6 +940,15 @@
       },
       "MessageOut": {
         "properties": {
+          "adjuntos": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Adjuntos",
+            "type": "array"
+          },
           "bloques": {
             "anyOf": [
               {},
@@ -1819,6 +1842,17 @@
             ]
           },
           "adjuntoIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Adjuntoids"
           },
           "texto": {
@@ -2949,6 +2983,114 @@
         ]
       }
     },
+    "/api/v1/chat/adjuntos/archivo": {
+      "get": {
+        "operationId": "read_signed_file_api_v1_chat_adjuntos_archivo_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "clave",
+            "required": true,
+            "schema": {
+              "maxLength": 300,
+              "minLength": 1,
+              "title": "Clave",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exp",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Exp",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sig",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 64,
+              "title": "Sig",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Signed File",
+        "tags": [
+          "mod-chat"
+        ]
+      }
+    },
+    "/api/v1/chat/adjuntos/{attachment_id}": {
+      "get": {
+        "operationId": "signed_urls_api_v1_chat_adjuntos__attachment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Signed Urls Api V1 Chat Adjuntos  Attachment Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Signed Urls",
+        "tags": [
+          "mod-chat"
+        ]
+      }
+    },
     "/api/v1/chat/conversaciones": {
       "get": {
         "operationId": "list_conversations_api_v1_chat_conversaciones_get",
@@ -3069,6 +3211,107 @@
           }
         },
         "summary": "Search Conversations",
+        "tags": [
+          "mod-chat"
+        ]
+      }
+    },
+    "/api/v1/chat/conversaciones/{conversation_id}/adjuntos": {
+      "post": {
+        "operationId": "upload_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Attachment Api V1 Chat Conversaciones  Conversation Id  Adjuntos Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Attachment",
+        "tags": [
+          "mod-chat"
+        ]
+      }
+    },
+    "/api/v1/chat/conversaciones/{conversation_id}/adjuntos/{attachment_id}": {
+      "delete": {
+        "operationId": "delete_attachment_api_v1_chat_conversaciones__conversation_id__adjuntos__attachment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Attachment",
         "tags": [
           "mod-chat"
         ]

@@ -32,6 +32,9 @@ REGISTER_DEBOUNCE_PER_EMAIL = RateLimitRule("registro_antirrebote", 1, 10)
 RESEND_PER_EMAIL = RateLimitRule("reenvio_por_correo", 3, 60 * 60)
 LOGIN_PER_IP = RateLimitRule("login_por_ip", 10, 60)
 CHAT_MESSAGES_PER_MINUTE = RateLimitRule("chat_por_minuto", 20, 60)
+ATTACHMENT_UPLOADS_PER_MINUTE = RateLimitRule("adjuntos_por_minuto", 10, 60)
+REACTIONS_PER_MINUTE = RateLimitRule("reacciones_por_minuto", 30, 60)
+SUGGESTIONS_PER_HOUR = RateLimitRule("sugerencias_por_hora", 5, 60 * 60)
 
 
 def client_ip(request: Request) -> str:

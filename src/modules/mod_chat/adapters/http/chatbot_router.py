@@ -3,7 +3,6 @@ import secrets
 import uuid
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
-from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -16,6 +15,7 @@ from src.modules.mod_chat.adapters.http.schemas.conversation_schemas import (
     MessageOut,
 )
 from src.modules.mod_chat.adapters.http.sse import TurnStreamingResponse
+from src.modules.mod_chat.application.attachment_service import AttachmentError
 from src.modules.mod_chat.application.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.modules.mod_chat.application.dto.incoming_message_dto import ToolAction
 from src.modules.mod_chat.application.interpret_and_respond_use_case import (
@@ -52,7 +52,7 @@ class SendMessageIn(BaseModel):
 
     texto: str | None = None
     accion: ToolAction | None = None
-    adjuntoIds: Any = None
+    adjuntoIds: list[str] | None = None
 
     @model_validator(mode="after")
     def _reject_action_with_text(self) -> "SendMessageIn":
@@ -180,14 +180,36 @@ def create_chatbot_router(
                     "datos": result.data,
                 }
             if body.adjuntoIds is not None:
+                if len(body.adjuntoIds) > 3:
+                    raise ProblemError(
+                        422,
+                        "LIMITE_ADJUNTOS",
+                        "Unprocessable entity",
+                        "Puedes adjuntar hasta 3 imágenes por mensaje.",
+                    )
+                if not body.adjuntoIds and not (body.texto or "").strip():
+                    raise ProblemError(
+                        400, "VALIDACION", "Invalid request", "Envía un texto o al menos una imagen."
+                    )
+            elif not (body.texto or "").strip():
                 raise ProblemError(
-                    501, "FUNCIONALIDAD_NO_DISPONIBLE", "Not implemented",
-                    "Attachments are not available yet; send only `texto`.",
+                    400, "VALIDACION", "Invalid request", "El mensaje no puede estar vacío."
                 )
+            attachment_ids: list[uuid.UUID] = []
+            for raw_id in body.adjuntoIds or []:
+                try:
+                    attachment_ids.append(uuid.UUID(str(raw_id)))
+                except (ValueError, AttributeError, TypeError):
+                    raise not_found("Uno de los adjuntos no existe.") from None
             resources = AsyncExitStack()
             try:
                 use_case = await resources.enter_async_context(turn_scope())
-                stream = await use_case.send_message(caller, conversation_id, body.texto or "")
+                stream = await use_case.send_message(
+                    caller, conversation_id, body.texto or "", attachment_ids=attachment_ids
+                )
+            except AttachmentError as exc:
+                await resources.aclose()
+                raise ProblemError(exc.status, exc.code, "Attachment error", exc.detail) from None
             except InvalidMessageError as exc:
                 await resources.aclose()
                 raise ProblemError(400, "VALIDACION", "Invalid request", str(exc)) from None

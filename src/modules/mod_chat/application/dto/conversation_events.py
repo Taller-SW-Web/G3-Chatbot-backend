@@ -8,7 +8,9 @@ from typing import Any, Literal
 
 from src.shared.domain.entities.message import Message
 
-DegradedReason = Literal["timeout", "unavailable", "iteration_limit", "invalid_arguments"]
+DegradedReason = Literal[
+    "timeout", "unavailable", "iteration_limit", "invalid_arguments", "image_unavailable"
+]
 
 
 @dataclass(frozen=True)

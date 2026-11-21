@@ -17,13 +17,16 @@ from src.modules.mod_chat import MODULE_ID
 from src.modules.mod_chat.adapters.conversation_context_adapter import (
     ConversationContextAdapter,
 )
+from src.modules.mod_chat.adapters.http.attachment_router import create_attachment_router
 from src.modules.mod_chat.adapters.http.chatbot_router import (
     ActionScope,
     TurnScope,
     create_chatbot_router,
 )
 from src.modules.mod_chat.adapters.openai_nlp_adapter import OpenAILLMProvider
+from src.modules.mod_chat.adapters.pillow_image_processor import PillowImageProcessor
 from src.modules.mod_chat.adapters.registry_tool_adapter import RegistryToolAdapter
+from src.modules.mod_chat.application.attachment_service import AttachmentService
 from src.modules.mod_chat.application.dispatch_direct_action_use_case import (
     DispatchDirectActionUseCase,
 )
@@ -46,14 +49,41 @@ from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db import connection
 from src.shared.infrastructure.db.connection import get_session
-from src.shared.infrastructure.di.capabilities import ACTION_SCOPE, CONVERSATION_CONTEXT
+from src.shared.infrastructure.di.capabilities import ACTION_SCOPE, ATTACHMENT_CLEANUP, CONVERSATION_CONTEXT
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
 from src.shared.infrastructure.http.router_options import RouterOptions
+from src.shared.infrastructure.persistence.attachment_postgres_adapter import AttachmentPostgresAdapter
 from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
 from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from src.shared.infrastructure.storage.local_attachment_storage import LocalAttachmentStorage
+
+
+def provide_attachment_service(
+    session: AsyncSession = Depends(get_session),
+) -> AttachmentService:
+    """Attachments (SPEC-23): local private storage and Pillow normalization."""
+    settings = get_settings()
+    return AttachmentService(
+        attachments=AttachmentPostgresAdapter(session),
+        conversations=ConversationPostgresAdapter(session),
+        storage=LocalAttachmentStorage(
+            settings.attachment_storage_path,
+            public_base_url=settings.attachment_public_base_url,
+            secret=settings.attachment_signing_secret,
+        ),
+        processor=PillowImageProcessor(
+            max_bytes=settings.attachment_max_bytes,
+            max_side=settings.attachment_max_side,
+            stored_side=settings.attachment_stored_side,
+            thumbnail_side=settings.attachment_thumbnail_side,
+        ),
+        uow=SqlAlchemyUnitOfWork(session),
+        signed_url_ttl_seconds=settings.attachment_signed_url_ttl_seconds,
+        max_images_per_turn=settings.attachment_max_images_per_turn,
+    )
 
 
 def provide_chatbot_service(
@@ -63,6 +93,7 @@ def provide_chatbot_service(
         conversations=ConversationPostgresAdapter(session),
         messages=MessagePostgresAdapter(session),
         uow=SqlAlchemyUnitOfWork(session),
+        attachments=provide_attachment_service(session),
     )
 
 
@@ -131,6 +162,7 @@ def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUse
         assistant_name=settings.assistant_name,
         llm_timeout_seconds=settings.llm_timeout_seconds,
         sanitize_text=sanitize_sensitive_text,
+        attachments=provide_attachment_service(session),
     )
 
 
@@ -164,12 +196,32 @@ async def provide_action_scope() -> AsyncIterator[DispatchDirectActionUseCase]:
 
 def build_router(options: RouterOptions) -> APIRouter:
     settings = get_settings()
-    return create_chatbot_router(
-        provide_chatbot_service,
-        cookie_secure=settings.cookie_secure,
-        turn_scope=options.turn_scope or provide_turn_scope,
-        action_scope=options.action_scope,
-        rate_limiter=provide_rate_limiter(),
+    router = APIRouter()
+    router.include_router(
+        create_chatbot_router(
+            provide_chatbot_service,
+            cookie_secure=settings.cookie_secure,
+            turn_scope=options.turn_scope or provide_turn_scope,
+            action_scope=options.action_scope,
+            rate_limiter=provide_rate_limiter(),
+        )
+    )
+    router.include_router(
+        create_attachment_router(
+            provide_attachment_service,
+            _provide_storage,
+            rate_limiter=provide_rate_limiter(),
+        )
+    )
+    return router
+
+
+def _provide_storage() -> LocalAttachmentStorage:
+    settings = get_settings()
+    return LocalAttachmentStorage(
+        settings.attachment_storage_path,
+        public_base_url=settings.attachment_public_base_url,
+        secret=settings.attachment_signing_secret,
     )
 
 
@@ -177,9 +229,10 @@ router = build_router(RouterOptions())
 
 
 def configure(container) -> None:
-    """Chat exposes the turn/action scopes and the context cart/catalog need."""
+    """Chat exposes the turn/action scopes, the context cart/catalog need and attachment cleanup."""
     container.register(ACTION_SCOPE, provide_action_scope)
     container.register(CONVERSATION_CONTEXT, provide_conversation_context)
+    container.register(ATTACHMENT_CLEANUP, provide_attachment_service)
 
 
 __all__ = [
@@ -192,6 +245,7 @@ __all__ = [
     "configure",
     "provide_action_dispatcher",
     "provide_action_scope",
+    "provide_attachment_service",
     "provide_chatbot_service",
     "provide_conversation_context",
     "provide_interpret_and_respond",
