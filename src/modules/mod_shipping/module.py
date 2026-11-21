@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_cart.public import provide_cart_repositories
 from src.modules.mod_shipping import MODULE_ID
 from src.modules.mod_shipping.adapters.despacho_client import DespachoClient
 from src.modules.mod_shipping.adapters.fake_dispatch import FakeDispatchPort
@@ -13,12 +14,8 @@ from src.shared.infrastructure.auth.providers import (
 )
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
-from src.shared.infrastructure.di.capabilities import CART_REPOSITORIES, DISPATCH_PORT
-from src.shared.infrastructure.di.registry import registry
+from src.shared.infrastructure.di.capabilities import DISPATCH_PORT
 from src.shared.infrastructure.http.router_options import RouterOptions
-
-# Quotes read the customer's cart through the capability published by `mod-cart`.
-REQUIRED_CAPABILITIES = (CART_REPOSITORIES,)
 
 
 def provide_despacho_client(settings: Settings | None = None):
@@ -46,7 +43,7 @@ def provide_shipping_service(
     addresses and Despacho the real quote with the service token.
     """
     settings = get_settings()
-    repositories = registry.resolve(CART_REPOSITORIES, session)
+    repositories = provide_cart_repositories(session)
     return ManageShippingUseCase(
         repositories.carts,
         repositories.items,

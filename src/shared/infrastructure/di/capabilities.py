@@ -6,7 +6,6 @@ at request time. Keeping the names here avoids magic strings and lets a module
 refer to a capability without importing the module that owns it.
 """
 
-CART_REPOSITORIES = "cart_repositories"
 CHECKOUT_DOCUMENT = "checkout_document"
 CONVERSATION_CONTEXT = "conversation_context"
 DISPATCH_PORT = "dispatch_port"
@@ -16,7 +15,6 @@ ACTION_SCOPE = "action_scope"
 
 __all__ = [
     "ACTION_SCOPE",
-    "CART_REPOSITORIES",
     "CHECKOUT_DOCUMENT",
     "CONVERSATION_CONTEXT",
     "DISPATCH_PORT",

@@ -20,7 +20,7 @@ from src.modules.mod_catalog.public import (
 )
 from src.shared.infrastructure.config.settings import get_settings
 from src.shared.infrastructure.db.connection import get_session
-from src.shared.infrastructure.di.capabilities import CART_REPOSITORIES, CONVERSATION_CONTEXT
+from src.shared.infrastructure.di.capabilities import CONVERSATION_CONTEXT
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -62,8 +62,7 @@ router = build_router(RouterOptions())
 
 
 def configure(container) -> None:
-    """Shipping depends on no module but needs the cart lines: expose them by capability."""
-    container.register(CART_REPOSITORIES, provide_cart_repositories)
+    """No cross-module capability: checkout and shipping import `public.py` directly."""
 
 
 __all__ = [

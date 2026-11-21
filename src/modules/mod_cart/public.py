@@ -1,19 +1,16 @@
 """Public surface of `mod-cart`.
 
-`mod-checkout` (which depends on cart) uses the repositories and the use case;
-`mod-shipping` reads the same repositories through the `cart_repositories`
-capability because the manifest does not let it import this package.
+`mod-checkout` and `mod-shipping` declare cart in the manifest and use the
+repositories and the use case from here.
 """
 from src.modules.mod_cart.application.manage_cart_use_case import CartError, ManageCartUseCase
 from src.modules.mod_cart.module import (
-    CART_REPOSITORIES,
     CartRepositories,
     provide_cart_repositories,
     provide_cart_service,
 )
 
 __all__ = [
-    "CART_REPOSITORIES",
     "CartError",
     "CartRepositories",
     "ManageCartUseCase",
