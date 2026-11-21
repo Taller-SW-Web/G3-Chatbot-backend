@@ -100,3 +100,23 @@ def test_get_session_entrega_y_cierra_la_sesion(monkeypatch):
     import asyncio
 
     asyncio.run(escenario())
+
+
+def test_create_engine_es_seguro_detras_del_pooler_de_supabase(monkeypatch):
+    """Supavisor/PgBouncer comparte conexiones reales: sin cache ni nombres fijos de sentencias (42P05)."""
+    captured = {}
+
+    def fake_create_async_engine(url, **kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(connection, "create_async_engine", fake_create_async_engine)
+    connection.create_engine("postgresql+asyncpg://u:p@host:6543/db")
+
+    connect_args = captured["connect_args"]
+    assert connect_args["statement_cache_size"] == 0
+    assert connect_args["prepared_statement_cache_size"] == 0
+    name_func = connect_args["prepared_statement_name_func"]
+    first, second = name_func(), name_func()
+    assert first != second
+    assert first.startswith("__asyncpg_")
