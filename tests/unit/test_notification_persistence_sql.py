@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from src.adapters.outbound.persistence.notification_postgres_adapter import NotificationPostgresAdapter
-from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
+from src.modules.mod_orders.adapters.notification_postgres_adapter import NotificationPostgresAdapter
+from src.modules.mod_orders.adapters.order_confirmation_source import (
     OrderConfirmationPostgresAdapter,
 )
 from src.shared.infrastructure.db.models import Notification

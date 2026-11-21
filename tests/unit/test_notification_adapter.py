@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.notification_postgres_adapter import (
+from src.modules.mod_orders.adapters.notification_postgres_adapter import (
     NotificationPostgresAdapter,
 )
 from src.shared.infrastructure.db.models import Base, Notification

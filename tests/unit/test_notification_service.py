@@ -14,15 +14,15 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.orders_router import create_orders_router
-from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
-from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
-from src.application.use_cases.notification_service import (
+from src.modules.mod_orders.adapters.fake_email_sender import FakeEmailSender
+from src.modules.mod_orders.adapters.http.orders_router import create_orders_router
+from src.modules.mod_orders.adapters.jinja_email_renderer import JinjaEmailRenderer
+from src.modules.mod_orders.application.notification_service import (
     NotificationError,
     NotificationService,
     SendOutcome,
 )
-from src.infrastructure.config.container import OrdersService
+from src.modules.mod_orders.application.orders_service import OrdersService
 from src.shared.application.ports.notification_repository_port import (
     ConfirmationSource,
     EmailTask,

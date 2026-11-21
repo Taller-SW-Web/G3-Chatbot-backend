@@ -8,8 +8,9 @@ from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
-from src.application.use_cases.notification_service import NotificationError
-from src.domain.services.tracking_mapper import sanitize_tracking_payload
+from src.modules.mod_orders import MODULE_ID
+from src.modules.mod_orders.application.notification_service import NotificationError
+from src.modules.mod_orders.domain.tracking_mapper import sanitize_tracking_payload
 from src.shared.application.dto.commerce_contracts_dto import (
     ORDERS_ERROR_STATUS,
     OrderDetailResponse,
@@ -132,7 +133,7 @@ def _translate_order_error(exc: Exception) -> ProblemError:
 def create_orders_router(
     orders_provider: Callable[..., OrdersServicePort],
 ) -> APIRouter:
-    router = APIRouter(prefix="/pedidos", tags=["pedidos"])
+    router = APIRouter(prefix="/pedidos", tags=[MODULE_ID])
 
     @router.get("", response_model=OrderListResponse)
     async def list_orders(

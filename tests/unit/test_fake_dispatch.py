@@ -5,12 +5,12 @@ S/ 12.50 y un día, responde sin cobertura para el resto y no toca la red.
 """
 import pytest
 
-from src.infrastructure.config.container import provide_despacho_client
 from src.modules.mod_shipping.adapters.fake_dispatch import (
     COSTO_ENVIO,
     PLAZO_DIAS,
     FakeDispatchPort,
 )
+from src.modules.mod_shipping.module import provide_despacho_client
 from src.shared.domain.module_errors import ModuleRequestError
 from src.shared.infrastructure.config.settings import Settings
 

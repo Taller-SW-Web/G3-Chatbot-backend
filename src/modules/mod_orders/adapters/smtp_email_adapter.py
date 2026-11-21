@@ -10,7 +10,7 @@ import smtplib
 import ssl
 from email.message import EmailMessage as MimeMessage
 
-from src.ports.outbound.email_sender_port import EmailDeliveryError, EmailMessage
+from src.modules.mod_orders.ports.email_sender_port import EmailDeliveryError, EmailMessage
 
 
 class SmtpEmailSender:

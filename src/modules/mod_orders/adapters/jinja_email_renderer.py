@@ -8,7 +8,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
-from src.ports.outbound.email_sender_port import RenderedEmail
+from src.modules.mod_orders.ports.email_sender_port import RenderedEmail
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 

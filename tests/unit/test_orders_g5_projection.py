@@ -1,7 +1,7 @@
 """G5 order detail shape -> channel response projection (SPEC-17)."""
 import anyio
 
-from src.infrastructure.config.container import OrdersService
+from src.modules.mod_orders.application.orders_service import OrdersService
 
 
 class G5ShapeSales:

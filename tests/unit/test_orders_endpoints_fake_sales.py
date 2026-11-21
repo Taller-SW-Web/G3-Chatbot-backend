@@ -7,8 +7,8 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.orders_router import create_orders_router
-from src.infrastructure.config.container import OrdersService
+from src.modules.mod_orders.adapters.http.orders_router import create_orders_router
+from src.modules.mod_orders.application.orders_service import OrdersService
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity

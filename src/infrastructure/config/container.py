@@ -1,21 +1,13 @@
 """Minimal dependency wiring (ADR-0002): builds use cases from a request-scoped DB session."""
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
 from src.adapters.outbound.fakes.fake_postventa import FakePostventaPort
 from src.adapters.outbound.http_clients.postventa_client import PostventaClient
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
-from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
-from src.adapters.outbound.notificaciones.smtp_email_adapter import SmtpEmailSender
-from src.adapters.outbound.persistence.notification_postgres_adapter import NotificationPostgresAdapter
-from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
-    OrderConfirmationPostgresAdapter,
-)
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
 from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.cart_handlers import build_cart_handlers
@@ -24,41 +16,29 @@ from src.application.tools.order_handlers import build_order_handlers
 from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
-from src.application.use_cases.notification_service import NotificationError, NotificationService
-from src.domain.services.status_mapper import map_order_status_label
 from src.modules.mod_cart.public import provide_cart_service
 from src.modules.mod_catalog.application.tools import build_tool_registry
 from src.modules.mod_catalog.public import (
     provide_catalog_service,
 )
-from src.modules.mod_shipping.module import provide_despacho_client
+from src.modules.mod_checkout.public import provide_sales_port
+from src.modules.mod_orders.public import provide_orders_service
 from src.ports.outbound.llm_provider_port import LLMProvider
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
-from src.shared.application.ports.order_repository_port import SalesOrderPort
 from src.shared.application.tools.tool_registry import ToolRegistry
-from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
-from src.shared.infrastructure.auth.providers import (
-    provide_service_token_provider,
-)
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db import connection
 from src.shared.infrastructure.db.connection import get_session
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 from src.shared.infrastructure.http.base_client import BaseModuleClient
-from src.shared.infrastructure.http.ventas_client import VentasClient
 from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
 from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
-from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.shared.infrastructure.worker.outbox_worker import OutboxProcessor
-
-# Without SMTP_HOST the confirmations land here (process-wide, inspectable in local runs).
-_FAKE_EMAIL_SENDER = FakeEmailSender()
-_EMAIL_RENDERER = JinjaEmailRenderer()
 
 
 def provide_chatbot_service(session: AsyncSession = Depends(get_session)) -> ManageConversationUseCase:
@@ -138,18 +118,6 @@ _FAKE_SALES_PORT = FakeSalesPort()
 _FAKE_POSTVENTA_PORT = FakePostventaPort()
 
 
-def provide_sales_port(settings: Settings | None = None) -> SalesOrderPort:
-    """Sales order port (SPEC-15, SPEC-17): fake in-memory or typed HTTP client."""
-    settings = settings or get_settings()
-    if settings.module_mode("sales") == "fake":
-        return _FAKE_SALES_PORT
-    return VentasClient(
-        base_url=settings.sales_base_url,
-        timeout_seconds=settings.sales_timeout_seconds,
-        service_token_provider=provide_service_token_provider(settings),
-    )
-
-
 def provide_postventa_port(settings: Settings | None = None):
     """G5 M2 Postventa: in-process fake in `SALES_MODE=fake`, HTTP otherwise."""
     settings = settings or get_settings()
@@ -176,210 +144,6 @@ def provide_postventa_service(session: AsyncSession = Depends(get_session)):
         claim_refs=None if fake else ClaimRefPostgresAdapter(session),
         return_refs=None if fake else ReturnRefPostgresAdapter(session),
         evidence=None if fake else EvidencePostgresAdapter(session),
-    )
-
-
-def provide_email_sender(settings: Settings | None = None):
-    """SMTP when SMTP_HOST is set (Mailtrap in development); otherwise the in-memory fake (SPEC-16)."""
-    settings = settings or get_settings()
-    if not settings.smtp_host:
-        return _FAKE_EMAIL_SENDER
-    return SmtpEmailSender(
-        host=settings.smtp_host,
-        port=settings.smtp_port,
-        sender=settings.smtp_sender,
-        username=settings.smtp_username,
-        password=settings.smtp_password,
-        starttls=settings.smtp_starttls,
-        timeout_seconds=settings.smtp_timeout_seconds,
-    )
-
-
-def build_notification_service(session: AsyncSession) -> NotificationService:
-    """Order confirmation e-mail (SPEC-16). The outbox worker (SPEC-15) builds one per
-    SEND_EMAIL batch and calls `handle_send_email_task`; checkout calls
-    `enqueue_confirmation(order_id)` once the order is PAID_NOTIFIED."""
-    settings = get_settings()
-    return NotificationService(
-        notifications=NotificationPostgresAdapter(session),
-        outbox=OutboxPostgresAdapter(session),
-        sources=OrderConfirmationPostgresAdapter(session),
-        sender=provide_email_sender(settings),
-        templates=_EMAIL_RENDERER,
-        uow=SqlAlchemyUnitOfWork(session),
-        frontend_base_url=settings.frontend_base_url,
-        send_inline=settings.notification_send_inline,
-    )
-
-
-def _with_status_label(payload: dict, key: str = "estadoEtiqueta") -> dict:
-    """Adds the customer-facing label Ventas does not send (contratos-integracion §2.5.2)."""
-    if payload.get(key):
-        return payload
-    return {**payload, key: map_order_status_label(str(payload.get("estado") or ""))}
-
-
-class OrdersService:
-    """`OrdersServicePort` for the orders router: confirmation resend (SPEC-16) and
-    customer orders listing / detail (SPEC-17) delegated to Ventas."""
-
-    def __init__(
-        self,
-        notifications: NotificationService,
-        sales_client: SalesOrderPort | None = None,
-        dispatch=None,
-    ):
-        self._notifications = notifications
-        self._sales = sales_client
-        self._dispatch = dispatch
-
-    async def resend_confirmation(self, customer_id, order_id, *, holder_token, idempotency_key):
-        return await self._notifications.resend_confirmation(
-            customer_id, order_id, idempotency_key=idempotency_key
-        )
-
-    async def list_orders(
-        self,
-        customer_id,
-        *,
-        holder_token: str,
-        estado: str | None = None,
-        page: int = 1,
-        page_size: int = 10,
-    ):
-        if self._sales:
-            raw = await self._sales.list_customer_orders(
-                holder_token,
-                estado=estado,
-                page=page,
-                page_size=page_size,
-            )
-            return {**raw, "items": [_with_status_label(item) for item in raw.get("items", [])]}
-        raise NotificationError("SERVICIO_NO_DISPONIBLE", "La consulta de pedidos aún no está disponible.")
-
-    async def get_order_detail(
-        self,
-        customer_id,
-        order_id: str,
-        *,
-        holder_token: str,
-    ):
-        if self._sales:
-            raw = await self._sales.get_customer_order(order_id, holder_token)
-            # G5 `PedidoDetalle` keeps money inside `pago` and history in
-            # `historialEstados`; the channel contract exposes them at the root.
-            payment_raw = raw.get("pago")
-            payment: dict[str, Any] = payment_raw if isinstance(payment_raw, dict) else {}
-            total = raw.get("total", payment.get("total", 0))
-            moneda = raw.get("moneda", payment.get("moneda", "PEN"))
-            history = raw.get("historial") or raw.get("historialEstados") or []
-            return {
-                **_with_status_label({**raw, "total": total, "moneda": moneda}),
-                "historial": [
-                    {**_with_status_label(m, key="etiqueta"), "completado": m.get("completado", True)}
-                    for m in history
-                ],
-            }
-        raise NotificationError("SERVICIO_NO_DISPONIBLE", "La consulta de pedidos aún no está disponible.")
-
-    async def get_order_tracking(
-        self,
-        customer_id,
-        order_id: str,
-        *,
-        holder_token: str,
-    ):
-        """Order tracking (SPEC-18).
-
-        First proves ownership through Ventas with the customer token, then asks
-        Despacho with the service token. Despacho is optional: a 404 while the
-        order is still being prepared, a missing scope or a timeout degrade to
-        the order state from Ventas with ``detalleDisponible=false``.
-        """
-        if self._sales is None:
-            raise NotificationError(
-                "SERVICIO_NO_DISPONIBLE",
-                "La consulta de pedidos aún no está disponible.",
-            )
-        order = await self._sales.get_customer_order(order_id, holder_token)
-        estado = str(order.get("estado") or "").strip().upper()
-        envio_raw = order.get("envio")
-        envio: dict[str, Any] = envio_raw if isinstance(envio_raw, dict) else {}
-        fallback: dict[str, Any] = {
-            "pedidoId": order_id,
-            "estado": estado,
-            "estadoEtiqueta": map_order_status_label(estado),
-            "fechaProgramada": envio.get("fechaEstimadaEntrega"),
-            "distrito": envio.get("distrito"),
-            "hitos": [],
-            "detalleDisponible": False,
-            "mensaje": (
-                "Tu pedido está pendiente de pago."
-                if estado == "CREADO"
-                else "Tu pedido aún se está preparando; te mostraremos el seguimiento "
-                "cuando salga del centro de despacho."
-                if estado in {"PAGADO", "EN_PREPARACION"}
-                else "Tu pedido fue anulado."
-                if estado == "ANULADO"
-                else "El detalle del envío no está disponible ahora."
-            ),
-        }
-        # Ventas is the source of truth. Despacho only adds detail once the
-        # order is actually dispatched (or delivered); a paid order still in
-        # preparation must not show a synthetic "on the way" milestone.
-        if estado not in {"DESPACHADO", "ENTREGADO"}:
-            return fallback
-        if self._dispatch is None:
-            return fallback
-        try:
-            raw = await self._dispatch.get_order_tracking(order_id)
-        except (ModuleRequestError, ModuleUnavailableError):
-            # A 404 is normal before dispatch, and a missing scope or timeout
-            # must not hide the order status the customer can still see.
-            return fallback
-        if not isinstance(raw, dict) or not raw:
-            return fallback
-        tracking = dict(raw)
-        if estado == "ENTREGADO":
-            tracking["estado"] = "ENTREGADO"
-            tracking["estadoEtiqueta"] = map_order_status_label("ENTREGADO")
-            hitos = tracking.get("hitos")
-            if isinstance(hitos, list) and not any(
-                str(hito.get("titulo", "")).strip().casefold() == "entregado"
-                for hito in hitos
-                if isinstance(hito, dict)
-            ):
-                delivered_at = next(
-                    (
-                        str(item.get("fecha"))
-                        for item in order.get("historial") or []
-                        if isinstance(item, dict) and item.get("estado") == "ENTREGADO"
-                    ),
-                    "",
-                )
-                hitos.append(
-                    {
-                        "titulo": "Entregado",
-                        "fecha": delivered_at,
-                        "completado": True,
-                    }
-                )
-        elif estado == "ANULADO":
-            tracking["estado"] = "ANULADO"
-            tracking["estadoEtiqueta"] = map_order_status_label("ANULADO")
-        tracking.setdefault("pedidoId", order_id)
-        tracking.setdefault("distrito", envio.get("distrito"))
-        tracking.setdefault("fechaProgramada", envio.get("fechaEstimadaEntrega"))
-        tracking.setdefault("detalleDisponible", True)
-        return tracking
-
-
-def provide_orders_service(session: AsyncSession = Depends(get_session)) -> OrdersService:
-    settings = get_settings()
-    return OrdersService(
-        notifications=build_notification_service(session),
-        sales_client=provide_sales_port(settings),
-        dispatch=provide_despacho_client(settings),
     )
 
 

@@ -7,11 +7,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from src.adapters.inbound.http.orders_router import OrderError, create_orders_router
-from src.domain.services.status_mapper import map_order_status_label
-from src.domain.services.tracking_mapper import sanitize_tracking_payload
 from src.modules.mod_cart.adapters.http.cart_router import create_cart_router
 from src.modules.mod_cart.application.manage_cart_use_case import CartError
+from src.modules.mod_orders.adapters.http.orders_router import OrderError, create_orders_router
+from src.modules.mod_orders.domain.status_mapper import map_order_status_label
+from src.modules.mod_orders.domain.tracking_mapper import sanitize_tracking_payload
 from src.modules.mod_shipping.adapters.http.shipping_router import ShippingError, create_shipping_router
 from src.shared.application.dto.commerce_contracts_dto import (
     CHECKOUT_ERROR_STATUS,

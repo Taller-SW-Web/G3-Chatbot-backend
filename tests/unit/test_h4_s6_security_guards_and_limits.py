@@ -8,12 +8,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.adapters.inbound.http.chatbot_router import create_chatbot_router
-from src.adapters.inbound.http.orders_router import create_orders_router
 from src.application.dto.conversation_events import FinalEvent, MessageAcceptedEvent
 from src.modules.mod_auth.adapters.http.session_router import create_session_router
 from src.modules.mod_auth.application.manage_session_use_case import InvalidCredentialsError
 from src.modules.mod_cart.adapters.http.cart_router import create_cart_router
 from src.modules.mod_checkout.adapters.http.checkout_router import create_checkout_router
+from src.modules.mod_orders.adapters.http.orders_router import create_orders_router
 from src.modules.mod_shipping.adapters.http.shipping_router import create_shipping_router
 from src.shared.application.ports.token_validator_port import InvalidTokenError
 from src.shared.domain.entities.message import Message, MessageRole

@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.modules.mod_checkout.module import ORDER_CONFIRMATION, provide_checkout_service
 from src.modules.mod_catalog.adapters.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
@@ -15,6 +14,7 @@ from src.modules.mod_catalog.module import (
     provide_product_catalog,
     provide_product_inventory,
 )
+from src.modules.mod_checkout.module import ORDER_CONFIRMATION, provide_checkout_service
 from src.shared.infrastructure.config.settings import Settings, get_settings
 
 

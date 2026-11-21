@@ -23,12 +23,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
-from src.application.notifications.order_confirmation import (
+from src.modules.mod_orders.application.order_confirmation import (
     build_confirmation_context,
     chat_notice,
     recipient_of,
 )
-from src.ports.outbound.email_sender_port import (
+from src.modules.mod_orders.ports.email_sender_port import (
     EmailDeliveryError,
     EmailMessage,
     EmailSenderPort,

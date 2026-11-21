@@ -15,21 +15,21 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.orders_router import create_orders_router
-from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
-from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
-from src.adapters.outbound.persistence.notification_postgres_adapter import (
+from src.modules.mod_cart.adapters.cart_postgres_adapter import CartPostgresAdapter
+from src.modules.mod_orders.adapters.fake_email_sender import FakeEmailSender
+from src.modules.mod_orders.adapters.http.orders_router import create_orders_router
+from src.modules.mod_orders.adapters.jinja_email_renderer import JinjaEmailRenderer
+from src.modules.mod_orders.adapters.notification_postgres_adapter import (
     NotificationPostgresAdapter,
 )
-from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
+from src.modules.mod_orders.adapters.order_confirmation_source import (
     OrderConfirmationPostgresAdapter,
 )
-from src.application.use_cases.notification_service import (
+from src.modules.mod_orders.application.notification_service import (
     NotificationService,
     SendOutcome,
 )
-from src.infrastructure.config.container import OrdersService
-from src.modules.mod_cart.adapters.cart_postgres_adapter import CartPostgresAdapter
+from src.modules.mod_orders.application.orders_service import OrdersService
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.db.models import Checkout, OrderRef
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort

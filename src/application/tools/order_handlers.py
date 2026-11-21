@@ -10,9 +10,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
-from src.application.use_cases.notification_service import NotificationError
-from src.domain.services.status_mapper import SALES_STATUS_LABELS, map_order_status_label
 from src.modules.mod_catalog.application.tools import OrderQueryArguments
+from src.modules.mod_orders.public import SALES_STATUS_LABELS, NotificationError, map_order_status_label
 from src.shared.application.tools.tool_context import caller_from_context
 from src.shared.application.tools.tool_registry import ExecutionContext, ToolResult
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError

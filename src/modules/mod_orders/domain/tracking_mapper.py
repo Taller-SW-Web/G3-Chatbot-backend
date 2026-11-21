@@ -8,7 +8,7 @@ sending data to the LLM.
 """
 from typing import Any
 
-from src.domain.services.status_mapper import DISPATCH_STATUS_LABELS
+from src.modules.mod_orders.domain.status_mapper import DISPATCH_STATUS_LABELS
 
 
 def sanitize_tracking_payload(

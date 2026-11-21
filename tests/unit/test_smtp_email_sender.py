@@ -7,11 +7,11 @@ import smtplib
 
 import pytest
 
-from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
-from src.adapters.outbound.notificaciones import smtp_email_adapter
-from src.adapters.outbound.notificaciones.smtp_email_adapter import SmtpEmailSender
-from src.infrastructure.config import container
-from src.ports.outbound.email_sender_port import EmailDeliveryError, EmailMessage
+from src.modules.mod_orders import module as orders_module
+from src.modules.mod_orders.adapters import smtp_email_adapter
+from src.modules.mod_orders.adapters.fake_email_sender import FakeEmailSender
+from src.modules.mod_orders.adapters.smtp_email_adapter import SmtpEmailSender
+from src.modules.mod_orders.ports.email_sender_port import EmailDeliveryError, EmailMessage
 from src.shared.infrastructure.config.settings import Settings
 
 MESSAGE = EmailMessage(to="maria@ejemplo.com", subject="Confirmamos tu pedido PED-1", html="<p>hola</p>", text="hola")
@@ -79,10 +79,10 @@ async def test_fallo_del_proveedor_es_reintentable_y_no_expone_la_clave():
 
 
 def test_sin_smtp_host_se_usa_el_sender_falso():
-    assert isinstance(container.provide_email_sender(Settings()), FakeEmailSender)
+    assert isinstance(orders_module.provide_email_sender(Settings()), FakeEmailSender)
 
 
 def test_con_smtp_host_se_usa_smtp():
-    sender = container.provide_email_sender(Settings(smtp_host="sandbox.smtp.mailtrap.io", smtp_port=2525))
+    sender = orders_module.provide_email_sender(Settings(smtp_host="sandbox.smtp.mailtrap.io", smtp_port=2525))
     assert isinstance(sender, SmtpEmailSender)
     assert (sender.host, sender.port) == ("sandbox.smtp.mailtrap.io", 2525)

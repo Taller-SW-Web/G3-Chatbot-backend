@@ -5,7 +5,7 @@ makes the next N sends raise `EmailDeliveryError`, to exercise the retries.
 """
 import logging
 
-from src.ports.outbound.email_sender_port import EmailDeliveryError, EmailMessage
+from src.modules.mod_orders.ports.email_sender_port import EmailDeliveryError, EmailMessage
 
 logger = logging.getLogger(__name__)
 

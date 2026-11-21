@@ -10,7 +10,6 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.application.use_cases.notification_service import NotificationService
 from src.modules.mod_checkout.adapters.checkout_postgres_adapter import CheckoutPostgresAdapter
 from src.modules.mod_checkout.adapters.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
@@ -19,6 +18,7 @@ from src.modules.mod_checkout.adapters.payment_simulator_adapter import CardVali
 from src.modules.mod_checkout.domain.checkout import CheckoutStatus
 from src.modules.mod_checkout.domain.payment_attempt import PaymentRejectReason, PaymentResult
 from src.modules.mod_checkout.ports.payment_gateway_port import PaymentGatewayPort
+from src.modules.mod_orders.application.notification_service import NotificationService
 from src.modules.mod_shipping.application.shipping_quote import (
     build_destination,
     build_quote_lines,
