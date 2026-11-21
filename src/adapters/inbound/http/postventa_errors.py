@@ -1,7 +1,11 @@
 """Maps Postventa failures to `application/problem+json` (G5 F3/F5/F6)."""
+import logging
+
 from src.adapters.inbound.http.problem import ProblemError, not_found
 from src.application.dto.postventa_dto import POSTVENTA_ERROR_STATUS, PostventaError
 from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+
+logger = logging.getLogger(__name__)
 
 _TITLES = {
     400: "Invalid request",
@@ -39,6 +43,9 @@ def translate_postventa_error(exc: Exception) -> ProblemError:
             extra={"modulo": exc.module},
         )
     else:
+        # Unexpected (non-module) failure: keep the cause visible. Only the exception is
+        # logged, never request headers or tokens.
+        logger.error("Unexpected postventa failure: %s", type(exc).__name__, exc_info=exc)
         code = "SERVICIO_NO_DISPONIBLE"
         detail = "No pude completar la operación de postventa."
         extra = {}

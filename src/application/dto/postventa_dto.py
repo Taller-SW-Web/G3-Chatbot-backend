@@ -141,6 +141,24 @@ class CreateReturnRequest(BaseModel):
         return to_g5_return_reason(value)
 
 
+class ReturnItemResponseDTO(BaseModel):
+    """G5 item echoed back: lenient, so extra G5 fields never turn a created return into a 503."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    productoId: str
+    cantidad: int
+
+
+class ReturnEvidenceResponseDTO(BaseModel):
+    """G5 evidence echoed back: no request-side limits (url length) and extra fields ignored."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    tipo: str
+    url: str
+
+
 class ReturnSummaryDTO(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -171,9 +189,9 @@ class ReturnDetailResponse(BaseModel):
     estado: str
     motivo: str
     descripcion: str | None = None
-    items: list[ReturnItemDTO] = Field(default_factory=list)
+    items: list[ReturnItemResponseDTO] = Field(default_factory=list)
     resolucion: dict[str, Any] | None = None
-    evidencias: list[ReturnEvidenceDTO] = Field(default_factory=list)
+    evidencias: list[ReturnEvidenceResponseDTO] = Field(default_factory=list)
     fechaRegistro: str
     historial: list[dict[str, Any]] = Field(default_factory=list)
     recepciones: list[dict[str, Any]] = Field(default_factory=list)

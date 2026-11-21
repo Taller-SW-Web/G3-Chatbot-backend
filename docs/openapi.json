@@ -1485,7 +1485,7 @@
           },
           "evidencias": {
             "items": {
-              "$ref": "#/components/schemas/ReturnEvidenceDTO"
+              "$ref": "#/components/schemas/ReturnEvidenceResponseDTO"
             },
             "title": "Evidencias",
             "type": "array"
@@ -1504,7 +1504,7 @@
           },
           "items": {
             "items": {
-              "$ref": "#/components/schemas/ReturnItemDTO"
+              "$ref": "#/components/schemas/ReturnItemResponseDTO"
             },
             "title": "Items",
             "type": "array"
@@ -1575,6 +1575,25 @@
         "title": "ReturnEvidenceDTO",
         "type": "object"
       },
+      "ReturnEvidenceResponseDTO": {
+        "description": "G5 evidence echoed back: no request-side limits (url length) and extra fields ignored.",
+        "properties": {
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "url"
+        ],
+        "title": "ReturnEvidenceResponseDTO",
+        "type": "object"
+      },
       "ReturnItemDTO": {
         "additionalProperties": false,
         "properties": {
@@ -1594,6 +1613,25 @@
           "cantidad"
         ],
         "title": "ReturnItemDTO",
+        "type": "object"
+      },
+      "ReturnItemResponseDTO": {
+        "description": "G5 item echoed back: lenient, so extra G5 fields never turn a created return into a 503.",
+        "properties": {
+          "cantidad": {
+            "title": "Cantidad",
+            "type": "integer"
+          },
+          "productoId": {
+            "title": "Productoid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "productoId",
+          "cantidad"
+        ],
+        "title": "ReturnItemResponseDTO",
         "type": "object"
       },
       "ReturnListResponse": {

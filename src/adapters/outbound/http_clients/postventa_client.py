@@ -5,6 +5,7 @@ G5 validates ownership and links claims/returns to the authenticated `sub`.
 The base URL is the M2 Render service, separate from M1.
 """
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -119,7 +120,7 @@ class PostventaClient(BaseModuleClient, PostventaPort):
     ) -> dict[str, Any]:
         response = await self._request(
             "GET",
-            f"/api/v2/devoluciones/{return_id}",
+            f"/api/v2/devoluciones/{quote(return_id, safe='')}",
             headers=self._customer_headers(holder_token),
             correlation_id=correlation_id,
         )
@@ -171,7 +172,7 @@ class PostventaClient(BaseModuleClient, PostventaPort):
     ) -> dict[str, Any]:
         response = await self._request(
             "GET",
-            f"/api/v2/reclamos/{code}",
+            f"/api/v2/reclamos/{quote(code, safe='')}",
             headers=self._customer_headers(holder_token),
             correlation_id=correlation_id,
         )

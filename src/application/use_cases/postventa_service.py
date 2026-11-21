@@ -3,7 +3,9 @@
 Owns the channel rules that G5 delegates to the caller:
 - customer-token strategy for claims/returns/CSAT;
 - order ownership check for claims (G5 only validates the id format);
-- local idempotency via `claim_ref` / `return_ref`;
+- local idempotency via `claim_ref` / `return_ref`, committed through the unit of work
+  right after G5 accepts the request so a retry finds the persisted reference;
+- evidence/conversation ownership check before anything is uploaded to G5;
 - G3-facing pagination and response normalization.
 """
 import uuid
@@ -16,9 +18,12 @@ from src.application.dto.postventa_dto import (
     to_g5_return_reason,
     to_g5_return_type,
 )
+from src.domain.value_objects.caller_identity import CallerIdentity
+from src.ports.outbound.conversation_repository_port import ConversationRepositoryPort
 from src.ports.outbound.module_errors import ModuleRequestError
 from src.ports.outbound.order_repository_port import SalesOrderPort
 from src.ports.outbound.postventa_port import PostventaPort
+from src.ports.outbound.unit_of_work_port import UnitOfWorkPort
 
 
 class PostventaService:
@@ -29,12 +34,16 @@ class PostventaService:
         claim_refs: Any | None = None,
         return_refs: Any | None = None,
         evidence: Any | None = None,
+        conversations: ConversationRepositoryPort | None = None,
+        uow: UnitOfWorkPort | None = None,
     ) -> None:
         self._postventa = postventa
         self._sales = sales
         self._claim_refs = claim_refs
         self._return_refs = return_refs
         self._evidence = evidence
+        self._conversations = conversations
+        self._uow = uow
 
     async def upload_evidence(
         self,
@@ -44,8 +53,22 @@ class PostventaService:
         content_type: str,
         content: bytes,
         conversation_id: uuid.UUID | None = None,
+        customer_id: uuid.UUID | None = None,
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
+        # Ownership first: never upload to G5 for a foreign or missing conversation.
+        if conversation_id is not None and self._conversations is not None:
+            owned = (
+                await self._conversations.find_owned(
+                    conversation_id, CallerIdentity(customer_id=customer_id)
+                )
+                if customer_id is not None
+                else None
+            )
+            if owned is None:
+                raise PostventaError(
+                    "RECURSO_NO_ENCONTRADO", "No encontré esa conversación en tu cuenta."
+                )
         result = await self._postventa.upload_evidence(
             file_name=file_name,
             content_type=content_type,
@@ -64,6 +87,7 @@ class PostventaService:
                 size_bytes=int(result.get("tamanioBytes") or len(content)),
             )
             await self._evidence.guardar(row)
+            await self._commit()
         return result
 
     async def create_return(
@@ -104,6 +128,7 @@ class PostventaService:
                     idempotency_key=idempotency_key,
                 )
             )
+            await self._commit()
         return await self._postventa.get_customer_return(
             str(result["devolucionId"]), holder_token, correlation_id=correlation_id
         )
@@ -194,6 +219,7 @@ class PostventaService:
                     idempotency_key=idempotency_key,
                 )
             )
+            await self._commit()
         return await self._postventa.get_claim(
             str(result["codigoSeguimiento"]), holder_token, correlation_id=correlation_id
         )
@@ -257,6 +283,10 @@ class PostventaService:
         return await self._postventa.create_csat(
             g5_payload, holder_token=holder_token, correlation_id=correlation_id
         )
+
+    async def _commit(self) -> None:
+        if self._uow is not None:
+            await self._uow.commit()
 
     async def _existing_return(self, idempotency_key: str) -> Any | None:
         if not idempotency_key or self._return_refs is None:

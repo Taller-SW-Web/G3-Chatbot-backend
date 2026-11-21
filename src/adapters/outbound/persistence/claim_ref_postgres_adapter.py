@@ -15,12 +15,14 @@ class ClaimRefPostgresAdapter:
         self.session = session
 
     async def guardar(self, row: ClaimRef) -> ClaimRef:
-        self.session.add(row)
         try:
-            await self.session.flush()
+            # SAVEPOINT: a duplicate key must not discard other pending work of the
+            # caller's transaction (e.g. evidence rows), as a full rollback would.
+            async with self.session.begin_nested():
+                self.session.add(row)
+                await self.session.flush()
         except IntegrityError:
             # UNIQUE (idempotency_key): reintento con la misma clave.
-            await self.session.rollback()
             existing = await self.obtener_por_idempotency_key(row.idempotency_key)
             if existing is None:
                 raise

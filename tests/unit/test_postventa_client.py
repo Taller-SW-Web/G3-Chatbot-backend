@@ -122,3 +122,42 @@ def test_postventa_4xx_normalizes_codigo_to_code():
         anyio.run(run)
     assert exc_info.value.status == 409
     assert exc_info.value.code == "DEVOLUCION_EN_CURSO"
+
+
+@respx.mock
+def test_path_ids_are_url_encoded():
+    """Ids with `/` or `?` must stay one path segment (no path/query injection)."""
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.raw_path.decode())
+        return httpx.Response(200, json={"devolucionId": "x"})
+
+    respx.route(host="mock-postventa").mock(side_effect=handler)
+    client = PostventaClient(base_url=BASE_URL, timeout_seconds=5)
+
+    async def run():
+        await client.get_customer_return("DEV/../1?x=1", HOLDER)
+        await client.get_claim("REC/1?y=2", HOLDER)
+
+    anyio.run(run)
+    assert seen == [
+        "/api/v2/devoluciones/DEV%2F..%2F1%3Fx%3D1",
+        "/api/v2/reclamos/REC%2F1%3Fy%3D2",
+    ]
+
+
+@respx.mock
+def test_sales_order_lookup_url_encodes_order_id():
+    from src.adapters.outbound.http_clients.ventas_client import VentasClient
+
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.raw_path.decode())
+        return httpx.Response(200, json={"pedidoId": "x"})
+
+    respx.route(host="mock-ventas").mock(side_effect=handler)
+    client = VentasClient(base_url="http://mock-ventas:8081", timeout_seconds=5)
+    anyio.run(lambda: client.get_customer_order("PED/1?z=3", HOLDER))
+    assert seen == ["/api/v1/pedidos/PED%2F1%3Fz%3D3"]

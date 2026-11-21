@@ -1,7 +1,7 @@
 """Adapter return_ref (SPEC-21, SPEC-22).
 
 Referencia local idempotente a la devolucion de Ventas. Traduce el tipo
-en ambos sentidos (EN <-> ES) sin inventar literales. No hace commit.
+en ambos sentidos (EN <-> ES) sin inventar literales. No hace commit; un duplicado se resuelve con SAVEPOINT.
 """
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -38,12 +38,14 @@ class ReturnRefPostgresAdapter:
 
     async def guardar(self, row: ReturnRef) -> ReturnRef:
         row.requested_type = self.tipo_desde_ventas(row.requested_type)
-        self.session.add(row)
         try:
-            await self.session.flush()
+            # SAVEPOINT: a duplicate key must not discard other pending work of the
+            # caller's transaction (e.g. evidence rows), as a full rollback would.
+            async with self.session.begin_nested():
+                self.session.add(row)
+                await self.session.flush()
         except IntegrityError:
             # UNIQUE (idempotency_key): reintento con la misma clave.
-            await self.session.rollback()
             existing = await self.obtener_por_idempotency_key(row.idempotency_key)
             if existing is None:
                 raise

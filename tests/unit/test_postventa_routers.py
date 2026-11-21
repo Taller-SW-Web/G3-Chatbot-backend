@@ -2,6 +2,7 @@
 import uuid
 
 import anyio
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -177,3 +178,108 @@ def test_csat_requires_delivered_order():
         json={"puntuacion": 5, "comentario": "Excelente"},
     )
     assert response.status_code == 201
+
+
+# -- B2: lenient response DTOs, B3: evidence ownership over HTTP, M2: logging -------
+
+
+def test_return_detail_response_ignores_extra_g5_fields():
+    from src.application.dto.postventa_dto import ReturnDetailResponse
+
+    detail = ReturnDetailResponse.model_validate(
+        {
+            "devolucionId": "DEV-1",
+            "pedidoId": "PED-1",
+            "tipo": "CAMBIO",
+            "estado": "SOLICITADA",
+            "motivo": "OTRO",
+            "fechaRegistro": "2026-11-20T10:00:00Z",
+            "items": [{"productoId": "P-1", "cantidad": 2, "sku": "SKU-1", "nombre": "Zapatilla"}],
+            "evidencias": [
+                {"tipo": "IMAGEN", "url": "https://g5.example/" + "a" * 600, "fechaSubida": "x"}
+            ],
+        }
+    )
+    assert detail.items[0].cantidad == 2
+    assert len(detail.evidencias[0].url) > 500
+
+
+def test_return_request_stays_strict():
+    from pydantic import ValidationError
+
+    from src.application.dto.postventa_dto import CreateReturnRequest
+
+    with pytest.raises(ValidationError):
+        CreateReturnRequest.model_validate(
+            {
+                "pedidoId": "PED-1",
+                "tipo": "CAMBIO",
+                "motivo": "OTRO",
+                "items": [{"productoId": "P-1", "cantidad": 1, "extra": True}],
+            }
+        )
+
+
+class _OwnedConversations:
+    def __init__(self, owned):
+        self.owned = owned
+
+    async def find_owned(self, conversation_id, owner):
+        return object() if conversation_id in self.owned and owner.customer_id == CUSTOMER else None
+
+
+class _CountingG5(FakePostventaPort):
+    uploads = 0
+
+    async def upload_evidence(self, **kwargs):
+        self.uploads += 1
+        return await super().upload_evidence(**kwargs)
+
+
+def _upload_files():
+    return {"file": ("foto.png", b"png-bytes", "image/png")}
+
+
+def test_evidence_with_foreign_or_missing_conversation_is_404_and_skips_g5():
+    own = uuid.uuid4()
+    postventa = _CountingG5()
+    service = PostventaService(
+        postventa=postventa, sales=FakeSalesPort(), conversations=_OwnedConversations({own})
+    )
+    client = _app(service)
+
+    for conversation in (uuid.uuid4(), uuid.uuid4()):
+        response = client.post(
+            "/api/v1/evidencias",
+            headers=_headers(),
+            files=_upload_files(),
+            data={"conversacionId": str(conversation)},
+        )
+        assert response.status_code == 404, response.text
+        assert response.json()["code"] == "RECURSO_NO_ENCONTRADO"
+    assert postventa.uploads == 0
+
+    ok = client.post(
+        "/api/v1/evidencias",
+        headers=_headers(),
+        files=_upload_files(),
+        data={"conversacionId": str(own)},
+    )
+    assert ok.status_code == 201, ok.text
+    assert postventa.uploads == 1
+
+
+def test_unexpected_postventa_error_is_logged_and_503(caplog):
+    class Boom(FakePostventaPort):
+        async def get_customer_return(self, *args, **kwargs):
+            raise RuntimeError("boom")
+
+    service = PostventaService(postventa=Boom(), sales=FakeSalesPort())
+    client = _app(service)
+    with caplog.at_level("ERROR"):
+        response = client.get("/api/v1/devoluciones/DEV-1", headers=_headers())
+    assert response.status_code == 503
+    assert any(
+        r.exc_info and isinstance(r.exc_info[1], RuntimeError) for r in caplog.records
+    )
+    assert HOLDER not in caplog.text

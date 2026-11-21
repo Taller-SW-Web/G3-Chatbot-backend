@@ -305,6 +305,8 @@ def provide_postventa_service(session: AsyncSession = Depends(get_session)):
         claim_refs=None if fake else ClaimRefPostgresAdapter(session),
         return_refs=None if fake else ReturnRefPostgresAdapter(session),
         evidence=None if fake else EvidencePostgresAdapter(session),
+        conversations=None if fake else ConversationPostgresAdapter(session),
+        uow=None if fake else SqlAlchemyUnitOfWork(session),
     )
 
 
