@@ -9,8 +9,8 @@ import httpx
 import pytest
 import respx
 
-from src.infrastructure.config.container import provide_security_client
 from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.infrastructure.auth.providers import provide_security_client
 from src.shared.infrastructure.config.settings import get_settings
 from src.shared.infrastructure.http.base_client import ModuleUnavailableError
 from src.shared.infrastructure.http.security_client import SecurityClient

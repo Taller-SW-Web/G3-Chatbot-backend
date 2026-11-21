@@ -93,3 +93,12 @@ class InMemoryRateLimiter:
             return max(1, math.ceil(bucket[0] + rule.window_seconds - now))
         bucket.append(now)
         return None
+
+
+# One limiter per process: see the module docstring for the multi-instance caveat.
+_RATE_LIMITER = InMemoryRateLimiter()
+
+
+def provide_rate_limiter() -> InMemoryRateLimiter:
+    """Process-wide limiter shared by the public session and chat endpoints."""
+    return _RATE_LIMITER

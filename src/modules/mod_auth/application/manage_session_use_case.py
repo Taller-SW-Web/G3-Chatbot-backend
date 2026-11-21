@@ -19,24 +19,13 @@ from src.shared.application.ports.token_validator_port import (
     AccountNotAllowedError,
     InvalidTokenError,
 )
+from src.shared.domain.masking import mask_email
 from src.shared.domain.module_errors import ModuleRequestError
 
 logger = logging.getLogger(__name__)
 
 MAX_QTY_PER_LINE = 10
 PASSWORD_POLICY_TTL_SECONDS = 10 * 60
-
-
-def mask_email(email: str) -> str:
-    """Masks the local part, keeping the first and last character (`m****a@correo.com`)."""
-    local, _, domain = email.strip().partition("@")
-    if not domain or not local:
-        return "***"
-    if len(local) <= 2:
-        masked = "*" * len(local)
-    else:
-        masked = local[0] + "*" * (len(local) - 2) + local[-1]
-    return f"{masked}@{domain}"
 
 
 def merge_cart_lines(anonymous_lines: list[dict], customer_lines: list[dict]) -> list[dict]:

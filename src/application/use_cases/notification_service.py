@@ -28,7 +28,6 @@ from src.application.notifications.order_confirmation import (
     chat_notice,
     recipient_of,
 )
-from src.application.use_cases.manage_session_use_case import mask_email
 from src.ports.outbound.email_sender_port import (
     EmailDeliveryError,
     EmailMessage,
@@ -42,6 +41,7 @@ from src.shared.application.ports.notification_repository_port import (
     NotificationRepositoryPort,
 )
 from src.shared.application.unit_of_work_port import UnitOfWorkPort
+from src.shared.domain.masking import mask_email
 
 logger = logging.getLogger(__name__)
 

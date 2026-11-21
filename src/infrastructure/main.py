@@ -11,7 +11,6 @@ from src.adapters.inbound.http.claims_router import create_claims_router
 from src.adapters.inbound.http.csat_router import create_csat_router
 from src.adapters.inbound.http.orders_router import create_orders_router
 from src.adapters.inbound.http.returns_router import create_returns_router
-from src.adapters.inbound.http.session_router import create_session_router
 from src.adapters.inbound.http.shipping_router import create_shipping_router
 from src.infrastructure.config.container import (
     provide_action_scope,
@@ -19,15 +18,15 @@ from src.infrastructure.config.container import (
     provide_catalog_service,
     provide_chatbot_service,
     provide_checkout_service,
-    provide_manage_session,
     provide_orders_service,
     provide_postventa_service,
-    provide_rate_limiter,
     provide_shipping_service,
     provide_turn_scope,
 )
+from src.modules.mod_auth.module import router as auth_router
 from src.shared.infrastructure.config.settings import MODULES_WITH_ADAPTERS, get_settings
 from src.shared.infrastructure.http.correlation import CorrelationMiddleware
+from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
 from src.shared.infrastructure.http.health_router import router as health_router
 from src.shared.infrastructure.http.problem import register_problem_handlers
 from src.shared.infrastructure.worker.outbox_loop import outbox_worker_lifespan
@@ -63,15 +62,7 @@ def create_app(
     app.add_middleware(CorrelationMiddleware)
     register_problem_handlers(app)
     app.include_router(health_router)
-    app.include_router(
-        create_session_router(
-            provide_manage_session,
-            cookie_secure=settings.cookie_secure,
-            allowed_origins=settings.allowed_origins,
-            rate_limiter=limiter,
-        ),
-        prefix=API_PREFIX,
-    )
+    app.include_router(auth_router, prefix=API_PREFIX)
     app.include_router(
         create_chatbot_router(
             provide_chatbot_service,

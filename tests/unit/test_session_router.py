@@ -3,8 +3,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.session_router import create_session_router
-from src.application.use_cases.manage_session_use_case import (
+from src.modules.mod_auth.adapters.http.session_router import create_session_router
+from src.modules.mod_auth.application.manage_session_use_case import (
     InvalidCredentialsError,
     RefreshInvalidError,
 )

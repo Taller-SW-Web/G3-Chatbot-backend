@@ -11,8 +11,8 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from src.application.use_cases.manage_session_use_case import mask_email
 from src.shared.application.ports.notification_repository_port import ConfirmationSource
+from src.shared.domain.masking import mask_email
 
 CURRENCY_PREFIX = "S/"
 CARD_BRANDS = {"VISA": "Visa", "MASTERCARD": "Mastercard", "AMEX": "Amex", "DINERS": "Diners"}

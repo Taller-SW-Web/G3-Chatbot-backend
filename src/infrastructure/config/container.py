@@ -52,7 +52,6 @@ from src.application.use_cases.manage_catalog_use_case import (
 )
 from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
-from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
 from src.application.use_cases.manage_shipping_use_case import ManageShippingUseCase
 from src.application.use_cases.notification_service import NotificationError, NotificationService
 from src.domain.services.status_mapper import map_order_status_label
@@ -62,20 +61,16 @@ from src.shared.application.ports.order_repository_port import SalesOrderPort
 from src.shared.application.tools.tool_registry import ToolRegistry
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
-from src.shared.infrastructure.auth.jwks_token_validator import JwksTokenValidator
+from src.shared.infrastructure.auth.providers import (
+    provide_security_port,
+    provide_service_token_provider,
+)
 from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db import connection
 from src.shared.infrastructure.db.connection import get_session
-from src.shared.infrastructure.fakes.fake_security import (
-    FakeAccessTokenValidator,
-    FakeSecurityAdapter,
-    FakeServiceTokenProvider,
-)
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 from src.shared.infrastructure.http.base_client import BaseModuleClient
-from src.shared.infrastructure.http.dependencies.rate_limiter import InMemoryRateLimiter
-from src.shared.infrastructure.http.security_client import SecurityClient
 from src.shared.infrastructure.http.ventas_client import VentasClient
 from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
@@ -95,13 +90,6 @@ from src.shared.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, O
 # by the wiring and injected, so use cases never share a module global.
 _CATALOG_OPTION_CACHE = OptionCache()
 
-# Fake Seguridad state is a singleton on purpose: registrations must survive
-# across requests so the demo flow (registro -> verificar -> login) works.
-_FAKE_SECURITY = FakeSecurityAdapter()
-_FAKE_TOKEN_VALIDATOR = FakeAccessTokenValidator(_FAKE_SECURITY)
-_FAKE_SERVICE_TOKEN_PROVIDER = FakeServiceTokenProvider()
-# One limiter per process: see its module docstring for the multi-instance caveat.
-_RATE_LIMITER = InMemoryRateLimiter()
 # Without SMTP_HOST the confirmations land here (process-wide, inspectable in local runs).
 _FAKE_EMAIL_SENDER = FakeEmailSender()
 _EMAIL_RENDERER = JinjaEmailRenderer()
@@ -324,75 +312,6 @@ def provide_despacho_client(settings: Settings | None = None):
     )
 
 
-def provide_security_client(
-    settings: Settings | None = None, client_secret: str | None = None
-) -> SecurityClient:
-    """Typed Seguridad client (SPEC-01..03): base URL + 5 s timeout
-    from Settings. The secret (SECURITY_CLIENT_SECRET, A3) only feeds the service
-    token provider used by introspection; no other request carries it.
-
-    Customer endpoints (registration, login, MFA, session, profile) are public or
-    use the holder token, so a missing secret only disables introspection
-    instead of breaking the whole client."""
-    settings = settings or get_settings()
-    secret = (client_secret or settings.security_client_secret).strip()
-    service_token_provider = (
-        SecurityServiceTokenProvider(
-            base_url=settings.security_base_url,
-            client_id=settings.security_client_id,
-            client_secret=secret,
-            timeout_seconds=settings.security_timeout_seconds,
-        )
-        if secret
-        else None
-    )
-    return SecurityClient(
-        base_url=settings.security_base_url,
-        timeout_seconds=settings.security_timeout_seconds,
-        service_token_provider=service_token_provider,
-    )
-
-
-def provide_security_port(settings: Settings | None = None):
-    """Seguridad port honoring the security mode (`SECURITY_MODE`, else `MODULES_MODE`, ADR-0022): in-process fake or HTTP client."""
-    settings = settings or get_settings()
-    if settings.module_mode("security") == "fake":
-        return _FAKE_SECURITY
-    return provide_security_client(settings)
-
-
-def provide_access_token_validator(settings: Settings | None = None):
-    """Local token validator honoring the security mode: fake claims or JWKS (SPEC-03 Req. 5)."""
-    settings = settings or get_settings()
-    if settings.module_mode("security") == "fake":
-        return _FAKE_TOKEN_VALIDATOR
-    return JwksTokenValidator(
-        security_base_url=settings.security_base_url,
-        expected_issuer=settings.security_expected_issuer,
-    )
-
-
-def provide_service_token_provider(settings: Settings | None = None):
-    """Service token provider for privileged calls (A3), following the security mode."""
-    settings = settings or get_settings()
-    if settings.module_mode("security") == "fake":
-        return _FAKE_SERVICE_TOKEN_PROVIDER
-    secret = settings.security_client_secret.strip()
-    if not secret:
-        return None
-    return SecurityServiceTokenProvider(
-        base_url=settings.security_base_url,
-        client_id=settings.security_client_id,
-        client_secret=secret,
-        timeout_seconds=settings.security_timeout_seconds,
-    )
-
-
-def provide_rate_limiter() -> InMemoryRateLimiter:
-    """Process-wide limiter for the public registration endpoints (SPEC-01/02)."""
-    return _RATE_LIMITER
-
-
 def provide_payment_gateway() -> PaymentSimulatorAdapter:
     return PaymentSimulatorAdapter()
 
@@ -416,22 +335,6 @@ def provide_checkout_service(
         outbox=OutboxPostgresAdapter(session),
         dispatch=provide_despacho_client(settings),
     )
-
-
-def provide_manage_session(session: AsyncSession = Depends(get_session)) -> ManageSessionUseCase:
-    """Customer session service (SPEC-03): orchestration over the Seguridad port.
-
-    The local token validator enforces the `CLIENTE` role before a session is
-    opened; the persistence ports feed `celularVerificado` / `ultimoDocumento`.
-    """
-    settings = get_settings()
-    return ManageSessionUseCase(
-        security=provide_security_port(settings),
-        validator=provide_access_token_validator(settings),
-        phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
-        checkouts=CheckoutPostgresAdapter(session),
-    )
-
 
 def provide_email_sender(settings: Settings | None = None):
     """SMTP when SMTP_HOST is set (Mailtrap in development); otherwise the in-memory fake (SPEC-16)."""

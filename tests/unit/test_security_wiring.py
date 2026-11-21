@@ -1,11 +1,10 @@
 """Seguridad wiring: fake/http selection and the process-wide rate limiter (ADR-0022)."""
-from src.infrastructure.config.container import (
+from src.shared.infrastructure.auth.jwks_token_validator import JwksTokenValidator
+from src.shared.infrastructure.auth.providers import (
     provide_access_token_validator,
-    provide_rate_limiter,
     provide_security_port,
     provide_service_token_provider,
 )
-from src.shared.infrastructure.auth.jwks_token_validator import JwksTokenValidator
 from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
 from src.shared.infrastructure.config.settings import Settings
 from src.shared.infrastructure.fakes.fake_security import (
@@ -13,7 +12,10 @@ from src.shared.infrastructure.fakes.fake_security import (
     FakeSecurityAdapter,
     FakeServiceTokenProvider,
 )
-from src.shared.infrastructure.http.dependencies.rate_limiter import InMemoryRateLimiter
+from src.shared.infrastructure.http.dependencies.rate_limiter import (
+    InMemoryRateLimiter,
+    provide_rate_limiter,
+)
 from src.shared.infrastructure.http.security_client import SecurityClient
 
 

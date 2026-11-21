@@ -4,8 +4,8 @@ import uuid
 import pytest
 from starlette.requests import Request
 
-from src.infrastructure.config.container import provide_security_port
 from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.auth.providers import provide_security_port
 from src.shared.infrastructure.config.settings import Settings
 from src.shared.infrastructure.fakes.fake_security import FakeAccessTokenValidator
 from src.shared.infrastructure.http.dependencies import jwt_validator

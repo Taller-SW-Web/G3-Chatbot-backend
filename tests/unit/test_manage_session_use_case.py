@@ -3,7 +3,7 @@ import logging
 
 import pytest
 
-from src.application.use_cases.manage_session_use_case import (
+from src.modules.mod_auth.application.manage_session_use_case import (
     InvalidCredentialsError,
     ManageSessionUseCase,
     RefreshInvalidError,

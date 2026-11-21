@@ -16,7 +16,8 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.application.use_cases.manage_session_use_case import (
+from src.modules.mod_auth import MODULE_ID
+from src.modules.mod_auth.application.manage_session_use_case import (
     InvalidCredentialsError,
     ManageSessionUseCase,
     RefreshInvalidError,
@@ -196,7 +197,7 @@ def create_session_router(
     rate_limiter: InMemoryRateLimiter | None = None,
 ) -> APIRouter:
     """`session_provider` is a FastAPI dependency; infrastructure wires it, tests replace it."""
-    router = APIRouter(prefix="/sesion", tags=["sesion"])
+    router = APIRouter(prefix="/sesion", tags=[MODULE_ID])
     limiter = rate_limiter or InMemoryRateLimiter()
 
     def _service_unavailable() -> ProblemError:

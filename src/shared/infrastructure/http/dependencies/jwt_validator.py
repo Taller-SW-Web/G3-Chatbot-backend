@@ -10,13 +10,13 @@ from functools import lru_cache
 
 from fastapi import Depends, Request
 
-from src.infrastructure.config.container import provide_access_token_validator
 from src.shared.application.ports.token_validator_port import (
     AccessTokenValidatorPort,
     AccountNotAllowedError,
     InvalidTokenError,
 )
 from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.auth.providers import provide_access_token_validator
 from src.shared.infrastructure.config.settings import get_settings
 from src.shared.infrastructure.http.problem import ProblemError
 
