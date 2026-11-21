@@ -261,7 +261,7 @@ class ManageCartUseCase:
         for row in rows:
             projection = self._stock.check_row(statuses.get(row.sku))
             quantity = self._stock.check_quantity(
-                (verdicts.get(row.sku) or {}).get("veredicto")
+                (verdicts.get(row.sku) or {}).get("result")
             )
             outcome[row.sku] = {
                 "projection": projection.code,
@@ -368,7 +368,7 @@ class ManageCartUseCase:
             raise CartError(
                 "LIMITE_CANTIDAD", "Tu carrito llegó al máximo de 20 productos distintos"
             )
-        await self._check_can_sell(sku_value, current + quantity)
+        warning = await self._check_can_sell(sku_value, current + quantity)
         captured_price: list[dict] = []
         price = await self._live_price(sku_value, captured_price)
         if conversation_id is not None and captured_price:
@@ -399,7 +399,8 @@ class ManageCartUseCase:
         if added is not None:
             added.append(str(detail.get("product_id")))
         prefijo = f"Agregué {detail.get('name') or sku_value} (S/ {float(price):.2f})."
-        return f"{prefijo}{self._variant_suffix(variant)}"
+        suffix = f"{prefijo}{self._variant_suffix(variant)}"
+        return f"{suffix} {warning}" if warning else suffix
 
     async def _set_quantity(self, cart, item_id, item_ref, name, quantity) -> str:
         row = await self._resolve_line(cart, item_id, item_ref, name)
@@ -408,11 +409,12 @@ class ManageCartUseCase:
             return f"Quité {row.name} del carrito."
         if not 1 <= quantity <= MAX_PER_LINE:
             raise CartError("LIMITE_CANTIDAD", "El máximo por producto es 10 unidades")
-        await self._check_can_sell(row.sku, quantity)
+        warning = await self._check_can_sell(row.sku, quantity)
         await self._items.set_quantity(
             row.id, quantity=quantity, unit_price_ref=float(await self._live_price(row.sku))
         )
-        return f"Cambié {row.name} a {quantity}."
+        message = f"Cambié {row.name} a {quantity}."
+        return f"{message} {warning}" if warning else message
 
     async def _drop_line(self, cart, item_id, item_ref, name) -> str:
         row = await self._resolve_line(cart, item_id, item_ref, name)
@@ -692,19 +694,21 @@ class ManageCartUseCase:
             return {}
         return await self._conversations.get_context(conversation_id)
 
-    async def _check_can_sell(self, sku: str, total: int) -> None:
+    async def _check_can_sell(self, sku: str, total: int) -> str | None:
+        """Reject a non-sellable SKU; return the warning to append when it is accepted."""
         rows = await self._inventory.get_availability([sku])
-        projection = self._stock.check_row(rows[0] if rows else None)
+        match = next((row for row in rows if row.get("sku") == sku), None)
+        projection = self._stock.check_row(match)
         if not projection.ok:
             raise CartError(projection.code, f"sku {sku} is not sellable")
         verdicts = await self._inventory.verify_quantities(
             [{"sku": sku, "quantity": total}]
         )
-        quantity = self._stock.check_quantity(
-            (verdicts[0].get("veredicto") if verdicts else None)
-        )
+        verdict = next((row for row in verdicts if row.get("sku") == sku), None)
+        quantity = self._stock.check_quantity((verdict or {}).get("result"))
         if not quantity.ok:
             raise CartError(quantity.code, f"sku {sku} lacks stock for {total}")
+        return quantity.message or projection.message
 
     async def _live_price(self, sku: str, captured=None) -> Decimal:
         # SPEC-11 Req. 3: the subtotal is the *regular* price x quantity;
@@ -801,6 +805,17 @@ class ManageCartUseCase:
             return exc
         if isinstance(exc, ModuleRequestError) and exc.status == 404 and inactive:
             return CartError("PRODUCTO_NO_DISPONIBLE", exc.code)
+        if isinstance(exc, ModuleRequestError) and exc.status == 429:
+            # A17: rate limiting is not a commercial state; keep the HTTP meaning.
+            retry_after = getattr(exc, "retry_after", None)
+            return CartError(
+                "DEMASIADAS_SOLICITUDES",
+                "Productos limitó las consultas; intenta en unos segundos.",
+                {"retryAfter": retry_after} if retry_after else None,
+            )
+        if isinstance(exc, ModuleRequestError) and exc.status in (401, 403, 422):
+            # Authorization and invalid-payload answers never become stock states.
+            return CartError("SERVICIO_NO_DISPONIBLE", exc.code)
         if isinstance(exc, ModuleRequestError):
             return CartError(exc.code, exc.detail)
         if isinstance(exc, ModuleUnavailableError):

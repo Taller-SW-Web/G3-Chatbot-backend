@@ -95,7 +95,7 @@ async def test_unknown_availability_does_not_claim_low_stock():
     uc, ctx = g6_service([g6_detail("p", "brand")])
     uc._inventory.get_availability.return_value = [{"sku": "p-42", "status": "INDETERMINADO"}]
     result = await uc.availability(AvailabilityArguments(product_id="p", talla="42"), ctx)
-    assert result["texto"] == "No pudimos confirmar el stock."
+    assert result["texto"] == "No puedo confirmar el stock ahora mismo."
 
 
 @pytest.mark.parametrize("rows", [[], [{"sku": "other", "status": "DISPONIBLE"}],

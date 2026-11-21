@@ -35,7 +35,7 @@ def make_cart_use_case(statuses=None, uow=None):
     conversations = FakeConversations()
     cart_uc = ManageCartUseCase(
         FakeCarts(), FakeItems(), FakeCatalogPort(),
-        FakeInventoryPort(statuses or {}), conversations, FakeMessages(),
+        FakeInventoryPort(statuses or {}, default="DISPONIBLE"), conversations, FakeMessages(),
         uow or FakeUow(),
     )
     return cart_uc, conversations

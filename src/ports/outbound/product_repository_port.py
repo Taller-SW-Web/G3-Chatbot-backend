@@ -126,8 +126,11 @@ class InventoryPort(Protocol):
         channel_id: str = "CHATBOT",
         correlation_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Non-binding per-line verdicts (`SUFICIENTE`, `INSUFICIENTE`,
-        `INDETERMINADO`) for requested quantities (SPEC-10)."""
+        """Non-binding per-line verdicts for requested quantities (SPEC-10).
+
+        Rows follow the OpenAPI: `{sku, requested_quantity, result, reason_code}`
+        where `result` is `SUFICIENTE`, `INSUFICIENTE` or `INDETERMINADO`.
+        """
         ...
 
     async def get_sku_availability(

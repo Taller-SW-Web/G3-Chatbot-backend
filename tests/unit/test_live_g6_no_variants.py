@@ -106,7 +106,7 @@ def test_rest_projects_simple_products(endpoint):
     ("DISPONIBLE", "DISPONIBLE", "stock disponible"),
     ("STOCK_BAJO", "POCAS_UNIDADES", "pocas unidades"),
     ("AGOTADO", "AGOTADO", "agotado"),
-    ("INDETERMINADO", "INDETERMINADO", "No pudimos confirmar"),
+    ("INDETERMINADO", "INDETERMINADO", "No puedo confirmar"),
 ])
 @pytest.mark.asyncio
 async def test_simple_availability_valid_states(status, badge, text):

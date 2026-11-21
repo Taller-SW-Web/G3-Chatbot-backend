@@ -56,6 +56,7 @@ def test_default_wiring_exposes_registration_plus_commercial_tools():
         "cambiar_cantidad",
         "quitar_del_carrito",
         "vaciar_carrito",
+        "consultar_pedidos",
     ]
 
 

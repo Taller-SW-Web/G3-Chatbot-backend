@@ -18,7 +18,8 @@ def test_fk_conversation_message_attachment_resuelven_modelos_reales(persistence
     # (carrito y checkout); `return_ref` es el mínimo que exige evidence.
     assert {t.name for t in persistence_metadata.sorted_tables} == {
         "conversation", "message", "attachment", "evidence", "return_ref",
-        "cart", "cart_item", "checkout",
+        "cart", "cart_item", "checkout", "payment_attempt", "order_ref",
+        "notification", "outbox",
     }
 
 

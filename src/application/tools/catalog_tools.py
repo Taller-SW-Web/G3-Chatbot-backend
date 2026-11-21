@@ -75,6 +75,15 @@ class SearchArguments(ToolArguments):
         return self
 
 
+class OrderQueryArguments(ToolArguments):
+    """SPEC-17: one order by number (`pedidoId`), or the customer's list by state."""
+
+    pedidoId: Text | None = None
+    estado: Literal[
+        "CREADO", "PAGADO", "EN_PREPARACION", "DESPACHADO", "ENTREGADO", "ANULADO"
+    ] | None = None
+
+
 class ProductArguments(ToolArguments):
     productoRef: Annotated[int, Field(strict=True, ge=1, le=10)] | None = None
     product_id: Text | None = None
@@ -167,6 +176,10 @@ _TOOLS = (
     ("cambiar_cantidad", "Cambiar cantidad de una línea; cero elimina la línea.", QuantityArguments),
     ("quitar_del_carrito", "Quitar una línea del carrito.", ItemArguments),
     ("vaciar_carrito", "Vaciar el carrito tras confirmación explícita en la UI.", EmptyArguments),
+    ("consultar_pedidos", (
+        "Consultar el estado de los pedidos del cliente con sesión iniciada. Sin argumentos lista "
+        "sus pedidos recientes; con `pedidoId` muestra ese pedido, su estado y su línea de tiempo."
+    ), OrderQueryArguments),
 )
 
 
@@ -195,6 +208,7 @@ def build_tool_registry(handlers: Mapping[str, ToolHandler] | None = None) -> To
             continue
         registry.registrar(ToolDefinition(
             nombre, descripcion, esquema, handlers[nombre],
+            requiere_sesion=nombre == "consultar_pedidos",
             requiere_confirmacion=nombre == "vaciar_carrito",
         ))
     return registry

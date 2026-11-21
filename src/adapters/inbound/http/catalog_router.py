@@ -140,18 +140,21 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         except Exception as exc:
             raise _problem(_as_catalog_error(exc)) from exc
         obtained = sku.strip() in statuses
-        out = [AvailabilityOut(sku=sku.strip(), status=statuses.get(sku.strip(), "INDETERMINADO"),
+        # D2: a missing row is "availability not obtained", not the contract's INDETERMINADO.
+        status = statuses.get(sku.strip(), "SERVICIO_NO_DISPONIBLE")
+        out = [AvailabilityOut(sku=sku.strip(), status=status,
                                missing_data=[] if obtained else ["availability"],
                                mensaje=("No pudimos consultar la disponibilidad en este momento, intenta de nuevo."
                                         if not obtained else "No se pudo confirmar el stock."
-                                        if statuses[sku.strip()] == "INDETERMINADO" else None))]
+                                        if status == "INDETERMINADO" else None))]
         if cantidad is not None and obtained:
             try:
                 verdicts = await service.inventory.verify_quantities(
                     [{"sku": sku.strip(), "quantity": cantidad}])
             except Exception as exc:
                 raise _problem(_as_catalog_error(exc)) from exc
-            by_sku = {v.get("sku"): v.get("veredicto") for v in verdicts}
+            # Upstream answers `result`; our REST field keeps the published name `veredicto`.
+            by_sku = {v.get("sku"): v.get("result") for v in verdicts}
             out = [row.model_copy(update={"veredicto": by_sku.get(row.sku)})
                    for row in out]
         return out

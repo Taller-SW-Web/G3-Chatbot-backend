@@ -20,6 +20,9 @@ QUICK_ACTIONS = {
     "CAMBIAR_CANTIDAD": "cambiar_cantidad",
     "QUITAR_DEL_CARRITO": "quitar_del_carrito",
     "VACIAR_CARRITO": "vaciar_carrito",
+    "CONSULTAR_PEDIDOS": "consultar_pedidos",
+    "MIS_PEDIDOS": "consultar_pedidos",
+    "VER_PEDIDO": "consultar_pedidos",
 }
 
 
