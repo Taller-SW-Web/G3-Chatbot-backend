@@ -11,8 +11,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from src.application.tools.action_dispatcher import ActionDispatcher
-from src.application.tools.catalog_handlers import build_catalog_handlers
 from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort, FakeInventoryPort
 from src.modules.mod_catalog.adapters.http.catalog_router import create_catalog_router
 from src.modules.mod_catalog.adapters.inventory_client import InventoryClient
@@ -27,6 +25,8 @@ from src.modules.mod_catalog.application.tools import (
     build_tool_registry,
 )
 from src.modules.mod_catalog.domain.offer_policy import price_projection, promotion_summaries
+from src.modules.mod_chat.application.tools.action_dispatcher import ActionDispatcher
+from src.modules.mod_chat.application.tools.catalog_handlers import build_catalog_handlers
 from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.module_errors import ModuleUnavailableError
 from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
@@ -252,7 +252,7 @@ async def test_cart_expired_offer_notice_and_authoritative_evaluation():
 
 @pytest.mark.asyncio
 async def test_streamed_recommendations_reject_model_factual_justification():
-    from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
+    from src.modules.mod_chat.adapters.registry_tool_adapter import RegistryToolAdapter
     from tests.unit.test_interpret_and_respond_use_case import build, reply, run, tool_turn
     discovery, _ = service()
     adapter = RegistryToolAdapter(build_tool_registry(build_catalog_handlers(discovery)))
@@ -276,7 +276,7 @@ async def test_streamed_recommendations_reject_model_factual_justification():
     (True, "no quiero ese color", None),
 ])
 async def test_stream_refusal_only_silences_pending_cross_sell(pending, text, expected):
-    from src.ports.outbound.tool_executor_port import ToolResult
+    from src.modules.mod_chat.ports.tool_executor_port import ToolResult
     from tests.fakes.fake_tool_executor import FakeToolExecutor
     from tests.unit.test_interpret_and_respond_use_case import build, reply, run
     tools = FakeToolExecutor({"silenciar_complementos": ToolResult("OK", {"texto": "Silenciado"})})

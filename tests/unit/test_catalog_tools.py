@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel
 
-from src.application.tools.action_dispatcher import ActionDispatcher
 from src.modules.mod_catalog.application.tools import EmptyArguments, build_tool_registry
+from src.modules.mod_chat.application.tools.action_dispatcher import ActionDispatcher
 from src.shared.application.tools.tool_registry import (
     ExecutionContext,
     ToolDefinition,

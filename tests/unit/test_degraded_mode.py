@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.services.degraded_mode import DegradedMode
+from src.modules.mod_chat.domain.degraded_mode import DegradedMode
 
 
 @pytest.mark.parametrize("llm,expected", [(False, True), (True, False)])

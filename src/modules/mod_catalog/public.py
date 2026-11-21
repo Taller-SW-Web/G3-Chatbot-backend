@@ -4,6 +4,7 @@
 ports, the catalog use case and the pure product rules from here. Anything
 else in `domain/`, `application/` or `adapters/` is private to the module.
 """
+from src.modules.mod_catalog.application.discovery import fold
 from src.modules.mod_catalog.application.manage_catalog_use_case import (
     CatalogError,
     ManageCatalogUseCase,
@@ -58,6 +59,7 @@ __all__ = [
     "amount",
     "build_tool_registry",
     "find_product_by_name",
+    "fold",
     "instant",
     "known_selection",
     "normalize_detail",

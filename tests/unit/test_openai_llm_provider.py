@@ -10,9 +10,9 @@ import httpx2
 import pytest
 from openai import AsyncOpenAI
 
-from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
-from src.infrastructure.config.container import provide_llm_provider
-from src.ports.outbound.llm_provider_port import (
+from src.modules.mod_chat.adapters.openai_nlp_adapter import OpenAILLMProvider
+from src.modules.mod_chat.module import provide_llm_provider
+from src.modules.mod_chat.ports.llm_provider_port import (
     Completed,
     ImagePart,
     LLMMessage,

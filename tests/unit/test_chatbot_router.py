@@ -7,9 +7,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.chatbot_router import create_chatbot_router
 from src.infrastructure.main import create_app
-from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
+from src.modules.mod_chat.adapters.http.chatbot_router import create_chatbot_router
+from src.modules.mod_chat.ports.chatbot_service_port import ConversationNotFoundError
 from src.shared.application.ports.token_validator_port import InvalidTokenError
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.entities.conversation import (

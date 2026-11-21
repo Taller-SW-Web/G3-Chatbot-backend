@@ -47,9 +47,9 @@ async def test_loop_survives_a_failed_iteration_and_logs_only_the_error_class(ca
 
 @pytest.mark.asyncio
 async def test_lifespan_starts_and_cancels_the_loop(monkeypatch):
-    from src.infrastructure.config import container
     from src.shared.infrastructure.config import settings
     from src.shared.infrastructure.db import connection
+    from src.shared.infrastructure.di import container
 
     started = asyncio.Event()
     cancelled = asyncio.Event()

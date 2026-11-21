@@ -9,8 +9,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.application.tools.action_dispatcher import ActionDispatcher
-from src.application.tools.cart_handlers import build_cart_handlers
 from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort
 from src.modules.mod_catalog.adapters.http.catalog_router import create_catalog_router
 from src.modules.mod_catalog.application import manage_catalog_use_case as catalog_module
@@ -24,6 +22,8 @@ from src.modules.mod_catalog.application.tools import (
 from src.modules.mod_catalog.domain.offer_policy import price_projection
 from src.modules.mod_catalog.domain.product_projection import sellable_skus
 from src.modules.mod_catalog.domain.variant_resolver import VariantResolver
+from src.modules.mod_chat.application.tools.action_dispatcher import ActionDispatcher
+from src.modules.mod_chat.application.tools.cart_handlers import build_cart_handlers
 from src.shared.application.tools.tool_registry import ExecutionContext
 from tests.unit.test_astra_regressions import cards, g6_service
 from tests.unit.test_cart_use_case import CONVERSATION_ID, CUSTOMER_ID, make_cart_use_case, owned

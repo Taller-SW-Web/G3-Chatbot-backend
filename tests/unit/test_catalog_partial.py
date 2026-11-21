@@ -7,7 +7,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.application.tools.catalog_handlers import build_catalog_handlers
 from src.modules.mod_catalog.adapters.http.catalog_router import create_catalog_router
 from src.modules.mod_catalog.adapters.inventory_client import InventoryClient
 from src.modules.mod_catalog.adapters.products_client import ProductsClient
@@ -20,6 +19,7 @@ from src.modules.mod_catalog.application.tools import (
     RecommendationArguments,
     SearchArguments,
 )
+from src.modules.mod_chat.application.tools.catalog_handlers import build_catalog_handlers
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.http.problem import register_problem_handlers
 from tests.unit.test_discovery import PROMO, service

@@ -9,16 +9,16 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.requests import ClientDisconnect
 
-from src.application.dto.conversation_events import (
+from src.infrastructure.main import create_app
+from src.modules.mod_chat.application.dto.conversation_events import (
     BlockEvent,
     DegradedEvent,
     FinalEvent,
     MessageAcceptedEvent,
     TokenEvent,
 )
-from src.application.use_cases.interpret_and_respond_use_case import InvalidMessageError
-from src.infrastructure.main import create_app
-from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
+from src.modules.mod_chat.application.interpret_and_respond_use_case import InvalidMessageError
+from src.modules.mod_chat.ports.chatbot_service_port import ConversationNotFoundError
 from src.shared.application.ports.token_validator_port import InvalidTokenError
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.entities.message import Message, MessageRole
@@ -105,7 +105,7 @@ class FakeDirectActionService:
 
     async def execute(self, caller, conversation_id, action):
         self.actions.append((caller, conversation_id, action))
-        from src.application.use_cases.dispatch_direct_action_use_case import DirectActionResult
+        from src.modules.mod_chat.application.dispatch_direct_action_use_case import DirectActionResult
 
         assistant = message(MessageRole.ASSISTANT, "", ASSISTANT_ID)
         return DirectActionResult(

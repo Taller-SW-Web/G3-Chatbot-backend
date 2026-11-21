@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from src.domain.services.output_validator import OutputValidator
+from src.modules.mod_chat.domain.output_validator import OutputValidator
 
 
 @pytest.mark.parametrize("texto,monto", [
@@ -109,7 +109,7 @@ def test_detecta_formas_naturales_de_anunciar_descuento(texto):
 
 
 def test_extract_pen_amounts_reads_soles_and_ignores_usd():
-    from src.domain.services.output_validator import extract_pen_amounts
+    from src.modules.mod_chat.domain.output_validator import extract_pen_amounts
 
     assert extract_pen_amounts("Cuesta S/ 279.90, antes 329,90 soles o US$ 80") == {
         Decimal("279.90"), Decimal("329.90"),

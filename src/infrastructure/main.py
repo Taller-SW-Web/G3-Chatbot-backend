@@ -1,28 +1,22 @@
-"""FastAPI application factory. Run: uvicorn src.infrastructure.main:app"""
+"""FastAPI application factory. Run: uvicorn src.infrastructure.main:app
+
+This is the composition root (ADR-0024): it discovers `src.modules.*.module`,
+calls each `configure()` once and mounts every `build_router(options)`. Adding a
+module never edits this file.
+"""
 import logging
 
 from fastapi import FastAPI
 
-from src.adapters.inbound.http.chatbot_router import ActionScope, TurnScope, create_chatbot_router
-from src.infrastructure.config.container import (
-    provide_action_scope,
-    provide_chatbot_service,
-    provide_turn_scope,
-)
-from src.infrastructure.discovery import configure_modules
-from src.modules.mod_auth.module import router as auth_router
-from src.modules.mod_cart.module import router as cart_router
-from src.modules.mod_catalog.module import router as catalog_router
-from src.modules.mod_checkout.module import router as checkout_router
-from src.modules.mod_orders.module import router as orders_router
-from src.modules.mod_postventa.module import router as postventa_router
-from src.modules.mod_shipping.module import router as shipping_router
+from src.infrastructure.discovery import configure_modules, discover_modules
+from src.modules.mod_chat.module import ACTION_SCOPE, provide_action_scope
 from src.shared.infrastructure.config.settings import MODULES_WITH_ADAPTERS, get_settings
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.correlation import CorrelationMiddleware
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
 from src.shared.infrastructure.http.health_router import router as health_router
 from src.shared.infrastructure.http.problem import register_problem_handlers
+from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.worker.outbox_loop import outbox_worker_lifespan
 
 API_PREFIX = "/api/v1"
@@ -31,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 def create_app(
-    turn_scope: TurnScope | None = None,
-    action_scope: ActionScope | None = None,
+    turn_scope=None,
+    action_scope=None,
 ) -> FastAPI:
     """Scopes can be replaced by tests behind the text-stream and direct-action endpoints."""
     configure_modules(registry)
@@ -57,24 +51,14 @@ def create_app(
     app.add_middleware(CorrelationMiddleware)
     register_problem_handlers(app)
     app.include_router(health_router)
-    app.include_router(auth_router, prefix=API_PREFIX)
-    app.include_router(catalog_router, prefix=API_PREFIX)
-    app.include_router(cart_router, prefix=API_PREFIX)
-    app.include_router(
-        create_chatbot_router(
-            provide_chatbot_service,
-            cookie_secure=settings.cookie_secure,
-            turn_scope=turn_scope or provide_turn_scope,
-            action_scope=action_scope,
-            rate_limiter=limiter,
-        ),
-        prefix=API_PREFIX,
-    )
-    app.include_router(orders_router, prefix=API_PREFIX)
-    app.include_router(postventa_router, prefix=API_PREFIX)
-    app.include_router(checkout_router, prefix=API_PREFIX)
-    app.include_router(shipping_router, prefix=API_PREFIX)
+    options = RouterOptions(turn_scope=turn_scope, action_scope=action_scope)
+    for module in discover_modules():
+        app.include_router(module.build_router(options), prefix=API_PREFIX)
     return app
 
 
+# Production keeps the real action scope; tests pass their own or leave it None.
 app = create_app(action_scope=provide_action_scope)
+
+
+__all__ = ["ACTION_SCOPE", "API_PREFIX", "app", "create_app"]

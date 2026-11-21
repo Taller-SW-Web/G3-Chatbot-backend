@@ -4,13 +4,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.application.tools.action_dispatcher import ActionDispatcher
-from src.application.tools.cart_handlers import build_cart_handlers
 from src.modules.mod_cart.application.manage_cart_use_case import CartError
 from src.modules.mod_catalog.application import manage_catalog_use_case as catalog_module
 from src.modules.mod_catalog.application.tools import AddArguments, SearchArguments, build_tool_registry
 from src.modules.mod_catalog.domain.product_projection import normalize_detail
 from src.modules.mod_catalog.domain.variant_resolver import VariantResolver
+from src.modules.mod_chat.application.tools.action_dispatcher import ActionDispatcher
+from src.modules.mod_chat.application.tools.cart_handlers import build_cart_handlers
 from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.module_errors import ModuleRequestError
 from tests.unit.test_astra_regressions import cards, g6_detail, g6_service

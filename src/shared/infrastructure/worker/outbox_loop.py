@@ -49,9 +49,9 @@ async def run_outbox_loop(
 @asynccontextmanager
 async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan: starts the loop when OUTBOX_WORKER_ENABLED and cancels it on shutdown."""
-    from src.infrastructure.config.container import provide_outbox_processor
     from src.shared.infrastructure.config.settings import get_settings
     from src.shared.infrastructure.db import connection
+    from src.shared.infrastructure.di.container import provide_outbox_processor
 
     settings = get_settings()
     task: asyncio.Task | None = None

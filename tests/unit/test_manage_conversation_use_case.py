@@ -4,12 +4,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.application.use_cases.manage_conversation_use_case import (
+from src.modules.mod_chat.application.manage_conversation_use_case import (
     CONVERSATIONS_PAGE_SIZE,
     HISTORY_LIMIT,
     ManageConversationUseCase,
 )
-from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
+from src.modules.mod_chat.ports.chatbot_service_port import ConversationNotFoundError
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.entities.conversation import Conversation, ConversationSummary
 from src.shared.domain.entities.message import Message, MessageRole

@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
-from src.infrastructure.config import container
-from src.infrastructure.config.container import provide_tool_executor
 from src.modules.mod_catalog.application.tools import build_tool_registry
-from src.ports.outbound.tool_executor_port import ToolExecutionContext, ToolExecutorPort
+from src.modules.mod_chat import module as chat_module
+from src.modules.mod_chat.adapters.registry_tool_adapter import RegistryToolAdapter
+from src.modules.mod_chat.module import provide_tool_executor
+from src.modules.mod_chat.ports.tool_executor_port import ToolExecutionContext, ToolExecutorPort
 from src.shared.application.tools.tool_registry import (
     ExecutionContext,
     ToolDefinition,
@@ -76,16 +76,16 @@ async def test_direct_action_dispatcher_uses_session_scoped_commercial_handlers(
         assert actual_session is session
         return cart
 
-    monkeypatch.setattr(container, "provide_catalog_service", catalog_service)
-    monkeypatch.setattr(container, "provide_cart_service", cart_service)
-    monkeypatch.setattr(container, "build_catalog_handlers", lambda service: {
+    monkeypatch.setattr(chat_module, "provide_catalog_service", catalog_service)
+    monkeypatch.setattr(chat_module, "provide_cart_service", cart_service)
+    monkeypatch.setattr(chat_module, "build_catalog_handlers", lambda service: {
         "buscar_productos": catalog_handler,
     })
-    monkeypatch.setattr(container, "build_cart_handlers", lambda service: {
+    monkeypatch.setattr(chat_module, "build_cart_handlers", lambda service: {
         "ver_carrito": cart_handler,
     })
 
-    dispatcher = container.provide_action_dispatcher(session)
+    dispatcher = chat_module.provide_action_dispatcher(session)
     result = await dispatcher.despachar(
         {"tipo": "VER_CARRITO", "payload": {}},
         ExecutionContext(str(CONVERSATION), str(CUSTOMER), None),

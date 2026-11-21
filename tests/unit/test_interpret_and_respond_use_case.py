@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.application.dto.conversation_events import (
+from src.modules.mod_chat.application.dto.conversation_events import (
     BlockEvent,
     DegradedEvent,
     FinalEvent,
     MessageAcceptedEvent,
     TokenEvent,
 )
-from src.application.use_cases.interpret_and_respond_use_case import (
+from src.modules.mod_chat.application.interpret_and_respond_use_case import (
     CONTEXT_MESSAGES,
     DEGRADED_NO_ACTIONS_TEXT,
     MAX_ITERATIONS,
@@ -20,8 +20,8 @@ from src.application.use_cases.interpret_and_respond_use_case import (
     InvalidMessageError,
     derive_title,
 )
-from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
-from src.ports.outbound.llm_provider_port import (
+from src.modules.mod_chat.ports.chatbot_service_port import ConversationNotFoundError
+from src.modules.mod_chat.ports.llm_provider_port import (
     Completed,
     LLMRole,
     LLMTimeoutError,
@@ -32,7 +32,7 @@ from src.ports.outbound.llm_provider_port import (
     ToolCall,
     ToolCallRequested,
 )
-from src.ports.outbound.tool_executor_port import INVALID_ARGUMENTS, ToolResult
+from src.modules.mod_chat.ports.tool_executor_port import INVALID_ARGUMENTS, ToolResult
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.entities.conversation import Conversation
 from src.shared.domain.entities.message import Message, MessageRole

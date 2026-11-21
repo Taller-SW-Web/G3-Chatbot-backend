@@ -1,7 +1,7 @@
 """Sesion por uso: WebSocket y acciones directas abren y cierran la suya (ADR-0011)."""
 import pytest
 
-from src.infrastructure.config import container
+from src.modules.mod_chat import module as chat_module
 from src.shared.infrastructure.db import connection
 
 
@@ -22,9 +22,9 @@ async def test_turn_scope_abre_y_cierra_su_sesion(monkeypatch):
     construido = []
     monkeypatch.setattr(connection, "get_engine", lambda: None)
     monkeypatch.setattr(connection, "open_session", lambda: sesion)
-    monkeypatch.setattr(container, "build_interpret_and_respond", lambda s: construido.append(s) or s)
+    monkeypatch.setattr(chat_module, "build_interpret_and_respond", lambda s: construido.append(s) or s)
 
-    async with container.provide_turn_scope() as caso:
+    async with chat_module.provide_turn_scope() as caso:
         assert caso is sesion
         assert sesion.closed is False
 
@@ -37,9 +37,9 @@ async def test_action_scope_abre_y_cierra_su_sesion(monkeypatch):
     sesion = FakeSession()
     monkeypatch.setattr(connection, "get_engine", lambda: None)
     monkeypatch.setattr(connection, "open_session", lambda: sesion)
-    monkeypatch.setattr(container, "provide_action_dispatcher", lambda s: "dispatcher")
+    monkeypatch.setattr(chat_module, "provide_action_dispatcher", lambda s: "dispatcher")
 
-    async with container.provide_action_scope() as caso:
+    async with chat_module.provide_action_scope() as caso:
         assert caso is not None
         assert sesion.closed is False
 

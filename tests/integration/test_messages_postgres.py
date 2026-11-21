@@ -5,11 +5,11 @@ from decimal import Decimal
 
 import pytest
 
-from src.application.dto.conversation_events import FinalEvent
-from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
-from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
-from src.ports.outbound.llm_provider_port import Completed, TextDelta, ToolCall, ToolCallRequested
-from src.ports.outbound.tool_executor_port import ToolResult
+from src.modules.mod_chat.application.dto.conversation_events import FinalEvent
+from src.modules.mod_chat.application.interpret_and_respond_use_case import InterpretAndRespondUseCase
+from src.modules.mod_chat.application.manage_conversation_use_case import ManageConversationUseCase
+from src.modules.mod_chat.ports.llm_provider_port import Completed, TextDelta, ToolCall, ToolCallRequested
+from src.modules.mod_chat.ports.tool_executor_port import ToolResult
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.entities.message import MessageRole
 from src.shared.infrastructure.db.models import Conversation

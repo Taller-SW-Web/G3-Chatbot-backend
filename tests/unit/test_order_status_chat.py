@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from src.application.tools.order_handlers import build_order_handlers
 from src.modules.mod_catalog.application.tools import OrderQueryArguments, build_tool_registry
+from src.modules.mod_chat.application.tools.order_handlers import build_order_handlers
 from src.modules.mod_orders.application.orders_service import OrdersService
 from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.module_errors import ModuleUnavailableError

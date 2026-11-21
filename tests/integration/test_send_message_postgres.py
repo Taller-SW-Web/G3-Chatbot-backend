@@ -6,11 +6,17 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from src.adapters.inbound.http.chatbot_router import create_chatbot_router
-from src.application.tools.action_dispatcher import QUICK_ACTIONS
-from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
-from src.ports.outbound.llm_provider_port import Completed, LLMUnavailableError, TextDelta, ToolCall, ToolCallRequested
-from src.ports.outbound.tool_executor_port import ToolResult
+from src.modules.mod_chat.adapters.http.chatbot_router import create_chatbot_router
+from src.modules.mod_chat.application.interpret_and_respond_use_case import InterpretAndRespondUseCase
+from src.modules.mod_chat.application.tools.action_dispatcher import QUICK_ACTIONS
+from src.modules.mod_chat.ports.llm_provider_port import (
+    Completed,
+    LLMUnavailableError,
+    TextDelta,
+    ToolCall,
+    ToolCallRequested,
+)
+from src.modules.mod_chat.ports.tool_executor_port import ToolResult
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.entities.message import MessageRole
 from src.shared.infrastructure.http.dependencies.caller_identity import hash_chat_sid

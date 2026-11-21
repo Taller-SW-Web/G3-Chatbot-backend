@@ -4,13 +4,13 @@ import pytest
 import respx
 from pydantic import ValidationError
 
-from src.application.dto.chatbot_response_dto import AssistantTurnResult, ChatBlock
-from src.application.dto.incoming_message_dto import SendMessageRequest
-from src.infrastructure.config.container import provide_module_client
+from src.modules.mod_chat.application.dto.chatbot_response_dto import AssistantTurnResult, ChatBlock
+from src.modules.mod_chat.application.dto.incoming_message_dto import SendMessageRequest
 from src.shared.application.tools.tool_contracts import TOOL_CONTRACTS, get_tool_contract
 from src.shared.domain.block import BlockType, FormKind, QuickActionId
 from src.shared.infrastructure.config.settings import _is_onrender_host, get_settings
 from src.shared.infrastructure.http.base_client import BaseModuleClient, ModuleUnavailableError
+from src.shared.infrastructure.http.module_client import provide_module_client
 
 
 def test_settings_module_urls_from_env(monkeypatch):
