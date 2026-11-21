@@ -37,6 +37,15 @@ pedidos ni gestiona postventa.
 - **G7 correo** (confirmación) a través de la capacidad `order_confirmation`
   que registra `mod-orders`; el outbox vive en `src/shared`.
 
+## Celular verificado (SPEC-04)
+
+`POST /checkout` exige que el celular vigente de `GET /auth/me` tenga una
+verificación local exacta (`local_phone_verification`). Con
+`REQUIRE_PHONE_VERIFICATION` activo, una falta de verificación responde
+`403 CELULAR_NO_VERIFICADO` con el número enmascarado; si Seguridad no responde,
+el checkout se bloquea con el mismo código y `motivo=SEGURIDAD_NO_DISPONIBLE`.
+En desarrollo/fake el flag está apagado por defecto para no romper los E2E.
+
 ## Capacidades que registra
 
 | Capacidad | Consumidor | Motivo |

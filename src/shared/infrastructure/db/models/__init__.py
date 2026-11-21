@@ -7,8 +7,9 @@ from src.shared.infrastructure.db.connection import Base
 from src.shared.infrastructure.db.models.attachment import Attachment
 from src.shared.infrastructure.db.models.conversation import Conversation
 from src.shared.infrastructure.db.models.local_phone_verification import LocalPhoneVerification
+from src.shared.infrastructure.db.models.phone_otp_challenge import PhoneOtpChallenge
 
-__all__ = ["Base", "LocalPhoneVerification", "Conversation", "Attachment"]
+__all__ = ["Base", "LocalPhoneVerification", "PhoneOtpChallenge", "Conversation", "Attachment"]
 
 from src.shared.infrastructure.db.models.evidence import Evidence
 from src.shared.infrastructure.db.models.message import Message

@@ -26,6 +26,7 @@ from src.modules.mod_shipping.public import (
 from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteRequest
 from src.shared.application.dto.order_ref_dto import NewOrderReference
 from src.shared.application.dto.outbox_task_dto import NewOutboxTask
+from src.shared.domain.masking import mask_phone
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ class CreateCheckoutInput:
     cart_id: uuid.UUID | None = None
     direccion: dict[str, Any] | None = None
     contacto: dict[str, Any] | None = None
+    access_token: str | None = None
 
 
 @dataclass
@@ -95,6 +97,7 @@ class ManageCheckoutUseCase:
         sales_client: Any | None = None,
         outbox: Any | None = None,
         dispatch: Any | None = None,
+        require_phone_verification: bool = False,
     ):
         self.checkouts = checkouts
         self.payment_attempts = payment_attempts
@@ -109,6 +112,7 @@ class ManageCheckoutUseCase:
         self.sales_client = sales_client
         self.outbox = outbox
         self.dispatch = dispatch
+        self.require_phone_verification = require_phone_verification
 
     @staticmethod
     def _is_reusable(
@@ -134,6 +138,43 @@ class ManageCheckoutUseCase:
         except (ArithmeticError, ValueError, TypeError):
             return False
 
+    async def _ensure_phone_verified(self, input_data: CreateCheckoutInput) -> None:
+        """SPEC-04 Req. 1: exact-match between today's phone and the local verification."""
+        if not self.require_phone_verification:
+            return
+        if self.security_client is None or not input_data.access_token:
+            raise CheckoutError(
+                "CELULAR_NO_VERIFICADO",
+                "No pudimos confirmar tu celular ahora.",
+                {"motivo": "SIN_SESION"},
+            )
+        try:
+            profile = dict(await self.security_client.me(input_data.access_token))
+        except Exception as exc:
+            logger.warning("Seguridad profile unavailable while checking the phone: %s", exc)
+            raise CheckoutError(
+                "CELULAR_NO_VERIFICADO",
+                "No pudimos confirmar tu celular ahora.",
+                {"motivo": "SEGURIDAD_NO_DISPONIBLE"},
+            ) from exc
+        phone = profile.get("celular") or profile.get("telefono")
+        if not phone:
+            raise CheckoutError(
+                "CELULAR_NO_VERIFICADO",
+                "Tu perfil no tiene un celular registrado.",
+                {"motivo": "SIN_CELULAR"},
+            )
+        phone = str(phone)
+        verified = await _safe_call(
+            self.phone_verifications, "existe", input_data.customer_id, phone
+        )
+        if not verified:
+            raise CheckoutError(
+                "CELULAR_NO_VERIFICADO",
+                f"Para coordinar la entrega necesitamos confirmar tu celular {mask_phone(phone)}",
+                {"celularEnmascarado": mask_phone(phone)},
+            )
+
     async def create_checkout(self, input_data: CreateCheckoutInput) -> Any:
         if not input_data.idempotency_key:
             raise CheckoutError("VALIDACION", "Se requiere Idempotency-Key", {"campo": "Idempotency-Key"})
@@ -150,6 +191,9 @@ class ManageCheckoutUseCase:
         pattern = DOCUMENT_PATTERNS.get(contacto["tipoDocumento"])
         if pattern is None or pattern.fullmatch(contacto["numeroDocumento"]) is None:
             raise CheckoutError("DATO_INVALIDO", "El documento no tiene un formato válido", {"campo": "contacto.numeroDocumento"})
+
+        # SPEC-04: the checkout demands the *current* phone verified locally.
+        await self._ensure_phone_verified(input_data)
 
         # 1. Idempotencia real previa por clave
         existing = await _safe_call(self.checkouts, "obtener_por_idempotency_key", input_data.idempotency_key)
@@ -195,14 +239,7 @@ class ManageCheckoutUseCase:
             else:
                 pending_checkout = existing_cart_chk
 
-        # 4. Validar celular verificado si existe el verificador
-        if self.phone_verifications and input_data.contacto and input_data.contacto.get("celular"):
-            celular = str(input_data.contacto["celular"])
-            verificado = await _safe_call(self.phone_verifications, "existe", input_data.customer_id, celular)
-            if verificado is False:
-                raise CheckoutError("CELULAR_NO_VERIFICADO", "El celular no ha sido verificado")
-
-        # 5. Cálculo y revalidación de importes en el servidor
+        # 4. Cálculo y revalidación de importes en el servidor
         items = await _safe_call(self.cart_items, "listar_por_cart", cart_id)
         if not items:
             raise CheckoutError("CARRITO_VACIO", "Tu carrito no tiene productos disponibles para comprar")

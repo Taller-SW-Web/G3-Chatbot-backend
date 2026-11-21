@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_auth.public import provide_phone_service
 from src.modules.mod_cart.public import provide_cart_service
 from src.modules.mod_catalog.public import build_tool_registry, provide_catalog_service
 from src.modules.mod_chat import MODULE_ID
@@ -36,6 +37,7 @@ from src.modules.mod_chat.application.tools.action_dispatcher import ActionDispa
 from src.modules.mod_chat.application.tools.cart_handlers import build_cart_handlers
 from src.modules.mod_chat.application.tools.catalog_handlers import build_catalog_handlers
 from src.modules.mod_chat.application.tools.order_handlers import build_order_handlers
+from src.modules.mod_chat.application.tools.phone_handlers import build_phone_handlers
 from src.modules.mod_chat.ports.llm_provider_port import LLMProvider
 from src.modules.mod_chat.ports.tool_executor_port import ToolExecutorPort
 from src.modules.mod_orders.public import provide_orders_service
@@ -105,6 +107,7 @@ def provide_tool_registry(session: AsyncSession) -> ToolRegistry:
     handlers.update(build_catalog_handlers(catalog))
     handlers.update(build_cart_handlers(cart))
     handlers.update(build_order_handlers(provide_orders_service(session)))
+    handlers.update(build_phone_handlers(provide_phone_service(session)))
     return build_tool_registry(handlers)
 
 

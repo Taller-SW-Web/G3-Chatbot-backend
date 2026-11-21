@@ -104,6 +104,7 @@ def provide_checkout_service(
         sales_client=provide_sales_port(settings),
         outbox=OutboxPostgresAdapter(session),
         dispatch=provide_despacho_client(settings),
+        require_phone_verification=settings.require_phone_verification,
     )
 
 

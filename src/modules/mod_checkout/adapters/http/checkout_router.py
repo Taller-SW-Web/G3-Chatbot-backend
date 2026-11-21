@@ -94,6 +94,7 @@ def create_checkout_router(
     async def create_checkout(
         payload: CreateCheckoutRequest,
         response: Response,
+        request: Request,
         idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
         caller: CallerIdentity = Depends(require_customer),
         service: ManageCheckoutUseCase = Depends(use_case_provider),
@@ -106,6 +107,10 @@ def create_checkout_router(
                 detail="El encabezado Idempotency-Key es obligatorio.",
                 extra={"campo": "Idempotency-Key"},
             )
+        try:
+            access_token = get_bearer_token(request)
+        except Exception:
+            access_token = None
 
         try:
             row = await service.create_checkout(
@@ -115,6 +120,7 @@ def create_checkout_router(
                     cart_id=payload.cartId,
                     direccion=payload.direccion,
                     contacto=payload.contacto.model_dump(exclude_none=True) if payload.contacto else None,
+                    access_token=access_token,
                 )
             )
             order_id = row.summary.get("orderId") if isinstance(row.summary, dict) else None

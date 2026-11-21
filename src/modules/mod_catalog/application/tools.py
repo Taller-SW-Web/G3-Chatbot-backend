@@ -180,6 +180,10 @@ _TOOLS = (
         "Consultar el estado de los pedidos del cliente con sesión iniciada. Sin argumentos lista "
         "sus pedidos recientes; con `pedidoId` muestra ese pedido, su estado y su línea de tiempo."
     ), OrderQueryArguments),
+    ("verificar_celular", (
+        "Consultar o iniciar la verificación del celular del cliente. Sin argumentos devuelve si el "
+        "celular vigente ya está verificado o el formulario OTP_CELULAR para verificarlo."
+    ), EmptyArguments),
 )
 
 
@@ -208,7 +212,7 @@ def build_tool_registry(handlers: Mapping[str, ToolHandler] | None = None) -> To
             continue
         registry.registrar(ToolDefinition(
             nombre, descripcion, esquema, handlers[nombre],
-            requiere_sesion=nombre == "consultar_pedidos",
+            requiere_sesion=nombre in {"consultar_pedidos", "verificar_celular"},
             requiere_confirmacion=nombre == "vaciar_carrito",
         ))
     return registry

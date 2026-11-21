@@ -1999,6 +1999,40 @@
         "title": "ShippingQuoteResponse",
         "type": "object"
       },
+      "SolicitarOtpOut": {
+        "properties": {
+          "celularEnmascarado": {
+            "title": "Celularenmascarado",
+            "type": "string"
+          },
+          "codigo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo"
+          },
+          "enviado": {
+            "default": true,
+            "title": "Enviado",
+            "type": "boolean"
+          },
+          "expiraEn": {
+            "title": "Expiraen",
+            "type": "string"
+          }
+        },
+        "required": [
+          "celularEnmascarado",
+          "expiraEn"
+        ],
+        "title": "SolicitarOtpOut",
+        "type": "object"
+      },
       "ToolAction": {
         "additionalProperties": false,
         "properties": {
@@ -2098,6 +2132,41 @@
           "token"
         ],
         "title": "VerificarCorreoIn",
+        "type": "object"
+      },
+      "VerificarOtpIn": {
+        "additionalProperties": false,
+        "properties": {
+          "codigo": {
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^\\d{6}$",
+            "title": "Codigo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "codigo"
+        ],
+        "title": "VerificarOtpIn",
+        "type": "object"
+      },
+      "VerificarOtpOut": {
+        "properties": {
+          "celularEnmascarado": {
+            "title": "Celularenmascarado",
+            "type": "string"
+          },
+          "celularVerificado": {
+            "title": "Celularverificado",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "celularVerificado",
+          "celularEnmascarado"
+        ],
+        "title": "VerificarOtpOut",
         "type": "object"
       },
       "VerifyMfaIn": {
@@ -3259,6 +3328,68 @@
         "summary": "Process Payment",
         "tags": [
           "mod-checkout"
+        ]
+      }
+    },
+    "/api/v1/contacto/celular/solicitar-otp": {
+      "post": {
+        "operationId": "request_otp_api_v1_contacto_celular_solicitar_otp_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolicitarOtpOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Request Otp",
+        "tags": [
+          "mod-auth"
+        ]
+      }
+    },
+    "/api/v1/contacto/celular/verificar-otp": {
+      "post": {
+        "operationId": "verify_otp_api_v1_contacto_celular_verificar_otp_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerificarOtpIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificarOtpOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Otp",
+        "tags": [
+          "mod-auth"
         ]
       }
     },

@@ -38,12 +38,26 @@ Ningún módulo importa `domain/`, `application/` ni `adapters/` de este paquete
 | GET | `/api/v1/sesion/politica-contrasena` | `ManageSessionUseCase.password_policy` |
 | POST | `/api/v1/sesion/verificar-correo` | `ManageSessionUseCase.verify_email` |
 | POST | `/api/v1/sesion/verificar-correo/reenviar` | `ManageSessionUseCase.resend_verification` |
+| POST | `/api/v1/contacto/celular/solicitar-otp` | `ManagePhoneVerificationUseCase.request_otp` |
+| POST | `/api/v1/contacto/celular/verificar-otp` | `ManagePhoneVerificationUseCase.verify_otp` |
+
+## Verificación local del celular (SPEC-04)
+
+- OTP propio de 6 dígitos, TTL 5 min, 3 intentos y 3 envíos por ventana de
+  15 min (`PHONE_OTP_*`); el código se guarda solo como HMAC-SHA256.
+- `SimulatedSmsSender` registra el código en dev; con `MODO_QA=true` también
+  se devuelve en la respuesta para pruebas. Nunca viaja al LLM ni a `message`.
+- La verificación vale solo para el celular exacto de `GET /auth/me`; si el
+  cliente lo cambia en Seguridad, se exige verificar de nuevo.
+- `REQUIRE_PHONE_VERIFICATION` (default `true` en producción, `false` en
+  desarrollo/fake) activa el bloqueo `403 CELULAR_NO_VERIFICADO` en checkout.
 
 ## Dependencias externas
 
 - **G1 Seguridad** vía `shared/application/ports/security_port.py` y
   `shared/infrastructure/http/security_client.py` (login, MFA, registro, perfil).
 - `local_phone_verification` (tabla compartida) para `celularVerificado`.
+- `phone_otp_challenge` (tabla compartida) para el OTP local de SPEC-04.
 - Capacidad `checkout_document` (registrada por `mod-checkout`) para
   `ultimoDocumento` sin importar el interior de checkout. Es opcional: si falta,
   el perfil usa un null object y `/health` reporta `degraded`.

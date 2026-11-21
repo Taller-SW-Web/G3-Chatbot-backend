@@ -41,6 +41,14 @@ def _flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
 
 
+def _optional_flag(name: str) -> bool | None:
+    """Unset/blank inherits the caller's default; otherwise a normal boolean flag."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return None
+    return raw.strip().lower() in ("1", "true", "yes")
+
+
 def _modules_mode() -> str:
     value = os.getenv("MODULES_MODE", "http").strip().lower()
     if value not in MODULE_MODES:
@@ -129,6 +137,17 @@ class Settings:
     # In-process outbox worker (SPEC-15): polled from the FastAPI lifespan.
     outbox_worker_enabled: bool = True
     outbox_poll_interval_seconds: float = 5.0
+    # SPEC-04: the checkout demands a locally verified phone. Production defaults
+    # to true; development/fake keeps it off so the E2E flow does not need an OTP.
+    require_phone_verification: bool = False
+    # HMAC key for the OTP hashes. Never a real secret in development.
+    phone_otp_secret: str = "dev-phone-otp-secret"
+    phone_otp_ttl_seconds: int = 300
+    phone_otp_max_attempts: int = 3
+    phone_otp_max_sends: int = 3
+    phone_otp_send_window_seconds: int = 900
+    # Test-only: return the simulated OTP in the response (SPEC-04 RNF).
+    modo_qa: bool = False
 
     def __post_init__(self) -> None:
         if self.products_auth_mode not in ("service", "public"):
@@ -176,6 +195,8 @@ def _is_onrender_host(url: str) -> bool:
 
 @lru_cache
 def get_settings() -> Settings:
+    app_env = _app_env()
+    require_phone_verification = _optional_flag("REQUIRE_PHONE_VERIFICATION")
     return Settings(
         cookie_secure=os.getenv("COOKIE_SECURE", "true").strip().lower() != "false",
         allowed_origins=_origins("ALLOWED_ORIGINS", "http://localhost:3000"),
@@ -189,7 +210,7 @@ def get_settings() -> Settings:
         llm_reasoning_effort=_choice("LLM_REASONING_EFFORT", "none", LLM_REASONING_EFFORTS),
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
         modules_mode=_modules_mode(),
-        app_env=_app_env(),
+        app_env=app_env,
         allow_fake_security=_flag("ALLOW_FAKE_SECURITY"),
         allow_public_products=_flag("ALLOW_PUBLIC_PRODUCTS"),
         security_mode=_module_mode_override("security"),
@@ -233,4 +254,21 @@ def get_settings() -> Settings:
         notification_send_inline=os.getenv("NOTIFICATION_SEND_INLINE", "true").strip().lower() != "false",
         outbox_worker_enabled=os.getenv("OUTBOX_WORKER_ENABLED", "true").strip().lower() != "false",
         outbox_poll_interval_seconds=_number("OUTBOX_POLL_INTERVAL_SECONDS", "5", float, minimum=0.5),
+        require_phone_verification=(
+            require_phone_verification
+            if require_phone_verification is not None
+            else app_env in PRODUCTION_ENVIRONMENTS
+        ),
+        phone_otp_secret=(
+            os.getenv("PHONE_OTP_SECRET", "").strip()
+            or os.getenv("SECURITY_CLIENT_SECRET", "").strip()
+            or "dev-phone-otp-secret"
+        ),
+        phone_otp_ttl_seconds=_number("PHONE_OTP_TTL_SECONDS", "300", int, minimum=30),
+        phone_otp_max_attempts=_number("PHONE_OTP_MAX_ATTEMPTS", "3", int, minimum=1),
+        phone_otp_max_sends=_number("PHONE_OTP_MAX_SENDS", "3", int, minimum=1),
+        phone_otp_send_window_seconds=_number(
+            "PHONE_OTP_SEND_WINDOW_SECONDS", "900", int, minimum=60
+        ),
+        modo_qa=_flag("MODO_QA"),
     )
