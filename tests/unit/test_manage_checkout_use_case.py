@@ -6,15 +6,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
-from src.application.use_cases.manage_checkout_use_case import (
+from src.modules.mod_checkout.adapters.payment_simulator_adapter import PaymentSimulatorAdapter
+from src.modules.mod_checkout.application.manage_checkout_use_case import (
     CheckoutError,
     CreateCheckoutInput,
     ManageCheckoutUseCase,
     ProcessPaymentInput,
 )
-from src.domain.entities.checkout import CheckoutStatus
-from src.domain.entities.payment_attempt import PaymentResult
+from src.modules.mod_checkout.domain.checkout import CheckoutStatus
+from src.modules.mod_checkout.domain.payment_attempt import PaymentResult
 from src.shared.domain.module_errors import ModuleUnavailableError
 from src.shared.infrastructure.db.models.checkout import Checkout
 from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt

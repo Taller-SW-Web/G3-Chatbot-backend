@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import CheckConstraint
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
+from src.modules.mod_checkout.adapters.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
 )
 from src.shared.infrastructure.db.models import Base, PaymentAttempt

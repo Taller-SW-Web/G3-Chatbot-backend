@@ -1,6 +1,6 @@
 import pytest
 
-from src.domain.services.snapshot_builder import SnapshotBuilder, SnapshotValidationError
+from src.modules.mod_checkout.domain.snapshot_builder import SnapshotBuilder, SnapshotValidationError
 
 
 def test_snapshot_builder_success():

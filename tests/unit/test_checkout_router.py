@@ -7,8 +7,8 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from src.adapters.inbound.http.checkout_router import create_checkout_router
-from src.application.use_cases.manage_checkout_use_case import CheckoutError
+from src.modules.mod_checkout.adapters.http.checkout_router import create_checkout_router
+from src.modules.mod_checkout.application.manage_checkout_use_case import CheckoutError
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.db.models.checkout import Checkout
 from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt

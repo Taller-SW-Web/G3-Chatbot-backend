@@ -12,14 +12,9 @@ from src.adapters.outbound.http_clients.postventa_client import PostventaClient
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
 from src.adapters.outbound.notificaciones.smtp_email_adapter import SmtpEmailSender
-from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
-from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
 from src.adapters.outbound.persistence.notification_postgres_adapter import NotificationPostgresAdapter
 from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
     OrderConfirmationPostgresAdapter,
-)
-from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
-    PaymentAttemptPostgresAdapter,
 )
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
 from src.application.tools.action_dispatcher import ActionDispatcher
@@ -28,11 +23,10 @@ from src.application.tools.catalog_handlers import build_catalog_handlers
 from src.application.tools.order_handlers import build_order_handlers
 from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
-from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.application.use_cases.notification_service import NotificationError, NotificationService
 from src.domain.services.status_mapper import map_order_status_label
-from src.modules.mod_cart.public import provide_cart_repositories, provide_cart_service
+from src.modules.mod_cart.public import provide_cart_service
 from src.modules.mod_catalog.application.tools import build_tool_registry
 from src.modules.mod_catalog.public import (
     provide_catalog_service,
@@ -45,28 +39,22 @@ from src.shared.application.tools.tool_registry import ToolRegistry
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
 from src.shared.infrastructure.auth.providers import (
-    provide_security_port,
     provide_service_token_provider,
 )
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db import connection
 from src.shared.infrastructure.db.connection import get_session
+from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 from src.shared.infrastructure.http.base_client import BaseModuleClient
 from src.shared.infrastructure.http.ventas_client import VentasClient
 from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
-from src.shared.infrastructure.persistence.local_phone_verification_postgres_adapter import (
-    LocalPhoneVerificationPostgresAdapter,
-)
 from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
-from src.shared.infrastructure.persistence.order_ref_postgres_adapter import (
-    OrderRefPostgresAdapter,
-)
 from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
-from src.shared.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, OutboxProcessor
+from src.shared.infrastructure.worker.outbox_worker import OutboxProcessor
 
 # Without SMTP_HOST the confirmations land here (process-wide, inspectable in local runs).
 _FAKE_EMAIL_SENDER = FakeEmailSender()
@@ -190,31 +178,6 @@ def provide_postventa_service(session: AsyncSession = Depends(get_session)):
         evidence=None if fake else EvidencePostgresAdapter(session),
     )
 
-
-def provide_payment_gateway() -> PaymentSimulatorAdapter:
-    return PaymentSimulatorAdapter()
-
-
-def provide_checkout_service(
-    session: AsyncSession = Depends(get_session),
-) -> ManageCheckoutUseCase:
-    settings = get_settings()
-    cart_repositories = provide_cart_repositories(session)
-    return ManageCheckoutUseCase(
-        checkouts=CheckoutPostgresAdapter(session),
-        payment_attempts=PaymentAttemptPostgresAdapter(session),
-        payment_gateway=provide_payment_gateway(),
-        uow=SqlAlchemyUnitOfWork(session),
-        security_client=provide_security_port(settings),
-        carts=cart_repositories.carts,
-        cart_items=cart_repositories.items,
-        orders=OrderRefPostgresAdapter(session),
-        phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
-        notification_service=build_notification_service(session),
-        sales_client=provide_sales_port(settings),
-        outbox=OutboxPostgresAdapter(session),
-        dispatch=provide_despacho_client(settings),
-    )
 
 def provide_email_sender(settings: Settings | None = None):
     """SMTP when SMTP_HOST is set (Mailtrap in development); otherwise the in-memory fake (SPEC-16)."""
@@ -421,16 +384,8 @@ def provide_orders_service(session: AsyncSession = Depends(get_session)) -> Orde
 
 
 def provide_outbox_processor(session: AsyncSession) -> OutboxProcessor:
-    settings = get_settings()
-    return OutboxProcessor(
-        outbox_repo=OutboxPostgresAdapter(session),
-        order_ref_repo=OrderRefPostgresAdapter(session),
-        sales_client=provide_sales_port(settings),
-        notification_service=build_notification_service(session),
-        uow=SqlAlchemyUnitOfWork(session),
-        # With inline sending on, fresh SEND_EMAIL jobs are left to the request that created them.
-        email_grace=INLINE_EMAIL_GRACE if settings.notification_send_inline else None,
-    )
+    """Outbox processor registered by `mod-checkout` (see `mod_checkout.module`)."""
+    return registry.resolve("outbox_processor", session)
 
 
 def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUseCase:

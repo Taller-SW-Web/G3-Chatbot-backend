@@ -8,8 +8,8 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from src.domain.entities.payment_attempt import CardBrand, PaymentRejectReason, PaymentResult
-from src.ports.outbound.payment_gateway_port import PaymentGatewayPort, PaymentProcessResult
+from src.modules.mod_checkout.domain.payment_attempt import CardBrand, PaymentRejectReason, PaymentResult
+from src.modules.mod_checkout.ports.payment_gateway_port import PaymentGatewayPort, PaymentProcessResult
 
 
 class CardValidationError(Exception):

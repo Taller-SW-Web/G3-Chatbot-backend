@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.infrastructure.config.container import provide_checkout_service
+from src.modules.mod_checkout.module import ORDER_CONFIRMATION, provide_checkout_service
 from src.modules.mod_catalog.adapters.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
@@ -73,19 +73,23 @@ async def test_fake_inventory_does_not_invent_availability():
 
 
 def test_checkout_provider_wires_real_notification_service(monkeypatch):
-    from src.infrastructure.config import container
+    from src.shared.infrastructure.config import settings as settings_module
+    from src.shared.infrastructure.di.registry import registry
 
     monkeypatch.setenv("DISPATCH_MODE", "fake")
-    container.get_settings.cache_clear()
+    settings_module.get_settings.cache_clear()
 
     notification_service = MagicMock()
-    build_notification_service = MagicMock(return_value=notification_service)
-    monkeypatch.setattr(container, "build_notification_service", build_notification_service)
+    provider = MagicMock(return_value=notification_service)
+    registry.register(ORDER_CONFIRMATION, provider)
     session = MagicMock()
 
-    checkout = provide_checkout_service(session)
+    try:
+        checkout = provide_checkout_service(session)
+    finally:
+        registry.clear()
+        settings_module.get_settings.cache_clear()
 
-    build_notification_service.assert_called_once_with(session)
+    provider.assert_called_once_with(session)
     assert checkout.notification_service is notification_service
     assert checkout.dispatch is not None
-    container.get_settings.cache_clear()

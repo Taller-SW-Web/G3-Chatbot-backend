@@ -10,20 +10,20 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.adapters.outbound.pagos.payment_simulator_adapter import CardValidationError
-from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
-from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
+from src.application.use_cases.notification_service import NotificationService
+from src.modules.mod_checkout.adapters.checkout_postgres_adapter import CheckoutPostgresAdapter
+from src.modules.mod_checkout.adapters.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
 )
-from src.application.use_cases.notification_service import NotificationService
-from src.domain.entities.checkout import CheckoutStatus
-from src.domain.entities.payment_attempt import PaymentRejectReason, PaymentResult
+from src.modules.mod_checkout.adapters.payment_simulator_adapter import CardValidationError
+from src.modules.mod_checkout.domain.checkout import CheckoutStatus
+from src.modules.mod_checkout.domain.payment_attempt import PaymentRejectReason, PaymentResult
+from src.modules.mod_checkout.ports.payment_gateway_port import PaymentGatewayPort
 from src.modules.mod_shipping.application.shipping_quote import (
     build_destination,
     build_quote_lines,
     parse_quote,
 )
-from src.ports.outbound.payment_gateway_port import PaymentGatewayPort
 from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteRequest
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.db.models.checkout import Checkout
@@ -253,7 +253,7 @@ class ManageCheckoutUseCase:
         order_id = f"PED-{now.year}-{uuid.uuid4().hex[:6].upper()}"
 
         if self.sales_client:
-            from src.domain.services.snapshot_builder import SnapshotBuilder, SnapshotValidationError
+            from src.modules.mod_checkout.domain.snapshot_builder import SnapshotBuilder, SnapshotValidationError
             from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 
             snapshot_items = [

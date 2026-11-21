@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from pydantic import BaseModel, ConfigDict
 
-from src.application.use_cases.manage_checkout_use_case import (
+from src.modules.mod_checkout.application.manage_checkout_use_case import (
     CheckoutError,
     CreateCheckoutInput,
     ManageCheckoutUseCase,

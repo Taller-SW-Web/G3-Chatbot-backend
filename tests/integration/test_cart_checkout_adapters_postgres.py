@@ -12,14 +12,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from src.adapters.outbound.persistence.checkout_postgres_adapter import (
-    CheckoutPostgresAdapter,
-)
 from src.modules.mod_cart.adapters.cart_item_postgres_adapter import (
     CartItemPostgresAdapter,
 )
 from src.modules.mod_cart.adapters.cart_postgres_adapter import CartPostgresAdapter
 from src.modules.mod_cart.ports.cart_repository_port import CartConflictError
+from src.modules.mod_checkout.adapters.checkout_postgres_adapter import (
+    CheckoutPostgresAdapter,
+)
 from src.shared.infrastructure.db.models import Checkout, Conversation
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
