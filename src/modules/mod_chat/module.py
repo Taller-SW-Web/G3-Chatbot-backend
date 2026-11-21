@@ -13,6 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.mod_cart.public import provide_cart_service
 from src.modules.mod_catalog.public import build_tool_registry, provide_catalog_service
 from src.modules.mod_chat import MODULE_ID
+from src.modules.mod_chat.adapters.conversation_context_adapter import (
+    ConversationContextAdapter,
+)
 from src.modules.mod_chat.adapters.http.chatbot_router import (
     ActionScope,
     TurnScope,
@@ -41,7 +44,7 @@ from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db import connection
 from src.shared.infrastructure.db.connection import get_session
-from src.shared.infrastructure.di.capabilities import ACTION_SCOPE
+from src.shared.infrastructure.di.capabilities import ACTION_SCOPE, CONVERSATION_CONTEXT
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
@@ -58,6 +61,16 @@ def provide_chatbot_service(
         conversations=ConversationPostgresAdapter(session),
         messages=MessagePostgresAdapter(session),
         uow=SqlAlchemyUnitOfWork(session),
+    )
+
+
+def provide_conversation_context(
+    session: AsyncSession,
+) -> ConversationContextAdapter:
+    """Narrow chat-owned port consumed by cart/catalog through the registry."""
+    return ConversationContextAdapter(
+        ConversationPostgresAdapter(session),
+        MessagePostgresAdapter(session),
     )
 
 
@@ -161,8 +174,9 @@ router = build_router(RouterOptions())
 
 
 def configure(container) -> None:
-    """The composition root mounts the production action scope from here."""
+    """Chat exposes the turn/action scopes and the context cart/catalog need."""
     container.register(ACTION_SCOPE, provide_action_scope)
+    container.register(CONVERSATION_CONTEXT, provide_conversation_context)
 
 
 __all__ = [
@@ -176,6 +190,7 @@ __all__ = [
     "provide_action_dispatcher",
     "provide_action_scope",
     "provide_chatbot_service",
+    "provide_conversation_context",
     "provide_interpret_and_respond",
     "provide_llm_provider",
     "provide_tool_executor",

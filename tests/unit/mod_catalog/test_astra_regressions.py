@@ -212,7 +212,7 @@ async def test_streamed_safe_recommendation_matches_persisted_text():
         [tool_turn("need", "recomendar_productos", {"actividad": "running"}), reply("Todas impermeables.")],
         tools=adapter,
     )
-    discovery._conversations = conv
+    discovery._conversation_context = conv
     events = await run(engine, conv)
     streamed = "".join(e.text for e in events if isinstance(e, TokenEvent))
     final = events[-1].message.text
@@ -228,7 +228,7 @@ async def test_pretool_invented_recommendation_never_leaks_to_stream():
         *tool_turn("need", "recomendar_productos", {"actividad": "running"}),
     ]
     engine, conv, _, _, _, _ = build([first, reply("Listo.")], tools=adapter)
-    discovery._conversations = conv
+    discovery._conversation_context = conv
     events = await run(engine, conv)
     assert "impermeables" not in "".join(e.text for e in events if isinstance(e, TokenEvent))
 

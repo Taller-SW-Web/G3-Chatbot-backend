@@ -93,14 +93,14 @@ class ManageCatalogUseCase(DiscoveryMixin):
         self,
         catalog,
         inventory,
-        conversations,
+        conversation_context,
         uow,
         normalizer: ProductNormalizer | None = None,
         option_cache: OptionCache | None = None,
     ):
         self._catalog = catalog
         self._inventory = inventory
-        self._conversations = conversations
+        self._conversation_context = conversation_context
         self._uow = uow
         self._normalizer = normalizer
         self._option_cache = option_cache if option_cache is not None else OptionCache()
@@ -451,20 +451,20 @@ class ManageCatalogUseCase(DiscoveryMixin):
         caller = caller_from_context(context)
         if caller is None:
             raise CatalogError("RECURSO_NO_ENCONTRADO", "missing caller")
-        if await self._conversations.find_owned(conversation_id, caller) is None:
+        if await self._conversation_context.find_owned(conversation_id, caller) is None:
             raise CatalogError("RECURSO_NO_ENCONTRADO", "conversation not found")
         return conversation_id
 
     async def _read_memory(self, conversation_id) -> dict:
         if conversation_id is None:
             return {}
-        return await self._conversations.get_context(conversation_id)
+        return await self._conversation_context.get_context(conversation_id)
 
     async def _save_memory(self, conversation_id, memory: dict) -> None:
         if conversation_id is None:
             return
         try:
-            await self._conversations.save_context(conversation_id, memory)
+            await self._conversation_context.save_context(conversation_id, memory)
             await self._uow.commit()
         except BaseException:
             await self._uow.rollback()

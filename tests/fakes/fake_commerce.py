@@ -25,6 +25,7 @@ __all__ = [
     "FakeInventoryPort",
     "FakeRow",
     "FakeConversations",
+    "FakeConversationContext",
     "FakeCarts",
     "FakeItems",
     "FakeMessages",
@@ -86,6 +87,39 @@ class FakeConversations:
 
     async def touch(self, conversation_id) -> None:
         self.touched.append(conversation_id)
+
+
+class FakeConversationContext:
+    """In-memory `ConversationContextPort` for cart/catalog tests."""
+
+    def __init__(self, conversations=None, messages=None):
+        self.conversations = conversations or FakeConversations()
+        self.messages = messages or FakeMessages()
+        self.rows = self.conversations.rows
+        self.touched = self.conversations.touched
+
+    def add_conversation(self, *args, **kwargs):
+        return self.conversations.add_conversation(*args, **kwargs)
+
+    async def find_owned(self, conversation_id, caller):
+        return await self.conversations.find_owned(conversation_id, caller)
+
+    async def get_context(self, conversation_id):
+        return await self.conversations.get_context(conversation_id)
+
+    async def get_context_for_update(self, conversation_id):
+        return await self.conversations.get_context_for_update(conversation_id)
+
+    async def save_context(self, conversation_id, context):
+        await self.conversations.save_context(conversation_id, context)
+
+    async def touch(self, conversation_id):
+        await self.conversations.touch(conversation_id)
+
+    async def add_tool_audit(self, conversation_id, *, tool, code, text):
+        await self.messages.add(
+            conversation_id, "TOOL", text, tool_name=tool, result_code=code
+        )
 
 
 class FakeCarts:

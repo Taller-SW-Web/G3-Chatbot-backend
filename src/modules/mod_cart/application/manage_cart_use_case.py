@@ -36,7 +36,6 @@ from src.modules.mod_catalog.public import (
     sellable_skus,
 )
 from src.shared.application.tools.tool_registry import ExecutionContext
-from src.shared.domain.entities.message import MessageRole
 from src.shared.domain.module_errors import (
     GENERIC_UNAVAILABLE_TEXT,
     ModuleRequestError,
@@ -70,8 +69,7 @@ class ManageCartUseCase:
         items,
         catalog,
         inventory,
-        conversations,
-        messages,
+        conversation_context,
         uow,
         totals: TotalsCalculator | None = None,
         discovery=None,
@@ -81,8 +79,7 @@ class ManageCartUseCase:
         self._items = items
         self._catalog = catalog
         self._inventory = inventory
-        self._conversations = conversations
-        self._messages = messages
+        self._conversation_context = conversation_context
         self._uow = uow
         self._totals = totals or TotalsCalculator()
         self._coupon_attempts = coupon_attempts or _DEFAULT_COUPON_ATTEMPTS
@@ -384,7 +381,7 @@ class ManageCartUseCase:
                 # Context must stay JSON-serializable in the existing repository.
                 snapshots[sku_value]["price"] = str(projection["price"])
                 memory["cartOfferPrices"] = snapshots
-                await self._conversations.save_context(conversation_id, memory)
+                await self._conversation_context.save_context(conversation_id, memory)
         if existing is None:
             await self._items.agregar(
                 cart_id=cart.id,
@@ -522,7 +519,7 @@ class ManageCartUseCase:
                     changed = True
             if changed:
                 memory["cartOfferPrices"] = snapshots
-                await self._conversations.save_context(conversation_id, memory)
+                await self._conversation_context.save_context(conversation_id, memory)
         for line in unavailable:
             notices.append(f"{line['nombre']} ya no está disponible. Puedes quitarlo.")
             line["nota"] = "Ya no disponible"
@@ -560,7 +557,7 @@ class ManageCartUseCase:
         # caller: an authenticated customer must not read or write someone
         # else's conversation memory (ultimoCarrusel), audit rows or touch().
         if conversation_id is not None:
-            owned = await self._conversations.find_owned(conversation_id, caller)
+            owned = await self._conversation_context.find_owned(conversation_id, caller)
             if owned is None:
                 raise CartError("RECURSO_NO_ENCONTRADO", "conversation not found")
         if caller.customer_id is not None:
@@ -696,7 +693,7 @@ class ManageCartUseCase:
     async def _memory(self, conversation_id) -> dict:
         if conversation_id is None:
             return {}
-        return await self._conversations.get_context(conversation_id)
+        return await self._conversation_context.get_context(conversation_id)
 
     async def _check_can_sell(self, sku: str, total: int) -> str | None:
         """Reject a non-sellable SKU; return the warning to append when it is accepted."""
@@ -780,14 +777,13 @@ class ManageCartUseCase:
         }
 
     async def _audit(self, conversation_id, tool: str, code: str, texto: str) -> None:
-        await self._messages.add(
-            conversation_id, MessageRole.TOOL, texto,
-            tool_name=tool, result_code=code,
+        await self._conversation_context.add_tool_audit(
+            conversation_id, tool=tool, code=code, text=texto
         )
 
     async def _touch(self, conversation_id) -> None:
         try:
-            await self._conversations.touch(conversation_id)
+            await self._conversation_context.touch(conversation_id)
         except Exception:
             logger.warning("could not touch conversation %s", conversation_id)
 

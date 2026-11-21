@@ -21,10 +21,9 @@ from src.shared.domain.module_errors import ModuleUnavailableError
 from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
+from src.shared.infrastructure.di.capabilities import CONVERSATION_CONTEXT
+from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
-from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
-    ConversationPostgresAdapter,
-)
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 # Categories/brands list cache shared across requests (SPEC-06): created once
@@ -75,7 +74,7 @@ def provide_catalog_service(
     return ManageCatalogUseCase(
         provide_product_catalog(settings),
         provide_product_inventory(settings),
-        ConversationPostgresAdapter(session),
+        registry.resolve(CONVERSATION_CONTEXT, session),
         SqlAlchemyUnitOfWork(session),
         option_cache=_CATALOG_OPTION_CACHE,
     )

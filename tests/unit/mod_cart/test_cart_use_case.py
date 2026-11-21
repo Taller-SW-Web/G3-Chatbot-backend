@@ -12,10 +12,9 @@ from src.shared.domain.caller_identity import CallerIdentity
 from tests.fakes.fake_commerce import (
     FakeCarts,
     FakeCatalogPort,
-    FakeConversations,
+    FakeConversationContext,
     FakeInventoryPort,
     FakeItems,
-    FakeMessages,
     FakeUow,
 )
 
@@ -32,13 +31,13 @@ def make_caller(customer=True):
 
 
 def make_cart_use_case(statuses=None, uow=None):
-    conversations = FakeConversations()
+    context = FakeConversationContext()
     cart_uc = ManageCartUseCase(
         FakeCarts(), FakeItems(), FakeCatalogPort(),
-        FakeInventoryPort(statuses or {}, default="DISPONIBLE"), conversations, FakeMessages(),
+        FakeInventoryPort(statuses or {}, default="DISPONIBLE"), context,
         uow or FakeUow(),
     )
-    return cart_uc, conversations
+    return cart_uc, context
 
 
 def owned(cart_uc, conversations, conversation_id=CONVERSATION_ID, customer=True):
@@ -60,8 +59,8 @@ async def test_add_by_sku_creates_line_and_audits():
     assert result["code"] == "OK"
     assert result["bloques"][0]["tipo"] == "CARRITO"
     assert "Agregué" in result["texto"]
-    assert len(cart_uc._messages.rows) == 1
-    assert cart_uc._messages.rows[0]["tool_name"] == "agregar_al_carrito"
+    assert len(cart_uc._conversation_context.messages.rows) == 1
+    assert cart_uc._conversation_context.messages.rows[0]["tool_name"] == "agregar_al_carrito"
 
 
 @pytest.mark.asyncio
@@ -174,7 +173,7 @@ async def test_customer_cannot_touch_a_foreign_conversation():
         await cart_uc.add(make_caller(), CONVERSATION_ID,
                           sku="NIK-REV7-42-NEG", quantity=1)
     assert error.value.code == "RECURSO_NO_ENCONTRADO"
-    assert cart_uc._messages.rows == []
+    assert cart_uc._conversation_context.messages.rows == []
 
 
 @pytest.mark.asyncio

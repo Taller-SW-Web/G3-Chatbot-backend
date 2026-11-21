@@ -22,7 +22,7 @@ from src.modules.mod_catalog.domain.stock_validator import StockValidator
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.domain.request_context import correlation_id_var
-from tests.fakes.fake_commerce import FakeCarts, FakeConversations, FakeItems, FakeMessages, FakeUow
+from tests.fakes.fake_commerce import FakeCarts, FakeConversationContext, FakeItems, FakeUow
 
 BASE = "http://g6.test"
 
@@ -63,16 +63,16 @@ def cart_with(sku: str, statuses: dict | None, *, price: str | None = "99.90"):
     prices = {sku: {"sku": sku, "precio_regular": price, "precio_oferta": None,
                     "currency": "PEN", "valid_from": "2026-01-01T00:00:00Z",
                     "valid_until": None}}
-    conversations = FakeConversations()
+    context = FakeConversationContext()
     conversation_id = uuid.uuid4()
     customer_id = uuid.uuid4()
-    conversations.add_conversation(conversation_id, customer_id=customer_id, context={})
+    context.add_conversation(conversation_id, customer_id=customer_id, context={})
     cart = ManageCartUseCase(
         FakeCarts(), FakeItems(),
         FakeCatalogPort(products=[product], details={}, prices=prices),
-        FakeInventoryPort(statuses or {}), conversations, FakeMessages(), FakeUow(),
+        FakeInventoryPort(statuses or {}), context, FakeUow(),
     )
-    return cart, conversations, CallerIdentity(customer_id=customer_id), conversation_id
+    return cart, context, CallerIdentity(customer_id=customer_id), conversation_id
 
 
 async def add_line(cart, conversations, caller, conversation_id, sku):

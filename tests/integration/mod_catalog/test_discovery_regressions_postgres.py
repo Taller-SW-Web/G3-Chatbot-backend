@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from src.modules.mod_catalog.adapters.http.catalog_router import create_catalog_router
 from src.modules.mod_catalog.application.manage_catalog_use_case import ManageCatalogUseCase
 from src.modules.mod_catalog.application.tools import EmptyArguments, RecommendationArguments, build_tool_registry
+from src.modules.mod_chat.adapters.conversation_context_adapter import ConversationContextAdapter
 from src.modules.mod_chat.adapters.http.chatbot_router import create_chatbot_router
 from src.modules.mod_chat.adapters.registry_tool_adapter import RegistryToolAdapter
 from src.modules.mod_chat.application.dispatch_direct_action_use_case import DispatchDirectActionUseCase
@@ -73,7 +74,12 @@ async def database():
 
 def catalog(s):
     seed, _ = service()
-    return ManageCatalogUseCase(seed._catalog, seed._inventory, ConversationPostgresAdapter(s), SqlAlchemyUnitOfWork(s))
+    conversation_context = ConversationContextAdapter(
+        ConversationPostgresAdapter(s), MessagePostgresAdapter(s)
+    )
+    return ManageCatalogUseCase(
+        seed._catalog, seed._inventory, conversation_context, SqlAlchemyUnitOfWork(s)
+    )
 
 
 def context(cid):

@@ -10,11 +10,13 @@ import pytest
 from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort, FakeInventoryPort
 from src.modules.mod_catalog.application.manage_catalog_use_case import CatalogError, ManageCatalogUseCase
 from src.modules.mod_catalog.application.tools import ProductArguments, SearchArguments
+from src.modules.mod_chat.adapters.conversation_context_adapter import ConversationContextAdapter
 from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
+from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -31,7 +33,10 @@ def context_for(conversation_id, sid=SID_HASH):
 def make_catalog(session):
     return ManageCatalogUseCase(
         FakeCatalogPort(), FakeInventoryPort({}),
-        ConversationPostgresAdapter(session), SqlAlchemyUnitOfWork(session),
+        ConversationContextAdapter(
+            ConversationPostgresAdapter(session), MessagePostgresAdapter(session)
+        ),
+        SqlAlchemyUnitOfWork(session),
     )
 
 

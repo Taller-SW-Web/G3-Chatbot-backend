@@ -31,7 +31,7 @@ from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.module_errors import ModuleUnavailableError
 from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
 from src.shared.infrastructure.http.problem import register_problem_handlers
-from tests.fakes.fake_commerce import FakeConversations, FakeUow
+from tests.fakes.fake_commerce import FakeConversationContext, FakeUow
 
 NOW = datetime(2026, 11, 5, tzinfo=timezone.utc)
 PROMO = {"promotion_id": "sale", "name": "Campaña", "status": "ACTIVA",
@@ -47,11 +47,11 @@ def service(statuses=None):
     catalog = FakeCatalogPort(products=products, details={}, prices={
         f"SKU{i}": {**PRICE, "sku": f"SKU{i}", "precio_regular": 100 + i,
                        "precio_oferta": 80 + i} for i in range(8)})
-    conversations = FakeConversations()
+    conversation_context = FakeConversationContext()
     cid = uuid.uuid4()
-    conversations.add_conversation(cid, anonymous_sid="owner")
+    conversation_context.add_conversation(cid, anonymous_sid="owner")
     context = ExecutionContext(conversacion_id=str(cid), chat_sid="owner")
-    uc = ManageCatalogUseCase(catalog, FakeInventoryPort(statuses, default="DISPONIBLE"), conversations, FakeUow())
+    uc = ManageCatalogUseCase(catalog, FakeInventoryPort(statuses, default="DISPONIBLE"), conversation_context, FakeUow())
     return uc, context
 
 
@@ -126,14 +126,14 @@ async def test_cross_sell_persistence_once_silence_resume_and_no_leakage():
     uc, ctx = service({"SKU1": "INDETERMINADO", "SKU2": "AGOTADO"})
     rows = await uc.cross_sell("0", ctx)
     assert len(rows[0]["datos"]["productos"]) == 1
-    reloaded = ManageCatalogUseCase(uc._catalog, uc._inventory, uc._conversations, uc._uow)
+    reloaded = ManageCatalogUseCase(uc._catalog, uc._inventory, uc._conversation_context, uc._uow)
     assert await reloaded.cross_sell("0", ctx) == []
     await reloaded.silence(EmptyArguments(), ctx)
     assert await reloaded.cross_sell("4", ctx) == []
     resumed = await reloaded.recommend(RecommendationArguments(actividad="complementos"), ctx)
     assert resumed["bloques"]
     other = uuid.uuid4()
-    uc._conversations.add_conversation(other, anonymous_sid="second")
+    uc._conversation_context.add_conversation(other, anonymous_sid="second")
     assert await uc.cross_sell("0", ExecutionContext(conversacion_id=str(other), chat_sid="second"))
     with pytest.raises(CatalogError):
         await uc.cross_sell("0", ExecutionContext(conversacion_id=str(other), chat_sid="owner"))
@@ -259,7 +259,7 @@ async def test_streamed_recommendations_reject_model_factual_justification():
     engine, conversation, messages, _, _, _ = build([
         tool_turn("need", "recomendar_productos", {"actividad": "running"}),
         reply("Todas son impermeables y tienen suela de carbono.")], tools=adapter)
-    discovery._conversations = conversation
+    discovery._conversation_context = conversation
     events = await run(engine, conversation)
     final = events[-1].message
     assert "impermeables" not in str([getattr(event, "text", "") for event in events])
@@ -316,7 +316,7 @@ async def test_cross_sell_provider_failure_returns_empty_and_logs(caplog):
 @pytest.mark.asyncio
 async def test_cross_sell_persistence_failure_propagates():
     uc, ctx = service({"SKU1": "INDETERMINADO", "SKU2": "AGOTADO"})
-    uc._conversations.get_context_for_update = AsyncMock(side_effect=RuntimeError("db down"))
+    uc._conversation_context.get_context_for_update = AsyncMock(side_effect=RuntimeError("db down"))
     with pytest.raises(RuntimeError, match="db down"):
         await uc.cross_sell("0", ctx)
 

@@ -260,13 +260,13 @@ class DiscoveryMixin:
     async def _merge_recommendation_memory(self, conversation_id, updates):
         if conversation_id is None:
             return
-        memory = await self._conversations.get_context_for_update(conversation_id)
+        memory = await self._conversation_context.get_context_for_update(conversation_id)
         memory.update(updates)
         await self._save_memory(conversation_id, memory)
 
     async def silence(self, args, context):
         conversation_id = await self._owned_conversation(context)
-        memory = await self._conversations.get_context_for_update(conversation_id) if conversation_id else {}
+        memory = await self._conversation_context.get_context_for_update(conversation_id) if conversation_id else {}
         memory.update(crossSellSilenciado=True, crossSellPending=False)
         await self._save_memory(conversation_id, memory)
         return {"code": "OK", "texto": "No sugeriré más complementos en esta conversación.", "bloques": []}
@@ -301,7 +301,7 @@ class DiscoveryMixin:
         picks = [row for row in summaries if not row.get("missing_data") and row["availability"] in {
             "DISPONIBLE", "POCAS_UNIDADES"} and row["price"] is not None][:3]
         # Re-read under a row lock only after all provider calls finish.
-        memory = await self._conversations.get_context_for_update(conversation_id)
+        memory = await self._conversation_context.get_context_for_update(conversation_id)
         seen = memory.get("crossSellProducts", [])
         if memory.get("crossSellSilenciado") or product_id in seen:
             await self._uow.commit()
