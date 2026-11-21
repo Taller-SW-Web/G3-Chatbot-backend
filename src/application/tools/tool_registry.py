@@ -15,11 +15,14 @@ class ExecutionContext:
 
     Nunca construirlo desde argumentos del LLM. El caso de uso también valida
     las referencias de producto/item contra esta conversación y su carrito.
+    `access_token` viaja solo para reenviar llamadas del titular (Ventas
+    `GET /pedidos/me`) desde el chat; nunca se registra ni se expone al LLM.
     """
 
     conversacion_id: str | None = None
     cliente_id: str | None = None
     chat_sid: str | None = None
+    access_token: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)

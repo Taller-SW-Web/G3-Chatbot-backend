@@ -89,7 +89,7 @@ async def test_availability_missing_never_becomes_positive(bad):
     uc._inventory.get_availability = AsyncMock(**({"side_effect": bad} if isinstance(bad, Exception) else {"return_value": bad}))
     result = await uc.search(SearchArguments(), ctx)
     row = rows(result)[0]
-    assert row["availability"] == "INDETERMINADO" and row["missing_data"] == ["availability"]
+    assert row["availability"] is None and row["missing_data"] == ["availability"]
     assert result["partial"]
 
 
@@ -296,7 +296,8 @@ def test_rest_punctual_missing_and_obtained_indeterminate_are_distinct():
         obtained = client.get("/catalogo/disponibilidad", params={"sku": SKU}).json()[0]
         uc._inventory.get_availability = AsyncMock(return_value=[])
         missing = client.get("/catalogo/disponibilidad", params={"sku": SKU}).json()[0]
-    assert obtained["status"] == missing["status"] == "INDETERMINADO"
+    assert obtained["status"] == "INDETERMINADO"
+    assert missing["status"] == "SERVICIO_NO_DISPONIBLE"
     assert obtained["missing_data"] == [] and missing["missing_data"] == ["availability"]
     assert obtained["mensaje"] != missing["mensaje"]
 

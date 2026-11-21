@@ -18,22 +18,29 @@ def test_projection_statuses_map_to_checks():
     assert validator.check_row(ROWS[0]).ok is True
     assert validator.check_row(ROWS[1]).warning == "STOCK_BAJO"
     assert validator.check_row(ROWS[2]).code == "SKU_AGOTADO"
+    assert validator.check_row(ROWS[3]).ok is True
     assert validator.check_row(ROWS[3]).warning == "INDETERMINADO"
-    assert validator.check_row(ROWS[4]).code == "INDETERMINADO"
+    # Unknown value and missing row are "not obtained", never a commercial state.
+    assert validator.check_row(ROWS[4]).code == "SERVICIO_NO_DISPONIBLE"
+    assert validator.check_row(None).code == "SERVICIO_NO_DISPONIBLE"
 
 
 def test_bulk_check_indexes_by_sku():
     checks = StockValidator().check_bulk(ROWS)
     assert checks["A"].ok is True
     assert checks["C"].ok is False
+    exact = StockValidator().check_bulk(ROWS, requested=["A", "Z"])
+    assert exact["Z"].code == "SERVICIO_NO_DISPONIBLE"
 
 
 def test_quantity_verdicts():
     validator = StockValidator()
     assert validator.check_quantity("SUFICIENTE").ok is True
     assert validator.check_quantity("INSUFICIENTE").code == "STOCK_INSUFICIENTE"
+    assert validator.check_quantity("INDETERMINADO").ok is True
     assert validator.check_quantity("INDETERMINADO").warning == "INDETERMINADO"
-    assert validator.check_quantity(None).warning == "INDETERMINADO"
+    assert validator.check_quantity(None).code == "SERVICIO_NO_DISPONIBLE"
+    assert validator.check_quantity("OTRO").code == "SERVICIO_NO_DISPONIBLE"
 
 
 def test_similar_products_same_category_within_20_percent():

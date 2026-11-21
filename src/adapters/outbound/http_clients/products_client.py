@@ -41,6 +41,16 @@ logger = logging.getLogger(__name__)
 
 MAX_PRICE_DECIMALS = Decimal("0.01")
 
+# A17: every Productos/Inventario call carries a `modulo-chatbot` service token
+# with the shared audience and the scope of the operation (contratos §3.2).
+PRODUCTS_AUDIENCE = "api-productos"
+SCOPE_CATALOG = "catalogo:leer"
+SCOPE_PRICES = "precios:leer"
+SCOPE_PROMOTIONS = "promociones:leer"
+SCOPE_PROMOTIONS_EVALUATE = "promociones:evaluar"
+SCOPE_RECOMMENDATIONS = "recomendaciones:leer"
+SCOPE_INVENTORY = "inventario:disponibilidad:leer"
+
 # Used when a 4xx body carries no `code`/`codigo` (or is not JSON at all).
 FALLBACK_ERROR_CODES = {
     400: "VALIDACION",
@@ -84,13 +94,15 @@ class ProductsBaseClient(BaseModuleClient):
 
     module: str = "productos"
 
-    async def _request(self, method, path, correlation_id=None, **kwargs):
+    async def _request(self, method, path, correlation_id=None, *, scope=None, **kwargs):
         correlation_id = correlation_id or correlation_id_var.get() or str(uuid.uuid4())
         provider = getattr(self, "_service_token_provider", None)
         if provider is not None:
             headers = dict(kwargs.pop("headers", {}))
             try:
-                token = await provider.get_token(correlation_id=correlation_id)
+                token = await provider.get_token(
+                    correlation_id=correlation_id, scope=scope, audience=PRODUCTS_AUDIENCE
+                )
             except ModuleRequestError as exc:
                 if exc.status not in (401, 403):
                     raise
@@ -156,6 +168,8 @@ class ProductsClient(ProductsBaseClient):
             raise ValueError(f"page must be >= 1, got {page}")
         if not 1 <= size <= 10:
             raise ValueError(f"size must be 1..10, got {size}")
+        # `state` is kept for port compatibility and intentionally never sent:
+        # `estado` is a back-office filter a channel identity cannot use (A17).
         params: dict[str, Any] = {
             "canal": channel,
             "pagina": page,
@@ -177,7 +191,8 @@ class ProductsClient(ProductsBaseClient):
                     f"min_price must be <= max_price, got {min_price!r} > {max_price!r}"
                 )
         response = await self._request(
-            "GET", "/productos", params=params, correlation_id=correlation_id
+            "GET", "/productos", params=params, correlation_id=correlation_id,
+            scope=SCOPE_CATALOG,
         )
         return await self._parse_response(response)
 
@@ -189,6 +204,7 @@ class ProductsClient(ProductsBaseClient):
             f"/productos/{quote(product_id, safe='')}",
             params={"canal": "CHATBOT"},
             correlation_id=correlation_id,
+            scope=SCOPE_CATALOG,
         )
         return normalize_detail(await self._parse_response(response))
 
@@ -196,14 +212,16 @@ class ProductsClient(ProductsBaseClient):
         self, *, correlation_id: str | None = None
     ) -> list[dict[str, Any]]:
         response = await self._request(
-            "GET", "/categorias", correlation_id=correlation_id
+            "GET", "/categorias", correlation_id=correlation_id, scope=SCOPE_CATALOG
         )
         return self._unwrap_list(await self._parse_response(response), "categories")
 
     async def list_brands(
         self, *, correlation_id: str | None = None
     ) -> list[dict[str, Any]]:
-        response = await self._request("GET", "/marcas", correlation_id=correlation_id)
+        response = await self._request(
+            "GET", "/marcas", correlation_id=correlation_id, scope=SCOPE_CATALOG
+        )
         return self._unwrap_list(await self._parse_response(response), "brands")
 
     async def get_price(
@@ -214,6 +232,7 @@ class ProductsClient(ProductsBaseClient):
             f"/precios/skus/{quote(sku, safe='')}",
             params={"canal": "CHATBOT"},
             correlation_id=correlation_id,
+            scope=SCOPE_PRICES,
         )
         return await self._parse_response(response)
 
@@ -230,6 +249,7 @@ class ProductsClient(ProductsBaseClient):
             "/precios",
             params={"skus": ",".join(clean), "canal": channel},
             correlation_id=correlation_id,
+            scope=SCOPE_PRICES,
         )
         return self._unwrap_list(await self._parse_response(response))
 
@@ -239,13 +259,15 @@ class ProductsClient(ProductsBaseClient):
         """Current promotions (`GET /promociones`): resolves `promotion_id`
         to a display name. Provisional shape until Productos confirms (A5)."""
         response = await self._request(
-            "GET", "/promociones", params={"canal": "CHATBOT", "vigentes": "true"}, correlation_id=correlation_id
+            "GET", "/promociones", params={"canal": "CHATBOT", "vigentes": "true"},
+            correlation_id=correlation_id, scope=SCOPE_PROMOTIONS,
         )
         return self._unwrap_list(await self._parse_response(response))
 
     async def get_recommendations(self, product_id: str, *, correlation_id=None):
         response = await self._request("GET", "/recomendaciones",
-            params={"productoId": product_id, "canal": "CHATBOT"}, correlation_id=correlation_id)
+            params={"productoId": product_id, "canal": "CHATBOT"}, correlation_id=correlation_id,
+            scope=SCOPE_RECOMMENDATIONS)
         body = await self._parse_response(response)
         if not isinstance(body, dict) or not isinstance(body.get("recommendations"), list):
             raise ModuleUnavailableError(self.module, "invalid recommendations response")
@@ -270,7 +292,8 @@ class ProductsClient(ProductsBaseClient):
         if customer_ref is not None:
             payload["customer_ref"] = customer_ref
         response = await self._request(
-            "POST", "/promociones/evaluar", json=payload, correlation_id=correlation_id
+            "POST", "/promociones/evaluar", json=payload, correlation_id=correlation_id,
+            scope=SCOPE_PROMOTIONS_EVALUATE,
         )
         return await self._parse_response(response)
 

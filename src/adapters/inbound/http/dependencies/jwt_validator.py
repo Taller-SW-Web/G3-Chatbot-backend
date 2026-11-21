@@ -59,7 +59,7 @@ async def customer_from_bearer(token: str, validator: AccessTokenValidatorPort) 
         raise ProblemError(
             401, "TOKEN_INVALIDO", "Invalid token", "Token subject is missing or invalid."
         ) from None
-    return CallerIdentity(customer_id=customer_id)
+    return CallerIdentity(customer_id=customer_id, access_token=token)
 
 
 async def get_current_customer(

@@ -209,6 +209,7 @@ class InterpretAndRespondUseCase:
                 conversation_id=conversation.id,
                 customer_id=caller.customer_id,
                 anonymous_sid=caller.anonymous_sid,
+                access_token=caller.access_token,
             )
             memory = await self._conversations.get_context(conversation.id)
             normalized = fold(customer_text).strip(" .!,;¿?¡")

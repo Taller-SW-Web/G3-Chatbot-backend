@@ -334,16 +334,24 @@ async def test_verify_quantities_posts_real_keys():
     import json
 
     verdicts = await make_inventory().verify_quantities(
-        [{"sku": "NIK-REV7-42-NEG", "quantity": 2}]
+        [{"sku": "NIK-REV7-42-NEG", "quantity": 2},
+         {"sku": "NIK-REV7-42-BLA", "quantity": 5},
+         {"sku": "AND-POLO-M-NEG", "quantity": 1}]
     )
     by_sku = {verdict["sku"]: verdict for verdict in verdicts}
-    assert by_sku["NIK-REV7-42-NEG"]["veredicto"] == "SUFICIENTE"
-    assert by_sku["NIK-REV7-42-BLA"]["veredicto"] == "INSUFICIENTE"
-    assert by_sku["AND-POLO-M-NEG"]["veredicto"] == "INDETERMINADO"
+    assert by_sku["NIK-REV7-42-NEG"]["result"] == "SUFICIENTE"
+    assert by_sku["NIK-REV7-42-BLA"]["result"] == "INSUFICIENTE"
+    assert by_sku["AND-POLO-M-NEG"]["result"] == "INDETERMINADO"
+    assert by_sku["NIK-REV7-42-BLA"]["requested_quantity"] == 5
     body = json.loads(route.calls[0].request.content)
     assert body["channel_id"] == "CHATBOT"
     assert body["fulfillment"] == {"mode": "ENVIO_DOMICILIO"}
-    assert body["lines"] == [{"sku": "NIK-REV7-42-NEG", "quantity": 2}]
+    assert "fulfillment_ref" not in body
+    assert body["lines"] == [
+        {"sku": "NIK-REV7-42-NEG", "quantity": 2},
+        {"sku": "NIK-REV7-42-BLA", "quantity": 5},
+        {"sku": "AND-POLO-M-NEG", "quantity": 1},
+    ]
 
 
 @pytest.mark.asyncio

@@ -61,6 +61,10 @@ La plantilla trae dos bloques; se elige uno comentando el otro.
 | **Local fake** (por defecto) | Desarrollar sin depender de otros equipos | `MODULES_MODE=fake` y `*_MODE=fake` |
 | **Real** | Probar contra G7, G6 y G2 desplegados | bloque "Perfil REAL" de la plantilla |
 
+Para homologar Productos con su contrato real (acuerdo A17), sigue
+[`g6-homologacion.md`](./g6-homologacion.md): exige `PRODUCTS_AUTH_MODE=service`,
+token con audiencia `api-productos` y el scope de cada operación.
+
 Valores no secretos del perfil real (ya están en la plantilla):
 
 ```

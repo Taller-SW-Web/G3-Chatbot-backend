@@ -63,6 +63,7 @@ from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.cart_handlers import build_cart_handlers
 from src.application.tools.catalog_handlers import build_catalog_handlers
 from src.application.tools.catalog_tools import build_tool_registry
+from src.application.tools.order_handlers import build_order_handlers
 from src.application.tools.tool_registry import ToolRegistry
 from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
@@ -140,6 +141,7 @@ def provide_tool_registry(session: AsyncSession) -> ToolRegistry:
     handlers = {}
     handlers.update(build_catalog_handlers(catalog))
     handlers.update(build_cart_handlers(cart))
+    handlers.update(build_order_handlers(provide_orders_service(session)))
     return build_tool_registry(handlers)
 
 
@@ -558,7 +560,7 @@ async def provide_action_scope() -> AsyncIterator[DispatchDirectActionUseCase]:
 
 
 class _MissingProductsCredential:
-    async def get_token(self, *, correlation_id=None):
+    async def get_token(self, *, correlation_id=None, scope=None, audience=None):
         from src.ports.outbound.module_errors import ModuleUnavailableError
         raise ModuleUnavailableError("security", "SECURITY_CLIENT_SECRET required for G6 M2M")
 

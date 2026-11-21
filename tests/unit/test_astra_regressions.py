@@ -256,7 +256,8 @@ async def test_rejected_service_token_is_invalidated_and_refreshed():
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(issue), base_url="https://g7.test") as security:
         provider = SecurityServiceTokenProvider("https://g7.test", "test-client", "fake-secret", client=security)
-        assert await provider.get_token() == "service-1"
+        scoped = {"scope": "catalogo:leer", "audience": "api-productos"}
+        assert await provider.get_token(**scoped) == "service-1"
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(lambda request: httpx.Response(401, json={"code": "TOKEN_INVALIDO"})),
             base_url="https://g6.test",
@@ -264,9 +265,10 @@ async def test_rejected_service_token_is_invalidated_and_refreshed():
             client = ProductsClient("https://g6.test", client=upstream, service_token_provider=provider)
             with pytest.raises(ModuleUnavailableError):
                 await client.search_products()
-        assert await provider.get_token() == "service-2"
+        # The rejected token is dropped and the next scoped call mints a new one.
+        assert await provider.get_token(**scoped) == "service-2"
         provider.invalidate("service-1")
-        assert await provider.get_token() == "service-2"
+        assert await provider.get_token(**scoped) == "service-2"
         assert len(issued) == 2
 
 

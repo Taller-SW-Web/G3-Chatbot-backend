@@ -10,18 +10,29 @@ The module exposes quantities nowhere in 0.5.0: `get_availability`
 returns per-SKU `status` and `verify_quantities` answers per line
 (`SUFICIENTE`, `INSUFICIENTE`, `INDETERMINADO`), non-binding and without
 reservation. Exact quantity enforcement happens in Ventas with 409.
+Rows outside the published enum, missing, extra or duplicated are absence
+("not obtained"), never a commercial state (A17 · D2).
 """
 from typing import Any
 
 import httpx
 
-from src.adapters.outbound.http_clients.products_client import ProductsBaseClient
+from src.adapters.outbound.http_clients.products_client import (
+    SCOPE_INVENTORY,
+    ProductsBaseClient,
+)
+from src.ports.outbound.module_errors import ModuleUnavailableError
 from src.ports.outbound.product_repository_port import (
     MAX_COMMERCIAL_SKUS,
     normalize_sku_list,
 )
 
 INVENTORY_TIMEOUT_SECONDS = 3.0
+
+# The only commercial states the contract publishes (D2): anything else in the
+# payload is an incompatible answer, not a commercial state.
+KNOWN_STATUSES = frozenset({"DISPONIBLE", "STOCK_BAJO", "AGOTADO", "INDETERMINADO"})
+KNOWN_RESULTS = frozenset({"SUFICIENTE", "INSUFICIENTE", "INDETERMINADO"})
 
 
 class InventoryClient(ProductsBaseClient):
@@ -48,25 +59,37 @@ class InventoryClient(ProductsBaseClient):
             "/inventario/disponibilidad/comercial",
             params={"skus": ",".join(clean), "canal": channel},
             correlation_id=correlation_id,
+            scope=SCOPE_INVENTORY,
         )
         rows = await self._parse_response(response)
-        if isinstance(rows, list):
-            return self._valid_rows(rows)
-        if isinstance(rows, dict) and isinstance(rows.get("items"), list):
-            return self._valid_rows(rows["items"])
-        raise ValueError(
-            f"expected a list or paginated items, got {type(rows).__name__}"
-        )
+        if isinstance(rows, dict):
+            rows = rows.get("items")
+        if not isinstance(rows, list):
+            raise ModuleUnavailableError(
+                self.module, f"expected availability items, got {type(rows).__name__}"
+            )
+        return self._valid_rows(rows, clean)
 
     @classmethod
-    def _valid_rows(cls, rows):
-        # Isolate malformed neighbours; absence stays absence for stock decisions.
+    def _valid_rows(cls, rows, requested: list[str]):
+        """Exact SKU correspondence: missing, unknown or extra rows are absence.
+
+        A row only counts when its SKU was requested, its `status` belongs to the
+        published enum and its shape matches the projection. Everything else is
+        "availability not obtained", never `AGOTADO` nor `INDETERMINADO`.
+        """
+        wanted = set(requested)
         valid = []
+        seen: set[str] = set()
         for row in rows:
             try:
-                valid.append(cls._check_row(row))
+                clean = cls._check_row(row)
             except ValueError:
                 continue
+            sku = str(clean["sku"]).strip()
+            if sku in wanted and sku not in seen:
+                valid.append({**clean, "sku": sku})
+                seen.add(sku)
         return valid
 
     async def verify_quantities(
@@ -78,8 +101,11 @@ class InventoryClient(ProductsBaseClient):
     ) -> list[dict[str, Any]]:
         """Non-binding per-line verdicts for requested quantities.
 
-        G6 OpenAPI a7778ec requires the delivery fulfillment context.
-        Wire `result` is projected to the internal `veredicto` field.
+        G6 OpenAPI a7778ec requires the delivery fulfillment context and answers
+        `items[{sku, requested_quantity, result, reason_code}]`; callers read
+        `result` directly (no internal rename). Rows that are missing, extra,
+        duplicated or out of the published enum are discarded so the caller sees
+        "not obtained" instead of a commercial state.
         """
         clean = self._check_lines(lines)
         response = await self._request(
@@ -87,16 +113,41 @@ class InventoryClient(ProductsBaseClient):
             "/inventario/disponibilidad/comercial/verificar",
             json={"channel_id": channel_id, "fulfillment": {"mode": "ENVIO_DOMICILIO"}, "lines": clean},
             correlation_id=correlation_id,
+            scope=SCOPE_INVENTORY,
         )
         verdicts = await self._parse_response(response)
-        if isinstance(verdicts, list):
-            return verdicts
-        if isinstance(verdicts, dict) and isinstance(verdicts.get("items"), list):
-            return [{**row, "veredicto": row.get("result", row.get("veredicto"))}
-                    for row in verdicts["items"]]
-        raise ValueError(
-            f"expected a list or paginated items, got {type(verdicts).__name__}"
-        )
+        if isinstance(verdicts, dict):
+            verdicts = verdicts.get("items")
+        if not isinstance(verdicts, list):
+            raise ModuleUnavailableError(
+                self.module, f"expected verdict items, got {type(verdicts).__name__}"
+            )
+        return self._valid_verdicts(verdicts, clean)
+
+    @staticmethod
+    def _valid_verdicts(rows, lines: list[dict[str, Any]]):
+        requested = {line["sku"] for line in lines}
+        valid = []
+        seen: set[str] = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            sku = row.get("sku")
+            result = row.get("result")
+            quantity = row.get("requested_quantity")
+            if (not isinstance(sku, str) or sku.strip() not in requested
+                    or sku.strip() in seen
+                    or not isinstance(result, str) or result not in KNOWN_RESULTS
+                    or not isinstance(quantity, int) or isinstance(quantity, bool)):
+                continue
+            valid.append({
+                "sku": sku.strip(),
+                "requested_quantity": quantity,
+                "result": result,
+                "reason_code": row.get("reason_code"),
+            })
+            seen.add(sku.strip())
+        return valid
 
     async def get_sku_availability(
         self, sku: str, *, correlation_id: str | None = None
@@ -126,12 +177,12 @@ class InventoryClient(ProductsBaseClient):
 
     @staticmethod
     def _check_row(row: Any) -> dict[str, Any]:
-        """Shape-check the commercial projection; unknown statuses pass
-        through and the stock validator maps them to INDETERMINADO."""
+        """Shape-check the commercial projection: `sku` plus a published `status`."""
         if not isinstance(row, dict):
             raise ValueError(f"expected an availability row, got {type(row).__name__}")
         if not isinstance(row.get("sku"), str) or not row["sku"].strip():
             raise ValueError(f"row must carry a sku, got {row!r}")
-        if not isinstance(row.get("status"), str) or not row["status"].strip():
-            raise ValueError(f"row {row.get('sku')!r} must carry a status, got {row!r}")
-        return row
+        status = row.get("status")
+        if not isinstance(status, str) or status not in KNOWN_STATUSES:
+            raise ValueError(f"row {row.get('sku')!r} has an unpublished status, got {row!r}")
+        return {"sku": row["sku"], "status": status}

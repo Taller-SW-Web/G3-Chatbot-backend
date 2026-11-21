@@ -62,7 +62,7 @@ def test_tool_catalog_requires_session_and_confirmation():
     assert get_tool_contract("vaciar_carrito").requires_confirmation is True
     assert get_tool_contract("iniciar_checkout").requires_session is True
     assert get_tool_contract("buscar_productos").requires_session is False
-    assert len(TOOL_CONTRACTS) == 16
+    assert len(TOOL_CONTRACTS) == 17
     with pytest.raises(KeyError):
         get_tool_contract("no_existe")
 
