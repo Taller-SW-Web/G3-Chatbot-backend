@@ -49,6 +49,28 @@ def test_g5_detail_projects_total_and_history():
     assert len(result["historial"]) == 2
     assert result["historial"][0]["etiqueta"] == "Pendiente de pago"
     assert result["historial"][1]["completado"] is True
+    assert "csatEnviado" not in result
+
+
+def test_g5_detail_exposes_the_local_csat_flag():
+    from types import SimpleNamespace
+
+    class Refs:
+        async def obtener_por_order_id(self, order_id):
+            return SimpleNamespace(csat_sent=True)
+
+    service = OrdersService(
+        notifications=None, sales_client=G5ShapeSales(), order_refs=Refs(),  # type: ignore[arg-type]
+    )
+
+    async def run():
+        return await service.get_order_detail(
+            "11111111-1111-1111-1111-111111111111",
+            "PED-2026-00001",
+            holder_token="token",
+        )
+
+    assert anyio.run(run)["csatEnviado"] is True
 
 
 class FakeDispatch:

@@ -47,6 +47,14 @@ resuelve por la capacidad `dispatch_port`.
 | Capacidad | Consumidor | Motivo |
 |---|---|---|
 | `order_confirmation` | `mod-checkout`, worker de outbox | el correo de confirmación pertenece a este módulo |
+| `feedback_notifier` | worker de outbox | correo interno de sugerencias/bugs (SPEC-24), mismo `EmailSender` |
+
+## Retroalimentación (SPEC-24)
+
+- `POST /sugerencias` (en `mod-chat`) encola `SEND_FEEDBACK_EMAIL`; el worker lo
+  entrega a la bandeja `FEEDBACK_INBOX_EMAIL` con el `EmailSender` de SPEC-16.
+- El detalle de pedido incluye `csatEnviado` leído de `order_ref.csat_sent`
+  (solo si existe la fila local), para que el frontend no repita la encuesta.
 
 ## Pruebas
 

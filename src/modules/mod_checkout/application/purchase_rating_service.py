@@ -49,16 +49,24 @@ class PurchaseRatingService:
             raise PurchaseRatingError(
                 "CONFLICTO", "Ya calificaste este pedido.", status=409
             )
-        from src.modules.mod_checkout.domain.purchase_rating import NewPurchaseRating
-
-        row = await self._ratings.guardar(
-            NewPurchaseRating(
-                order_id=order_id,
-                customer_id=customer_id,
-                rating=int(estrellas),
-                comment=comentario,
-            )
+        from src.modules.mod_checkout.domain.purchase_rating import (
+            NewPurchaseRating,
+            PurchaseRatingAlreadyExists,
         )
+
+        try:
+            row = await self._ratings.guardar(
+                NewPurchaseRating(
+                    order_id=order_id,
+                    customer_id=customer_id,
+                    rating=int(estrellas),
+                    comment=comentario,
+                )
+            )
+        except PurchaseRatingAlreadyExists as exc:
+            raise PurchaseRatingError(
+                "CONFLICTO", "Ya calificaste este pedido.", status=409
+            ) from exc
         await self._uow.commit()
         return {
             "orderId": order_id,

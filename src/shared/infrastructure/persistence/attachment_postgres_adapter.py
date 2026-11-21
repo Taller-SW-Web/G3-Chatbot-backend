@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.shared.application.dto.attachment_dto import NewAttachment
 from src.shared.infrastructure.db.models.attachment import Attachment
 
 
@@ -17,7 +18,18 @@ class AttachmentPostgresAdapter:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def guardar(self, row: Attachment) -> Attachment:
+    async def guardar(self, row: Attachment | NewAttachment) -> Attachment:
+        if not isinstance(row, Attachment):
+            row = Attachment(
+                conversation_id=row.conversation_id,
+                status=row.status,
+                storage_key=row.storage_key,
+                thumbnail_key=row.thumbnail_key,
+                mime_type=row.mime_type,
+                size_bytes=row.size_bytes,
+                width=row.width,
+                height=row.height,
+            )
         self.session.add(row)
         await self.session.flush()
         return row

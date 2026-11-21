@@ -28,6 +28,7 @@ from src.shared.infrastructure.db.connection import get_session
 from src.shared.infrastructure.di.capabilities import DISPATCH_PORT, FEEDBACK_NOTIFIER, ORDER_CONFIRMATION
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
+from src.shared.infrastructure.persistence.order_ref_postgres_adapter import OrderRefPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 # Without SMTP_HOST the confirmations land here (process-wide, inspectable in local runs).
@@ -84,6 +85,7 @@ def provide_orders_service(session: AsyncSession = Depends(get_session)) -> Orde
         notifications=build_notification_service(session),
         sales_client=provide_sales_port(settings),
         dispatch=dispatch,
+        order_refs=OrderRefPostgresAdapter(session),
     )
 
 

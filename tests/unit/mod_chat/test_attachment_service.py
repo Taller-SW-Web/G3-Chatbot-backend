@@ -29,7 +29,22 @@ class FakeRepo:
         self.rows = []
 
     async def guardar(self, row):
-        row.id = row.id or uuid.uuid4()
+        from types import SimpleNamespace
+
+        if not hasattr(row, "id"):
+            row = SimpleNamespace(
+                id=uuid.uuid4(),
+                conversation_id=row.conversation_id,
+                message_id=None,
+                status=row.status,
+                storage_key=row.storage_key,
+                thumbnail_key=row.thumbnail_key,
+                mime_type=row.mime_type,
+                size_bytes=row.size_bytes,
+                width=row.width,
+                height=row.height,
+                created_at=NOW,
+            )
         self.rows.append(row)
         return row
 

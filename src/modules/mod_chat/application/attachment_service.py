@@ -100,9 +100,9 @@ class AttachmentService:
                 status=503,
             ) from exc
 
-        from src.shared.infrastructure.db.models.attachment import Attachment
+        from src.shared.application.dto.attachment_dto import NewAttachment
 
-        row = Attachment(
+        row = NewAttachment(
             conversation_id=conversation_id,
             status="PENDING",
             storage_key=image_key,

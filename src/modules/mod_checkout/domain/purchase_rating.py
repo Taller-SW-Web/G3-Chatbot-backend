@@ -9,3 +9,8 @@ class NewPurchaseRating:
     customer_id: uuid.UUID
     rating: int
     comment: str | None
+
+
+class PurchaseRatingAlreadyExists(Exception):
+    """Unique `order_id`: the order already has a rating."""
+

@@ -2,9 +2,13 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.mod_checkout.domain.purchase_rating import NewPurchaseRating
+from src.modules.mod_checkout.domain.purchase_rating import (
+    NewPurchaseRating,
+    PurchaseRatingAlreadyExists,
+)
 from src.shared.infrastructure.db.models.feedback import PurchaseRating
 
 
@@ -26,5 +30,9 @@ class PurchaseRatingPostgresAdapter:
                 created_at=datetime.now(timezone.utc),
             )
         self.session.add(row)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise PurchaseRatingAlreadyExists(row.order_id) from exc
         return row

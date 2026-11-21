@@ -88,7 +88,7 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
             name="outbox-worker",
         )
         logger.info("Outbox worker started (every %.1fs)", settings.outbox_poll_interval_seconds)
-    if registry.is_registered(ATTACHMENT_CLEANUP):
+    if settings.outbox_worker_enabled and registry.is_registered(ATTACHMENT_CLEANUP):
         connection.get_engine()
         cleanup_task = asyncio.create_task(
             run_attachment_cleanup(

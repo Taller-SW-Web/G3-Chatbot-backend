@@ -78,6 +78,7 @@ de propiedad en Ventas. No se envía a Ventas; la CSAT de la entrega sigue en
 | `checkout_document` | `mod-auth` (opcional) | `ultimoDocumento` del perfil sin acoplar auth a checkout |
 | `outbox_processor` | worker compartido | el lifespan no importa módulos |
 | `order_confirmation` (consumida) | este módulo | el correo pertenece a `mod-orders`; es requisito de arranque |
+| `feedback_notifier` (consumida) | worker de outbox | correo interno de SPEC-24; opcional, si falta el job reintenta |
 
 ## Pruebas
 
