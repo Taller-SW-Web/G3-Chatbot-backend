@@ -1263,3 +1263,35 @@ async def test_subtotal_sums_prices_with_decimal_precision(use_case):
     _, checkout = await _create(use_case, "decimal-key")
     assert checkout.summary["subtotal"] == 409.8
     assert checkout.summary["lineas"][0]["precio"] == 329.9
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result,reason,code", [
+    ("REJECTED", "INSUFFICIENT_FUNDS", "PAGO_RECHAZADO"),
+    ("ERROR", "PROCESSING_ERROR", "ERROR_PROCESAMIENTO"),
+])
+async def test_payment_replay_of_non_approved_attempt_reraises_original_outcome(
+    use_case, mock_checkouts, mock_attempts, result, reason, code
+):
+    checkout_id = uuid.uuid4()
+    cust_id = uuid.uuid4()
+    mock_checkouts.obtener_por_id.return_value = Checkout(
+        id=checkout_id, cart_id=uuid.uuid4(), customer_id=cust_id, status="PENDING_PAYMENT",
+        summary={}, total=100.0, payment_attempts=1,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10), idempotency_key="k1",
+    )
+    mock_attempts.obtener_por_idempotency_key = AsyncMock(
+        return_value=PaymentAttempt(
+            id=uuid.uuid4(), checkout_id=checkout_id, idempotency_key="pay-key-1",
+            result=result, reason=reason, brand="VISA", last4="1111", amount=100.0,
+        )
+    )
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.process_payment(
+            ProcessPaymentInput(
+                checkout_id=checkout_id, customer_id=cust_id, idempotency_key="pay-key-1",
+                numero_tarjeta="4000000000000002", titular="Diego Test", vencimiento="12/28", cvv="123",
+            )
+        )
+    assert exc_info.value.code == code
+    assert exc_info.value.extra["intentosRestantes"] == 2

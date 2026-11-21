@@ -590,19 +590,29 @@ class ManageCheckoutUseCase:
 
         return row
 
+    async def _replay_existing_attempt(self, existing_attempt: Any, input_data: ProcessPaymentInput) -> Any | None:
+        """Outcome of an already-processed Idempotency-Key, or None when the key is new."""
+        if not isinstance(getattr(existing_attempt, "checkout_id", None), uuid.UUID):
+            return None
+        existing_checkout = await self.checkouts.obtener_por_id(existing_attempt.checkout_id)
+        if not existing_checkout or existing_checkout.customer_id != input_data.customer_id:
+            raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
+        if existing_attempt.checkout_id != input_data.checkout_id:
+            raise CheckoutError("CONFLICTO", "Idempotency-Key ya usada en otro checkout")
+        if getattr(existing_attempt, "result", None) != PaymentResult.APPROVED.value:
+            # Replay of a declined/errored attempt must report the original outcome, never success.
+            raise self._replayed_failure(existing_attempt, existing_checkout)
+        return existing_attempt
+
     async def process_payment(self, input_data: ProcessPaymentInput) -> Any:
         if not input_data.idempotency_key:
             raise CheckoutError("VALIDACION", "Se requiere Idempotency-Key", {"campo": "Idempotency-Key"})
 
         # 1. Idempotencia real: buscar por clave antes de ejecutar
         existing_attempt = await _safe_call(self.payment_attempts, "obtener_por_idempotency_key", input_data.idempotency_key)
-        if isinstance(getattr(existing_attempt, "checkout_id", None), uuid.UUID):
-            existing_checkout = await self.checkouts.obtener_por_id(existing_attempt.checkout_id)
-            if not existing_checkout or existing_checkout.customer_id != input_data.customer_id:
-                raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
-            if existing_attempt.checkout_id != input_data.checkout_id:
-                raise CheckoutError("CONFLICTO", "Idempotency-Key ya usada en otro checkout")
-            return existing_attempt
+        replay = await self._replay_existing_attempt(existing_attempt, input_data)
+        if replay is not None:
+            return replay
 
         row = await self.checkouts.obtener_por_id(input_data.checkout_id)
         if not row or row.customer_id != input_data.customer_id:
@@ -772,22 +782,31 @@ class ManageCheckoutUseCase:
         if self.uow:
             await _safe_call(self.uow, "commit")
 
+        raise self._failure_error(payment_res.result, payment_res.reason, remaining)
+
+    @staticmethod
+    def _failure_error(result: str | None, reason: str | None, remaining: int) -> CheckoutError:
         motivo_map = {
             PaymentRejectReason.INSUFFICIENT_FUNDS.value: "FONDOS_INSUFICIENTES",
             PaymentRejectReason.DECLINED_BY_ISSUER.value: "RECHAZADO_POR_EMISOR",
             PaymentRejectReason.PROCESSING_ERROR.value: "ERROR_PROCESAMIENTO",
         }
-        motivo_es = motivo_map.get(payment_res.reason or "", payment_res.reason or "RECHAZADO")
+        motivo_es = motivo_map.get(reason or "", reason or "RECHAZADO")
 
-        if payment_res.result == PaymentResult.ERROR.value:
-            raise CheckoutError(
+        if result == PaymentResult.ERROR.value:
+            return CheckoutError(
                 "ERROR_PROCESAMIENTO",
                 "Ocurrió un error temporal al procesar el pago. Intente de nuevo.",
                 {"motivo": motivo_es, "intentosRestantes": remaining},
             )
 
-        raise CheckoutError(
+        return CheckoutError(
             "PAGO_RECHAZADO",
             "Tu tarjeta fue rechazada. Puedes intentar con otra tarjeta.",
             {"motivo": motivo_es, "intentosRestantes": remaining},
         )
+
+    @classmethod
+    def _replayed_failure(cls, attempt: Any, checkout: Any) -> CheckoutError:
+        remaining = max(0, 3 - (getattr(checkout, "payment_attempts", 0) or 0))
+        return cls._failure_error(getattr(attempt, "result", None), getattr(attempt, "reason", None), remaining)
