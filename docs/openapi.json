@@ -693,6 +693,11 @@
             "title": "Detalle",
             "type": "string"
           },
+          "forzar": {
+            "default": false,
+            "title": "Forzar",
+            "type": "boolean"
+          },
           "motivo": {
             "minLength": 1,
             "title": "Motivo",
@@ -786,6 +791,11 @@
             },
             "title": "Evidencias",
             "type": "array"
+          },
+          "forzar": {
+            "default": false,
+            "title": "Forzar",
+            "type": "boolean"
           },
           "items": {
             "items": {

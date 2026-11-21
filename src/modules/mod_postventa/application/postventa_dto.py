@@ -41,6 +41,8 @@ POSTVENTA_ERROR_STATUS: dict[str, int] = {
     "DEVOLUCION_EN_CURSO": 409,
     "CSAT_ALREADY_SUBMITTED": 409,
     "RECLAMO_YA_ATENDIDO": 409,
+    "RECLAMO_DUPLICADO": 409,
+    "DEVOLUCION_DUPLICADA": 409,
     "ORDER_NOT_DELIVERED": 422,
     "DEMASIADAS_SOLICITUDES": 429,
     "MODULO_NO_DISPONIBLE": 503,
@@ -126,6 +128,8 @@ class CreateReturnRequest(BaseModel):
     descripcion: str | None = Field(default=None, max_length=2000)
     items: list[ReturnItemDTO] = Field(..., min_length=1)
     evidencias: list[ReturnEvidenceDTO] = Field(default_factory=list)
+    # SPEC-21: register anyway after the duplicate warning.
+    forzar: bool = False
 
     @field_validator("tipo")
     @classmethod
@@ -197,6 +201,8 @@ class CreateClaimRequest(BaseModel):
     detalle: str = Field(..., min_length=20, max_length=1000)
     consumidor: ClaimConsumerDTO
     solucionEsperada: str | None = Field(default=None, max_length=500)
+    # SPEC-19: register anyway after the duplicate warning.
+    forzar: bool = False
 
     @field_validator("tipo")
     @classmethod
