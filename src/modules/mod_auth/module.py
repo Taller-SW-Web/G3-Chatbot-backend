@@ -23,8 +23,18 @@ from src.shared.infrastructure.persistence.local_phone_verification_postgres_ada
     LocalPhoneVerificationPostgresAdapter,
 )
 
-# Capability registered by `mod-checkout`; optional because auth depends on no
-# module and must still serve the profile without the latest checkout document.
+# Capability registered by `mod-checkout`; optional because auth is the base of
+# the dependency graph and must still serve the profile without a checkout
+# document. The composition root logs it and `/health` reports it (H-08).
+OPTIONAL_CAPABILITIES = (CHECKOUT_DOCUMENT,)
+
+
+class _NoCheckoutDocument:
+    """Explicit null object: the profile omits `ultimoDocumento`, never a silent None."""
+
+    async def latest_document(self, customer_id):
+        return None
+
 
 def provide_manage_session(session: AsyncSession = Depends(get_session)) -> ManageSessionUseCase:
     """Customer session service (SPEC-03): orchestration over the Seguridad port.
@@ -36,7 +46,7 @@ def provide_manage_session(session: AsyncSession = Depends(get_session)) -> Mana
     checkouts = (
         registry.resolve(CHECKOUT_DOCUMENT, session)
         if registry.is_registered(CHECKOUT_DOCUMENT)
-        else None
+        else _NoCheckoutDocument()
     )
     return ManageSessionUseCase(
         security=provide_security_port(settings),
@@ -65,6 +75,7 @@ def configure(container) -> None:
 
 __all__ = [
     "MODULE_ID",
+    "OPTIONAL_CAPABILITIES",
     "build_router",
     "configure",
     "provide_manage_session",

@@ -50,6 +50,9 @@ from src.shared.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, O
 # while `SALES_MODE=fake` (same lifecycle as the previous container singleton).
 _FAKE_SALES_PORT = FakeSalesPort()
 
+# Checkout cannot serve payment confirmation without the orders capability.
+REQUIRED_CAPABILITIES = (ORDER_CONFIRMATION,)
+
 
 def provide_sales_port(settings: Settings | None = None) -> SalesOrderPort:
     """Ventas order port (SPEC-15, SPEC-17): fake in-memory or typed HTTP client."""
@@ -78,9 +81,7 @@ def provide_confirmation_outbox(session: AsyncSession) -> OutboxPostgresAdapter:
 
 
 def _notification_service(session: AsyncSession):
-    """Order confirmation e-mail owned by `mod-orders`; absent only if that module is not discovered."""
-    if not registry.is_registered(ORDER_CONFIRMATION):
-        return None
+    """Order confirmation e-mail owned by `mod-orders`; validated at startup (H-08)."""
     return registry.resolve(ORDER_CONFIRMATION, session)
 
 
@@ -137,6 +138,7 @@ __all__ = [
     "MODULE_ID",
     "ORDER_CONFIRMATION",
     "OUTBOX_PROCESSOR",
+    "REQUIRED_CAPABILITIES",
     "build_router",
     "configure",
     "provide_checkout_service",

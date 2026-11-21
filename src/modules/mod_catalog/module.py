@@ -26,6 +26,9 @@ from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
+# Catalog working memory belongs to chat; without its port searches cannot persist.
+REQUIRED_CAPABILITIES = (CONVERSATION_CONTEXT,)
+
 # Categories/brands list cache shared across requests (SPEC-06): created once
 # by the wiring and injected, so use cases never share a module global.
 _CATALOG_OPTION_CACHE = OptionCache()
@@ -114,6 +117,7 @@ def _products_token_provider(base_url, client_id, client_secret):
 
 __all__ = [
     "MODULE_ID",
+    "REQUIRED_CAPABILITIES",
     "build_router",
     "configure",
     "provide_catalog_service",

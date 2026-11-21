@@ -25,6 +25,9 @@ from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
+# Cart memory and audit rows live in chat; without its port the cart is unusable.
+REQUIRED_CAPABILITIES = (CONVERSATION_CONTEXT,)
+
 
 @dataclass(frozen=True)
 class CartRepositories:
@@ -65,6 +68,7 @@ def configure(container) -> None:
 
 __all__ = [
     "MODULE_ID",
+    "REQUIRED_CAPABILITIES",
     "build_router",
     "configure",
     "provide_cart_repositories",

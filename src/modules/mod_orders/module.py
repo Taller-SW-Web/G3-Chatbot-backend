@@ -33,6 +33,9 @@ from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfW
 _FAKE_EMAIL_SENDER = FakeEmailSender()
 _EMAIL_RENDERER = JinjaEmailRenderer()
 
+# Tracking needs the Despacho port owned by `mod-shipping`.
+REQUIRED_CAPABILITIES = (DISPATCH_PORT,)
+
 
 def provide_email_sender(settings: Settings | None = None):
     """SMTP when SMTP_HOST is set (Mailtrap in development); otherwise the in-memory fake (SPEC-16)."""
@@ -69,9 +72,7 @@ def build_notification_service(session: AsyncSession) -> NotificationService:
 
 def provide_orders_service(session: AsyncSession = Depends(get_session)) -> OrdersService:
     settings = get_settings()
-    dispatch = (
-        registry.resolve(DISPATCH_PORT, settings) if registry.is_registered(DISPATCH_PORT) else None
-    )
+    dispatch = registry.resolve(DISPATCH_PORT, settings)
     return OrdersService(
         notifications=build_notification_service(session),
         sales_client=provide_sales_port(settings),
@@ -95,6 +96,7 @@ __all__ = [
     "MODULE_ID",
     "ORDER_CONFIRMATION",
     "OrdersService",
+    "REQUIRED_CAPABILITIES",
     "build_notification_service",
     "build_router",
     "configure",

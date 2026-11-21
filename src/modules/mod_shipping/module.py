@@ -17,6 +17,9 @@ from src.shared.infrastructure.di.capabilities import CART_REPOSITORIES, DISPATC
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
 
+# Quotes read the customer's cart through the capability published by `mod-cart`.
+REQUIRED_CAPABILITIES = (CART_REPOSITORIES,)
+
 
 def provide_despacho_client(settings: Settings | None = None):
     """Despacho port honoring `DISPATCH_MODE` (ADR-0022): in-process fake or HTTP.
