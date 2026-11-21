@@ -2,7 +2,8 @@ name: Catalog warm-up
 
 # G6 (Productos) escala a cero: la primera llamada tras un periodo idle tarda
 # más que el timeout del backend y el catálogo devuelve 503. Este ping cada
-# 5 minutos mantiene el gateway caliente para la primera carga real.
+# 5 minutos pega al catálogo del backend (busca, precios y disponibilidad en
+# G6) con reintentos, así la primera carga real encuentra la cadena caliente.
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -17,12 +18,12 @@ concurrency:
 
 jobs:
   warm:
-    name: G6 catalog keep-alive
+    name: Catalog keep-alive
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Productos
+      - name: Catálogo del backend
         run: |
-          curl -fsS --retry 2 --retry-delay 5 --max-time 60 \
-            "https://api-gateway.calmgrass-aec0b33c.chilecentral.azurecontainerapps.io/api/v1/productos?canal=CHATBOT&pagina=1&tamanio=1" \
+          curl -fsS --retry 4 --retry-delay 15 --retry-all-errors --max-time 60 \
+            "https://g3-chatbot-backend.up.railway.app/api/v1/catalogo/productos?pagina=1&tamanio=1" \
             > /dev/null
