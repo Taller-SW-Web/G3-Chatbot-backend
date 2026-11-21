@@ -9,21 +9,21 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.catalog_router import create_catalog_router
-from src.adapters.outbound.fakes.fake_products import FakeCatalogPort
 from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.cart_handlers import build_cart_handlers
-from src.application.tools.catalog_tools import (
+from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort
+from src.modules.mod_catalog.adapters.http.catalog_router import create_catalog_router
+from src.modules.mod_catalog.application import manage_catalog_use_case as catalog_module
+from src.modules.mod_catalog.application.manage_catalog_use_case import CatalogError
+from src.modules.mod_catalog.application.tools import (
     ProductArguments,
     RecommendationArguments,
     SearchArguments,
     build_tool_registry,
 )
-from src.application.use_cases import manage_catalog_use_case as catalog_module
-from src.application.use_cases.manage_catalog_use_case import CatalogError
-from src.domain.services.offer_policy import price_projection
-from src.domain.services.product_projection import sellable_skus
-from src.domain.services.variant_resolver import VariantResolver
+from src.modules.mod_catalog.domain.offer_policy import price_projection
+from src.modules.mod_catalog.domain.product_projection import sellable_skus
+from src.modules.mod_catalog.domain.variant_resolver import VariantResolver
 from src.shared.application.tools.tool_registry import ExecutionContext
 from tests.unit.test_astra_regressions import cards, g6_service
 from tests.unit.test_cart_use_case import CONVERSATION_ID, CUSTOMER_ID, make_cart_use_case, owned

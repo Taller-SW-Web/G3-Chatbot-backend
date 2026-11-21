@@ -7,7 +7,7 @@ from the execution context, never from LLM arguments.
 """
 import uuid
 
-from src.application.use_cases.manage_catalog_use_case import CatalogError
+from src.modules.mod_catalog.application.manage_catalog_use_case import CatalogError
 from src.shared.application.tools.tool_context import (
     caller_from_context,
     conversation_id_from_context,

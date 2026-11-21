@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.application.tools.catalog_tools import PromotionArguments, RecommendationArguments, SearchArguments
-from src.application.use_cases import manage_catalog_use_case as module
+from src.modules.mod_catalog.application import manage_catalog_use_case as module
+from src.modules.mod_catalog.application.tools import PromotionArguments, RecommendationArguments, SearchArguments
 from src.shared.domain.module_errors import ModuleRequestError
 from tests.unit.test_astra_regressions import cards, g6_detail, g6_service
 from tests.unit.test_discovery import PRICE

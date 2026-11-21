@@ -1,5 +1,5 @@
 """Catalog search normalization (SPEC-06 Req. 1-2). No network, no database."""
-from src.domain.services.product_normalizer import ProductNormalizer
+from src.modules.mod_catalog.domain.product_normalizer import ProductNormalizer
 
 CATEGORIES = [
     {"category_id": "cat-zapatillas", "name": "Zapatillas"},

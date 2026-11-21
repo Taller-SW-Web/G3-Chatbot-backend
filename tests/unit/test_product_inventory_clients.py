@@ -9,12 +9,12 @@ import httpx
 import pytest
 import respx
 
-from src.adapters.outbound.http_clients.inventory_client import (
+from src.modules.mod_catalog.adapters.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
     InventoryClient,
 )
-from src.adapters.outbound.http_clients.products_client import ProductsClient
-from src.infrastructure.config.container import (
+from src.modules.mod_catalog.adapters.products_client import ProductsClient
+from src.modules.mod_catalog.module import (
     provide_inventory_client,
     provide_products_client,
 )
@@ -494,8 +494,8 @@ async def test_transport_errors_become_module_unavailable(exc):
 
 
 def test_sku_caps_are_defined_once():
-    from src.adapters.outbound.http_clients import products_client
-    from src.ports.outbound import product_repository_port
+    from src.modules.mod_catalog.adapters import products_client
+    from src.modules.mod_catalog.ports import product_repository_port
 
     assert (
         products_client.MAX_SKUS_PER_CALL

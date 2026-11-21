@@ -6,7 +6,7 @@ fake matches each word against name, description, brand and category.
 """
 import pytest
 
-from src.adapters.outbound.fakes.fake_products import FakeCatalogPort
+from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort
 
 
 async def total_for(q: str | None, **filters) -> int:
@@ -108,7 +108,7 @@ async def test_fake_evaluation_has_no_discount_without_offer_and_keeps_the_coupo
 
 
 def test_seed_images_are_real_unsplash_urls_with_a_two_image_gallery():
-    from src.adapters.outbound.fakes.fake_products import load_seed
+    from src.modules.mod_catalog.adapters.fake_products import load_seed
 
     catalog = load_seed("products_catalog.json")
     for row in catalog:
@@ -120,7 +120,7 @@ def test_seed_images_are_real_unsplash_urls_with_a_two_image_gallery():
 
 
 def test_seed_images_are_never_shared_across_brands_or_categories():
-    from src.adapters.outbound.fakes.fake_products import load_seed
+    from src.modules.mod_catalog.adapters.fake_products import load_seed
 
     owner: dict[str, tuple[str, str]] = {}
     for row in load_seed("products_catalog.json"):

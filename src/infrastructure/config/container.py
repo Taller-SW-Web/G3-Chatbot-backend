@@ -1,7 +1,6 @@
 """Minimal dependency wiring (ADR-0002): builds use cases from a request-scoped DB session."""
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from functools import lru_cache
 from typing import Any
 
 from fastapi import Depends
@@ -10,17 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.adapters.outbound.fakes.fake_dispatch import FakeDispatchPort
 from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
 from src.adapters.outbound.fakes.fake_postventa import FakePostventaPort
-from src.adapters.outbound.fakes.fake_products import (
-    FakeCatalogPort,
-    FakeInventoryPort,
-)
 from src.adapters.outbound.http_clients.despacho_api_adapter import DespachoClient
-from src.adapters.outbound.http_clients.inventory_client import (
-    INVENTORY_TIMEOUT_SECONDS,
-    InventoryClient,
-)
 from src.adapters.outbound.http_clients.postventa_client import PostventaClient
-from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
 from src.adapters.outbound.notificaciones.smtp_email_adapter import SmtpEmailSender
@@ -41,20 +31,21 @@ from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapte
 from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.cart_handlers import build_cart_handlers
 from src.application.tools.catalog_handlers import build_catalog_handlers
-from src.application.tools.catalog_tools import build_tool_registry
 from src.application.tools.order_handlers import build_order_handlers
 from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
-from src.application.use_cases.manage_catalog_use_case import (
-    ManageCatalogUseCase,
-    OptionCache,
-)
 from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
 from src.application.use_cases.manage_shipping_use_case import ManageShippingUseCase
 from src.application.use_cases.notification_service import NotificationError, NotificationService
 from src.domain.services.status_mapper import map_order_status_label
+from src.modules.mod_catalog.application.tools import build_tool_registry
+from src.modules.mod_catalog.public import (
+    provide_catalog_service,
+    provide_product_catalog,
+    provide_product_inventory,
+)
 from src.ports.outbound.llm_provider_port import LLMProvider
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
 from src.shared.application.ports.order_repository_port import SalesOrderPort
@@ -65,7 +56,6 @@ from src.shared.infrastructure.auth.providers import (
     provide_security_port,
     provide_service_token_provider,
 )
-from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db import connection
 from src.shared.infrastructure.db.connection import get_session
@@ -85,10 +75,6 @@ from src.shared.infrastructure.persistence.order_ref_postgres_adapter import (
 from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.shared.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, OutboxProcessor
-
-# Categories/brands list cache shared across requests (SPEC-06): created once
-# by the wiring and injected, so use cases never share a module global.
-_CATALOG_OPTION_CACHE = OptionCache()
 
 # Without SMTP_HOST the confirmations land here (process-wide, inspectable in local runs).
 _FAKE_EMAIL_SENDER = FakeEmailSender()
@@ -139,36 +125,6 @@ def provide_tool_registry(session: AsyncSession) -> ToolRegistry:
 
 def provide_action_dispatcher(session: AsyncSession) -> ActionDispatcher:
     return ActionDispatcher(provide_tool_registry(session))
-
-
-def provide_product_catalog(settings: Settings | None = None):
-    """Catalog port honoring the products mode (`PRODUCTS_MODE`, else `MODULES_MODE`, ADR-0022): in-process fakes
-    for deployed environments without real modules, HTTP otherwise."""
-    settings = settings or get_settings()
-    if settings.module_mode("products") == "fake":
-        return FakeCatalogPort()
-    return provide_products_client(settings)
-
-
-def provide_product_inventory(settings: Settings | None = None):
-    """Inventory port honoring the products mode (`PRODUCTS_MODE`, else `MODULES_MODE`)."""
-    settings = settings or get_settings()
-    if settings.module_mode("products") == "fake":
-        return FakeInventoryPort()
-    return provide_inventory_client(settings)
-
-
-def provide_catalog_service(
-    session: AsyncSession = Depends(get_session),
-) -> ManageCatalogUseCase:
-    settings = get_settings()
-    return ManageCatalogUseCase(
-        provide_product_catalog(settings),
-        provide_product_inventory(settings),
-        ConversationPostgresAdapter(session),
-        SqlAlchemyUnitOfWork(session),
-        option_cache=_CATALOG_OPTION_CACHE,
-    )
 
 
 def provide_cart_service(
@@ -229,26 +185,6 @@ def provide_module_client(module: str, settings: Settings | None = None) -> Base
     client = BaseModuleClient(base_url=base_url, timeout_seconds=timeout_seconds)
     client.module = module
     return client
-
-
-def provide_products_client(settings: Settings | None = None) -> ProductsClient:
-    """Typed Productos catalog client: base URL + 4 s timeout from Settings."""
-    settings = settings or get_settings()
-    return ProductsClient(
-        base_url=settings.products_base_url,
-        timeout_seconds=settings.products_timeout_seconds,
-        service_token_provider=_products_auth_provider(settings),
-    )
-
-
-def provide_inventory_client(settings: Settings | None = None) -> InventoryClient:
-    """Typed Productos inventory client (SPEC-10): live stock, 3 s timeout."""
-    settings = settings or get_settings()
-    return InventoryClient(
-        base_url=settings.products_base_url,
-        timeout_seconds=INVENTORY_TIMEOUT_SECONDS,
-        service_token_provider=_products_auth_provider(settings),
-    )
 
 
 _FAKE_SALES_PORT = FakeSalesPort()
@@ -593,25 +529,3 @@ async def provide_action_scope() -> AsyncIterator[DispatchDirectActionUseCase]:
             dispatcher=provide_action_dispatcher(session),
             sanitize_text=sanitize_sensitive_text,
         )
-
-
-class _MissingProductsCredential:
-    async def get_token(self, *, correlation_id=None, scope=None, audience=None):
-        from src.shared.domain.module_errors import ModuleUnavailableError
-        raise ModuleUnavailableError("security", "SECURITY_CLIENT_SECRET required for G6 M2M")
-
-
-def _products_auth_provider(settings: Settings):
-    """Public G6 requires no G7 token; customer authentication is independent."""
-    if settings.products_auth_mode == "public":
-        return None
-    return _products_token_provider(
-        settings.security_base_url, settings.security_client_id, settings.security_client_secret,
-    )
-
-
-@lru_cache(maxsize=8)
-def _products_token_provider(base_url, client_id, client_secret):
-    if not client_secret.strip():
-        return _MissingProductsCredential()
-    return SecurityServiceTokenProvider(base_url, client_id, client_secret)

@@ -6,13 +6,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.catalog_router import create_catalog_router
-from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
 from src.application.dto.conversation_events import TokenEvent
 from src.application.tools.catalog_handlers import build_catalog_handlers
-from src.application.tools.catalog_tools import RecommendationArguments, SearchArguments, build_tool_registry
-from src.domain.services.offer_policy import price_projection, promotion_summaries
+from src.modules.mod_catalog.adapters.http.catalog_router import create_catalog_router
+from src.modules.mod_catalog.adapters.products_client import ProductsClient
+from src.modules.mod_catalog.application.tools import RecommendationArguments, SearchArguments, build_tool_registry
+from src.modules.mod_catalog.domain.offer_policy import price_projection, promotion_summaries
 from src.ports.outbound.llm_provider_port import TextDelta
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider

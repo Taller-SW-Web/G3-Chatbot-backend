@@ -9,13 +9,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.application.tools.catalog_tools import (
-    ProductArguments,
-    SearchArguments,
-)
-from src.application.use_cases.manage_catalog_use_case import (
+from src.modules.mod_catalog import MODULE_ID
+from src.modules.mod_catalog.application.manage_catalog_use_case import (
     CatalogError,
     ManageCatalogUseCase,
+)
+from src.modules.mod_catalog.application.tools import (
+    ProductArguments,
+    SearchArguments,
 )
 from src.shared.infrastructure.http.problem import ProblemError
 
@@ -64,7 +65,7 @@ def _problem(error: CatalogError) -> ProblemError:
 
 
 def create_catalog_router(catalog_provider) -> APIRouter:
-    router = APIRouter(prefix="/catalogo", tags=["catalogo"])
+    router = APIRouter(prefix="/catalogo", tags=[MODULE_ID])
 
     @router.get("/productos", response_model=CatalogSearchOut)
     async def search_products(
@@ -163,7 +164,7 @@ def create_catalog_router(catalog_provider) -> APIRouter:
 
 
 def _as_catalog_error(exc: Exception) -> CatalogError:
-    from src.application.use_cases.manage_catalog_use_case import CatalogError as Error
+    from src.modules.mod_catalog.application.manage_catalog_use_case import CatalogError as Error
     from src.shared.domain.module_errors import (
         ModuleRequestError,
         ModuleUnavailableError,

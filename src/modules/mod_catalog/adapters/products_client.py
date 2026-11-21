@@ -25,8 +25,8 @@ from urllib.parse import quote
 
 import httpx
 
-from src.domain.services.product_projection import normalize_detail
-from src.ports.outbound.product_repository_port import (
+from src.modules.mod_catalog.domain.product_projection import normalize_detail
+from src.modules.mod_catalog.ports.product_repository_port import (
     MAX_SKUS_PER_CALL,
     normalize_sku_list,
 )

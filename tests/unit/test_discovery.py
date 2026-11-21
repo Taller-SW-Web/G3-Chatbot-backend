@@ -11,13 +11,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from src.adapters.inbound.http.catalog_router import create_catalog_router
-from src.adapters.outbound.fakes.fake_products import FakeCatalogPort, FakeInventoryPort
-from src.adapters.outbound.http_clients.inventory_client import InventoryClient
-from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.catalog_handlers import build_catalog_handlers
-from src.application.tools.catalog_tools import (
+from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort, FakeInventoryPort
+from src.modules.mod_catalog.adapters.http.catalog_router import create_catalog_router
+from src.modules.mod_catalog.adapters.inventory_client import InventoryClient
+from src.modules.mod_catalog.adapters.products_client import ProductsClient
+from src.modules.mod_catalog.application.manage_catalog_use_case import CatalogError, ManageCatalogUseCase
+from src.modules.mod_catalog.application.tools import (
     EmptyArguments,
     ProductArguments,
     PromotionArguments,
@@ -25,8 +26,7 @@ from src.application.tools.catalog_tools import (
     SearchArguments,
     build_tool_registry,
 )
-from src.application.use_cases.manage_catalog_use_case import CatalogError, ManageCatalogUseCase
-from src.domain.services.offer_policy import price_projection, promotion_summaries
+from src.modules.mod_catalog.domain.offer_policy import price_projection, promotion_summaries
 from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.module_errors import ModuleUnavailableError
 from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider

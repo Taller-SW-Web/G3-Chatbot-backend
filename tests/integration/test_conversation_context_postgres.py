@@ -7,9 +7,9 @@ import uuid
 
 import pytest
 
-from src.adapters.outbound.fakes.fake_products import FakeCatalogPort, FakeInventoryPort
-from src.application.tools.catalog_tools import ProductArguments, SearchArguments
-from src.application.use_cases.manage_catalog_use_case import CatalogError, ManageCatalogUseCase
+from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort, FakeInventoryPort
+from src.modules.mod_catalog.application.manage_catalog_use_case import CatalogError, ManageCatalogUseCase
+from src.modules.mod_catalog.application.tools import ProductArguments, SearchArguments
 from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
@@ -78,7 +78,7 @@ async def test_a_stranger_cannot_read_or_write_the_memory(postgres_session):
 
 
 async def test_discovery_policy_survives_use_case_reload(postgres_session):
-    from src.application.tools.catalog_tools import EmptyArguments, RecommendationArguments
+    from src.modules.mod_catalog.application.tools import EmptyArguments, RecommendationArguments
 
     conversations = ConversationPostgresAdapter(postgres_session)
     cid = (await conversations.create(OWNER)).id

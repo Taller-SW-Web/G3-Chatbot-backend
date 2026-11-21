@@ -1,8 +1,8 @@
 """Stock validation and similar products (SPEC-10). No network, no database."""
 from decimal import Decimal
 
-from src.domain.services.similar_products import SimilarProducts
-from src.domain.services.stock_validator import StockValidator
+from src.modules.mod_catalog.domain.similar_products import SimilarProducts
+from src.modules.mod_catalog.domain.stock_validator import StockValidator
 
 ROWS = [
     {"sku": "A", "status": "DISPONIBLE"},

@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 import pytest
 
 from src.application.tools.action_dispatcher import ActionDispatcher
-from src.application.tools.catalog_tools import build_tool_registry
 from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
+from src.modules.mod_catalog.application.tools import build_tool_registry
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.entities.conversation import Conversation

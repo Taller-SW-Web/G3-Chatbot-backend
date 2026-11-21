@@ -4,7 +4,6 @@ import logging
 from fastapi import FastAPI
 
 from src.adapters.inbound.http.cart_router import create_cart_router
-from src.adapters.inbound.http.catalog_router import create_catalog_router
 from src.adapters.inbound.http.chatbot_router import ActionScope, TurnScope, create_chatbot_router
 from src.adapters.inbound.http.checkout_router import create_checkout_router
 from src.adapters.inbound.http.claims_router import create_claims_router
@@ -15,7 +14,6 @@ from src.adapters.inbound.http.shipping_router import create_shipping_router
 from src.infrastructure.config.container import (
     provide_action_scope,
     provide_cart_service,
-    provide_catalog_service,
     provide_chatbot_service,
     provide_checkout_service,
     provide_orders_service,
@@ -24,6 +22,7 @@ from src.infrastructure.config.container import (
     provide_turn_scope,
 )
 from src.modules.mod_auth.module import router as auth_router
+from src.modules.mod_catalog.module import router as catalog_router
 from src.shared.infrastructure.config.settings import MODULES_WITH_ADAPTERS, get_settings
 from src.shared.infrastructure.http.correlation import CorrelationMiddleware
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
@@ -63,6 +62,7 @@ def create_app(
     register_problem_handlers(app)
     app.include_router(health_router)
     app.include_router(auth_router, prefix=API_PREFIX)
+    app.include_router(catalog_router, prefix=API_PREFIX)
     app.include_router(
         create_chatbot_router(
             provide_chatbot_service,
@@ -72,9 +72,6 @@ def create_app(
             rate_limiter=limiter,
         ),
         prefix=API_PREFIX,
-    )
-    app.include_router(
-        create_catalog_router(provide_catalog_service), prefix=API_PREFIX
     )
     app.include_router(create_cart_router(provide_cart_service), prefix=API_PREFIX)
     app.include_router(create_orders_router(provide_orders_service), prefix=API_PREFIX)

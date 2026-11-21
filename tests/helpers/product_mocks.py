@@ -13,7 +13,7 @@ import respx
 
 FIXTURES = (
     Path(__file__).resolve().parent.parent.parent
-    / "src" / "adapters" / "outbound" / "fakes" / "seeds"
+    / "src" / "modules" / "mod_catalog" / "adapters" / "seeds"
 )
 
 

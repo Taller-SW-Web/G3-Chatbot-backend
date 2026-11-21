@@ -13,7 +13,6 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from src.application.catalog.discovery import fold
 from src.application.dto.conversation_events import (
     BlockEvent,
     ConversationEvent,
@@ -32,6 +31,7 @@ from src.application.prompts.system_prompt import (
 from src.application.tools.action_dispatcher import QUICK_ACTIONS as QUICK_ACTION_TO_TOOL
 from src.domain.services.degraded_mode import DegradedMode
 from src.domain.services.output_validator import OutputValidator, extract_pen_amounts
+from src.modules.mod_catalog.application.discovery import fold
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
 from src.ports.outbound.llm_provider_port import (
     Completed,

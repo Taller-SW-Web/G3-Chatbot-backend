@@ -7,7 +7,7 @@ import pytest
 from pydantic import BaseModel
 
 from src.application.tools.action_dispatcher import ActionDispatcher
-from src.application.tools.catalog_tools import EmptyArguments, build_tool_registry
+from src.modules.mod_catalog.application.tools import EmptyArguments, build_tool_registry
 from src.shared.application.tools.tool_registry import (
     ExecutionContext,
     ToolDefinition,

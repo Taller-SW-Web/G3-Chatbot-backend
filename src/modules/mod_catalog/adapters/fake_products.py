@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from src.domain.services.offer_policy import price_projection
+from src.modules.mod_catalog.domain.offer_policy import price_projection
 from src.shared.domain.module_errors import ModuleRequestError
 
 SEEDS = Path(__file__).resolve().parent / "seeds"

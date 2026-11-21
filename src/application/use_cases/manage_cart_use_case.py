@@ -16,17 +16,17 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from src.application.catalog.product_lookup import (
+from src.application.services.coupon_attempts import CouponAttempts
+from src.domain.services.cart_line_resolver import CartLineResolver
+from src.domain.services.totals_calculator import PricedLine, TotalsCalculator
+from src.modules.mod_catalog.application.product_lookup import (
     find_product_by_name,
     resolve_product_id,
 )
-from src.application.services.coupon_attempts import CouponAttempts
-from src.domain.services.cart_line_resolver import CartLineResolver
-from src.domain.services.offer_policy import amount, instant, price_projection
-from src.domain.services.product_projection import normalize_detail, sellable_skus
-from src.domain.services.stock_validator import StockValidator
-from src.domain.services.totals_calculator import PricedLine, TotalsCalculator
-from src.domain.services.variant_resolver import VariantResolver, known_selection
+from src.modules.mod_catalog.domain.offer_policy import amount, instant, price_projection
+from src.modules.mod_catalog.domain.product_projection import normalize_detail, sellable_skus
+from src.modules.mod_catalog.domain.stock_validator import StockValidator
+from src.modules.mod_catalog.domain.variant_resolver import VariantResolver, known_selection
 from src.ports.outbound.cart_repository_port import (
     CartConflictError,
     StaleCartError,

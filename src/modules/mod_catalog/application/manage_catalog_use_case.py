@@ -11,21 +11,21 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from src.application.catalog.discovery import DiscoveryMixin
-from src.application.catalog.partial import CommercialRows, PartialRows
-from src.application.catalog.product_lookup import (
+from src.modules.mod_catalog.application.discovery import DiscoveryMixin
+from src.modules.mod_catalog.application.partial import CommercialRows, PartialRows
+from src.modules.mod_catalog.application.product_lookup import (
     MEMORY_CAROUSEL_KEY,
     MEMORY_FILTERS_KEY,
     find_product_by_name,
     resolve_product_id,
 )
-from src.application.tools.catalog_tools import SearchArguments
-from src.domain.services.offer_policy import price_projection
-from src.domain.services.product_normalizer import ProductNormalizer
-from src.domain.services.product_projection import normalize_detail, sellable_skus
-from src.domain.services.similar_products import SimilarProducts
-from src.domain.services.stock_validator import StockValidator
-from src.domain.services.variant_resolver import VariantResolver, known_selection
+from src.modules.mod_catalog.application.tools import SearchArguments
+from src.modules.mod_catalog.domain.offer_policy import price_projection
+from src.modules.mod_catalog.domain.product_normalizer import ProductNormalizer
+from src.modules.mod_catalog.domain.product_projection import normalize_detail, sellable_skus
+from src.modules.mod_catalog.domain.similar_products import SimilarProducts
+from src.modules.mod_catalog.domain.stock_validator import StockValidator
+from src.modules.mod_catalog.domain.variant_resolver import VariantResolver, known_selection
 from src.shared.application.tools.tool_context import (
     caller_from_context,
     conversation_id_from_context,

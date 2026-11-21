@@ -11,14 +11,14 @@ import pytest
 import respx
 
 from src.adapters.inbound.http.cart_router import _problem
-from src.adapters.outbound.fakes.fake_products import FakeCatalogPort, FakeInventoryPort
-from src.adapters.outbound.http_clients.inventory_client import InventoryClient
-from src.adapters.outbound.http_clients.products_client import (
+from src.application.use_cases.manage_cart_use_case import CartError, ManageCartUseCase
+from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort, FakeInventoryPort
+from src.modules.mod_catalog.adapters.inventory_client import InventoryClient
+from src.modules.mod_catalog.adapters.products_client import (
     PRODUCTS_AUDIENCE,
     ProductsClient,
 )
-from src.application.use_cases.manage_cart_use_case import CartError, ManageCartUseCase
-from src.domain.services.stock_validator import StockValidator
+from src.modules.mod_catalog.domain.stock_validator import StockValidator
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.domain.request_context import correlation_id_var

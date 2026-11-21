@@ -6,12 +6,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.adapters.outbound.fakes.fake_products import (
+from src.infrastructure.config.container import provide_checkout_service
+from src.modules.mod_catalog.adapters.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
 )
-from src.infrastructure.config.container import (
-    provide_checkout_service,
+from src.modules.mod_catalog.module import (
     provide_product_catalog,
     provide_product_inventory,
 )
@@ -25,8 +25,8 @@ def test_fake_mode_returns_in_memory_ports():
 
 
 def test_http_mode_returns_typed_clients():
-    from src.adapters.outbound.http_clients.inventory_client import InventoryClient
-    from src.adapters.outbound.http_clients.products_client import ProductsClient
+    from src.modules.mod_catalog.adapters.inventory_client import InventoryClient
+    from src.modules.mod_catalog.adapters.products_client import ProductsClient
 
     settings = Settings(modules_mode="http")
     assert isinstance(provide_product_catalog(settings), ProductsClient)

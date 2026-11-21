@@ -7,19 +7,19 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.catalog_router import create_catalog_router
-from src.adapters.outbound.http_clients.inventory_client import InventoryClient
-from src.adapters.outbound.http_clients.products_client import ProductsClient
-from src.application.catalog import discovery
 from src.application.tools.catalog_handlers import build_catalog_handlers
-from src.application.tools.catalog_tools import (
+from src.modules.mod_catalog.adapters.http.catalog_router import create_catalog_router
+from src.modules.mod_catalog.adapters.inventory_client import InventoryClient
+from src.modules.mod_catalog.adapters.products_client import ProductsClient
+from src.modules.mod_catalog.application import discovery
+from src.modules.mod_catalog.application import manage_catalog_use_case as module
+from src.modules.mod_catalog.application.manage_catalog_use_case import CatalogError
+from src.modules.mod_catalog.application.tools import (
     AvailabilityArguments,
     PromotionArguments,
     RecommendationArguments,
     SearchArguments,
 )
-from src.application.use_cases import manage_catalog_use_case as module
-from src.application.use_cases.manage_catalog_use_case import CatalogError
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.http.problem import register_problem_handlers
 from tests.unit.test_discovery import PROMO, service

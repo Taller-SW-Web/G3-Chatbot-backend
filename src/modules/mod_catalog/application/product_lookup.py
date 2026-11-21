@@ -7,8 +7,8 @@ cart use cases so both resolve the same SKU for the same words.
 from dataclasses import dataclass
 from typing import Any
 
-from src.application.catalog.discovery import fold
-from src.domain.services.variant_resolver import VariantMatch, VariantResolver
+from src.modules.mod_catalog.application.discovery import fold
+from src.modules.mod_catalog.domain.variant_resolver import VariantMatch, VariantResolver
 
 MEMORY_CAROUSEL_KEY = "ultimoCarrusel"
 MEMORY_FILTERS_KEY = "filtrosVigentes"

@@ -1,5 +1,5 @@
 """Product detail and variant resolution (SPEC-09 Req. 3-4). No network, no database."""
-from src.domain.services.variant_resolver import VariantResolver
+from src.modules.mod_catalog.domain.variant_resolver import VariantResolver
 
 DETAIL = {
     "product_id": "prod-001",

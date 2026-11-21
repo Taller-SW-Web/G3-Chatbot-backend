@@ -17,11 +17,11 @@ from typing import Any
 
 import httpx
 
-from src.adapters.outbound.http_clients.products_client import (
+from src.modules.mod_catalog.adapters.products_client import (
     SCOPE_INVENTORY,
     ProductsBaseClient,
 )
-from src.ports.outbound.product_repository_port import (
+from src.modules.mod_catalog.ports.product_repository_port import (
     MAX_COMMERCIAL_SKUS,
     normalize_sku_list,
 )

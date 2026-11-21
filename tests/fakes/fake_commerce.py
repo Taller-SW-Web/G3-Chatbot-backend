@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from src.adapters.outbound.fakes.fake_products import (
+from src.modules.mod_catalog.adapters.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
 )

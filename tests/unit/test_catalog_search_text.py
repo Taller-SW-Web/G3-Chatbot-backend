@@ -1,7 +1,7 @@
 """The search tool text must state exactly what the carousel shows."""
 import pytest
 
-from src.application.tools.catalog_tools import SearchArguments
+from src.modules.mod_catalog.application.tools import SearchArguments
 from tests.unit.test_astra_regressions import cards
 from tests.unit.test_offer_discovery_review import paged
 

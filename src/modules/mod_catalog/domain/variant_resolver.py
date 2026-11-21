@@ -5,7 +5,7 @@ reports what is missing / which close combinations exist. Pure.
 """
 from dataclasses import dataclass
 
-from src.domain.services.product_projection import normalize_detail, sellable_skus
+from src.modules.mod_catalog.domain.product_projection import normalize_detail, sellable_skus
 
 
 @dataclass(frozen=True)

@@ -3,14 +3,14 @@ import uuid
 
 import pytest
 
-from src.application.tools.catalog_tools import (
+from src.modules.mod_catalog.application.manage_catalog_use_case import (
+    CatalogError,
+    ManageCatalogUseCase,
+)
+from src.modules.mod_catalog.application.tools import (
     AvailabilityArguments,
     ProductArguments,
     SearchArguments,
-)
-from src.application.use_cases.manage_catalog_use_case import (
-    CatalogError,
-    ManageCatalogUseCase,
 )
 from src.shared.application.tools.tool_registry import ExecutionContext
 from tests.fakes.fake_commerce import (
@@ -231,7 +231,7 @@ async def test_option_cache_is_not_shared_between_use_cases():
 
 
 def make_seeded_catalog():
-    from src.adapters.outbound.fakes import fake_products
+    from src.modules.mod_catalog.adapters import fake_products
 
     return ManageCatalogUseCase(
         fake_products.FakeCatalogPort(),

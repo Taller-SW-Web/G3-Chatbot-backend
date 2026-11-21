@@ -5,10 +5,10 @@ import unicodedata
 import uuid
 from decimal import Decimal
 
-from src.application.catalog.partial import PartialRows
-from src.application.tools.catalog_tools import SearchArguments
-from src.domain.services.offer_policy import promotion_summaries
-from src.domain.services.product_normalizer import ProductNormalizer
+from src.modules.mod_catalog.application.partial import PartialRows
+from src.modules.mod_catalog.application.tools import SearchArguments
+from src.modules.mod_catalog.domain.offer_policy import promotion_summaries
+from src.modules.mod_catalog.domain.product_normalizer import ProductNormalizer
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ OFFERS_BUDGET_SECONDS = 10.0
 def _is_provider_error(exc):
     """True for upstream/provider failures; programming errors are not provider errors."""
     # Imported lazily: manage_catalog_use_case imports this module.
-    from src.application.use_cases.manage_catalog_use_case import CatalogError
+    from src.modules.mod_catalog.application.manage_catalog_use_case import CatalogError
     return isinstance(exc, (CatalogError, ModuleRequestError, ModuleUnavailableError, TimeoutError))
 
 
