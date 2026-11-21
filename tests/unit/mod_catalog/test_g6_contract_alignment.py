@@ -13,7 +13,7 @@ from src.modules.mod_catalog.adapters.products_client import ProductsClient
 from src.modules.mod_catalog.application.manage_catalog_use_case import CatalogError
 from src.modules.mod_catalog.application.tools import AvailabilityArguments, SearchArguments
 from src.shared.infrastructure.http.problem import register_problem_handlers
-from tests.unit.test_astra_regressions import cards, g6_detail, g6_service
+from tests.unit.mod_catalog.test_astra_regressions import cards, g6_detail, g6_service
 
 BASE = "http://g6.test"
 

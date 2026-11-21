@@ -13,14 +13,14 @@ from src.modules.mod_chat.application.tools.action_dispatcher import ActionDispa
 from src.modules.mod_chat.application.tools.cart_handlers import build_cart_handlers
 from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.module_errors import ModuleRequestError
-from tests.unit.test_astra_regressions import cards, g6_detail, g6_service
-from tests.unit.test_cart_use_case import (
+from tests.unit.mod_cart.test_cart_use_case import (
     CONVERSATION_ID,
     CUSTOMER_ID,
     make_caller,
     make_cart_use_case,
     owned,
 )
+from tests.unit.mod_catalog.test_astra_regressions import cards, g6_detail, g6_service
 
 
 def supplier_detail():

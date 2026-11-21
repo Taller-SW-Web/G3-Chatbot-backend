@@ -2,7 +2,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.mod_cart.public import CART_REPOSITORIES
 from src.modules.mod_shipping import MODULE_ID
 from src.modules.mod_shipping.adapters.despacho_client import DespachoClient
 from src.modules.mod_shipping.adapters.fake_dispatch import FakeDispatchPort
@@ -14,10 +13,9 @@ from src.shared.infrastructure.auth.providers import (
 )
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
+from src.shared.infrastructure.di.capabilities import CART_REPOSITORIES, DISPATCH_PORT
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
-
-DISPATCH_PORT = "dispatch_port"
 
 
 def provide_despacho_client(settings: Settings | None = None):

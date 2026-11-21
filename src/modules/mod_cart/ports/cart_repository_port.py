@@ -11,13 +11,9 @@ below. That keeps `manage_cart_use_case` free of infrastructure imports.
 """
 from typing import Any, Protocol
 
+from src.shared.domain.cart_errors import CartConflictError, StaleCartError
 
-class StaleCartError(Exception):
-    """Optimistic-lock conflict: the row was updated by someone else."""
-
-
-class CartConflictError(Exception):
-    """Unique-key clash, e.g. a first concurrent add opens two carts."""
+__all__ = ["CartConflictError", "CartItemRepository", "CartRepository", "StaleCartError"]
 
 
 class CartRepository(Protocol):

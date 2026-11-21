@@ -41,6 +41,7 @@ from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db import connection
 from src.shared.infrastructure.db.connection import get_session
+from src.shared.infrastructure.di.capabilities import ACTION_SCOPE
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
@@ -48,8 +49,6 @@ from src.shared.infrastructure.persistence.conversation_postgres_adapter import 
 )
 from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
-
-ACTION_SCOPE = "action_scope"
 
 
 def provide_chatbot_service(

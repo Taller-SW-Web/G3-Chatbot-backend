@@ -33,8 +33,8 @@ from src.shared.infrastructure.persistence.conversation_postgres_adapter import 
 from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from tests.fakes.fake_llm_provider import FakeLLMProvider
-from tests.unit.test_discovery import PROMO, service
-from tests.unit.test_interpret_and_respond_use_case import reply, tool_turn
+from tests.unit.mod_catalog.test_discovery import PROMO, service
+from tests.unit.mod_chat.test_interpret_and_respond_use_case import reply, tool_turn
 
 OWNER = CallerIdentity(anonymous_sid="astra-disposable-owner")
 

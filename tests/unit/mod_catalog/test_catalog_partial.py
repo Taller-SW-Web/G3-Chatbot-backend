@@ -22,9 +22,9 @@ from src.modules.mod_catalog.application.tools import (
 from src.modules.mod_chat.application.tools.catalog_handlers import build_catalog_handlers
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.http.problem import register_problem_handlers
-from tests.unit.test_discovery import PROMO, service
-from tests.unit.test_live_g6_no_variants import SKU, payload
-from tests.unit.test_live_g6_no_variants import service as real_service
+from tests.unit.mod_catalog.test_discovery import PROMO, service
+from tests.unit.mod_catalog.test_live_g6_no_variants import SKU, payload
+from tests.unit.mod_catalog.test_live_g6_no_variants import service as real_service
 
 
 def rows(result):

@@ -15,6 +15,7 @@ from src.shared.infrastructure.auth.providers import (
 )
 from src.shared.infrastructure.config.settings import get_settings
 from src.shared.infrastructure.db.connection import get_session
+from src.shared.infrastructure.di.capabilities import CHECKOUT_DOCUMENT
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
 from src.shared.infrastructure.http.router_options import RouterOptions
@@ -24,8 +25,6 @@ from src.shared.infrastructure.persistence.local_phone_verification_postgres_ada
 
 # Capability registered by `mod-checkout`; optional because auth depends on no
 # module and must still serve the profile without the latest checkout document.
-CHECKOUT_DOCUMENT = "checkout_document"
-
 
 def provide_manage_session(session: AsyncSession = Depends(get_session)) -> ManageSessionUseCase:
     """Customer session service (SPEC-03): orchestration over the Seguridad port.

@@ -17,9 +17,9 @@ from src.modules.mod_chat.ports.llm_provider_port import TextDelta
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
 from src.shared.infrastructure.http.problem import register_problem_handlers
-from tests.unit.test_cart_use_case import CONVERSATION_ID, make_caller, make_cart_use_case, owned
-from tests.unit.test_discovery import NOW, PRICE, PROMO, service
-from tests.unit.test_interpret_and_respond_use_case import build, reply, run, tool_turn
+from tests.unit.mod_cart.test_cart_use_case import CONVERSATION_ID, make_caller, make_cart_use_case, owned
+from tests.unit.mod_catalog.test_discovery import NOW, PRICE, PROMO, service
+from tests.unit.mod_chat.test_interpret_and_respond_use_case import build, reply, run, tool_turn
 
 
 def g6_detail(pid, brand, sizes=("42",)):
@@ -287,8 +287,8 @@ async def test_matching_size_supplies_the_displayed_price():
 
 
 def test_rest_add_does_not_consume_cross_sell():
-    from tests.unit.test_catalog_cart_routers import CONVERSATION_ID as cid
-    from tests.unit.test_catalog_cart_routers import make_app
+    from tests.unit.mod_cart.test_catalog_cart_routers import CONVERSATION_ID as cid
+    from tests.unit.mod_cart.test_catalog_cart_routers import make_app
 
     client, cart = make_app()
     cart._discovery = AsyncMock()

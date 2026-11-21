@@ -18,8 +18,7 @@ from src.modules.mod_checkout.adapters.payment_simulator_adapter import CardVali
 from src.modules.mod_checkout.domain.checkout import CheckoutStatus
 from src.modules.mod_checkout.domain.payment_attempt import PaymentRejectReason, PaymentResult
 from src.modules.mod_checkout.ports.payment_gateway_port import PaymentGatewayPort
-from src.modules.mod_orders.application.notification_service import NotificationService
-from src.modules.mod_shipping.application.shipping_quote import (
+from src.modules.mod_shipping.public import (
     build_destination,
     build_quote_lines,
     parse_quote,
@@ -92,7 +91,7 @@ class ManageCheckoutUseCase:
         cart_items: Any | None = None,
         orders: Any | None = None,
         phone_verifications: Any | None = None,
-        notification_service: NotificationService | None = None,
+        notification_service: Any | None = None,
         sales_client: Any | None = None,
         outbox: Any | None = None,
         dispatch: Any | None = None,

@@ -24,6 +24,11 @@ from src.shared.infrastructure.auth.providers import (
 )
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
+from src.shared.infrastructure.di.capabilities import (
+    CHECKOUT_DOCUMENT,
+    ORDER_CONFIRMATION,
+    OUTBOX_PROCESSOR,
+)
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 from src.shared.infrastructure.http.router_options import RouterOptions
@@ -37,10 +42,6 @@ from src.shared.infrastructure.persistence.order_ref_postgres_adapter import (
 from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.shared.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, OutboxProcessor
-
-CHECKOUT_DOCUMENT = "checkout_document"
-ORDER_CONFIRMATION = "order_confirmation"
-OUTBOX_PROCESSOR = "outbox_processor"
 
 # Process-wide so orders created by checkout are visible to the orders module
 # while `SALES_MODE=fake` (same lifecycle as the previous container singleton).

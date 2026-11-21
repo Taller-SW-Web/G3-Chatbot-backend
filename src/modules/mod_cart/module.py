@@ -20,14 +20,13 @@ from src.modules.mod_catalog.public import (
 )
 from src.shared.infrastructure.config.settings import get_settings
 from src.shared.infrastructure.db.connection import get_session
+from src.shared.infrastructure.di.capabilities import CART_REPOSITORIES
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
 from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
-
-CART_REPOSITORIES = "cart_repositories"
 
 
 @dataclass(frozen=True)

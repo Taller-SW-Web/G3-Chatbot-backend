@@ -7,9 +7,8 @@ registry (registered by `mod-checkout`).
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.shared.infrastructure.di.capabilities import OUTBOX_PROCESSOR
 from src.shared.infrastructure.di.registry import registry
-
-OUTBOX_PROCESSOR = "outbox_processor"
 
 
 def provide_outbox_processor(session: AsyncSession):

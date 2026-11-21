@@ -2,8 +2,8 @@
 import pytest
 
 from src.modules.mod_catalog.application.tools import SearchArguments
-from tests.unit.test_astra_regressions import cards
-from tests.unit.test_offer_discovery_review import paged
+from tests.unit.mod_catalog.test_astra_regressions import cards
+from tests.unit.mod_catalog.test_offer_discovery_review import paged
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from pydantic import BaseModel, ConfigDict
 
+from src.modules.mod_checkout import MODULE_ID
 from src.modules.mod_checkout.application.manage_checkout_use_case import (
     CheckoutError,
     CreateCheckoutInput,
@@ -87,7 +88,7 @@ def _translate_error(err: CheckoutError) -> ProblemError:
 def create_checkout_router(
     use_case_provider: Callable[..., ManageCheckoutUseCase],
 ) -> APIRouter:
-    router = APIRouter(tags=["checkout"])
+    router = APIRouter(tags=[MODULE_ID])
 
     @router.post("/checkout", status_code=status.HTTP_201_CREATED)
     async def create_checkout(

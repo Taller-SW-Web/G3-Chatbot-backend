@@ -18,6 +18,7 @@ from src.modules.mod_catalog.application.product_lookup import (
 )
 from src.modules.mod_catalog.application.tools import (
     EmptyArguments,
+    OrderQueryArguments,
     ProductArguments,
     RecommendationArguments,
     SearchArguments,
@@ -49,6 +50,7 @@ __all__ = [
     "EmptyArguments",
     "ManageCatalogUseCase",
     "NameLookup",
+    "OrderQueryArguments",
     "OptionCache",
     "ProductArguments",
     "RecommendationArguments",

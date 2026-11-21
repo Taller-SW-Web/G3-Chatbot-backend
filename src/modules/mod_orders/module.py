@@ -21,15 +21,13 @@ from src.modules.mod_orders.adapters.order_confirmation_source import (
 from src.modules.mod_orders.adapters.smtp_email_adapter import SmtpEmailSender
 from src.modules.mod_orders.application.notification_service import NotificationService
 from src.modules.mod_orders.application.orders_service import OrdersService
-from src.modules.mod_shipping.public import DISPATCH_PORT
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
+from src.shared.infrastructure.di.capabilities import DISPATCH_PORT, ORDER_CONFIRMATION
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
-
-ORDER_CONFIRMATION = "order_confirmation"
 
 # Without SMTP_HOST the confirmations land here (process-wide, inspectable in local runs).
 _FAKE_EMAIL_SENDER = FakeEmailSender()

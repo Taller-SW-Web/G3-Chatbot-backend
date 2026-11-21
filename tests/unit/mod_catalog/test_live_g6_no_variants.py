@@ -25,8 +25,8 @@ from src.modules.mod_catalog.domain.variant_resolver import VariantResolver
 from src.modules.mod_chat.application.tools.action_dispatcher import ActionDispatcher
 from src.modules.mod_chat.application.tools.cart_handlers import build_cart_handlers
 from src.shared.application.tools.tool_registry import ExecutionContext
-from tests.unit.test_astra_regressions import cards, g6_service
-from tests.unit.test_cart_use_case import CONVERSATION_ID, CUSTOMER_ID, make_cart_use_case, owned
+from tests.unit.mod_cart.test_cart_use_case import CONVERSATION_ID, CUSTOMER_ID, make_cart_use_case, owned
+from tests.unit.mod_catalog.test_astra_regressions import cards, g6_service
 
 FIXTURES = Path(__file__).parent / "fixtures" / "g6_no_variants"
 SKU = "ADI-MESSI-JI8291-05"

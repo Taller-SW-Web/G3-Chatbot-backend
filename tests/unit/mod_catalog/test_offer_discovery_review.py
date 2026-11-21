@@ -7,8 +7,8 @@ import pytest
 from src.modules.mod_catalog.application import manage_catalog_use_case as module
 from src.modules.mod_catalog.application.tools import PromotionArguments, RecommendationArguments, SearchArguments
 from src.shared.domain.module_errors import ModuleRequestError
-from tests.unit.test_astra_regressions import cards, g6_detail, g6_service
-from tests.unit.test_discovery import PRICE
+from tests.unit.mod_catalog.test_astra_regressions import cards, g6_detail, g6_service
+from tests.unit.mod_catalog.test_discovery import PRICE
 
 
 def paged(*, offers=(), total=30, duplicate=False):

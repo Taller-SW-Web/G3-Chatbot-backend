@@ -219,7 +219,7 @@ async def test_offers_filter_products_but_not_promotion_list_and_cache():
 
 @pytest.mark.asyncio
 async def test_successful_cart_add_survives_merchandising_failure():
-    from tests.unit.test_cart_use_case import CONVERSATION_ID, make_caller, make_cart_use_case, owned
+    from tests.unit.mod_cart.test_cart_use_case import CONVERSATION_ID, make_caller, make_cart_use_case, owned
     cart, conversations = make_cart_use_case()
     owned(cart, conversations)
     cart._discovery = AsyncMock()
@@ -232,7 +232,7 @@ async def test_successful_cart_add_survives_merchandising_failure():
 
 @pytest.mark.asyncio
 async def test_cart_expired_offer_notice_and_authoritative_evaluation():
-    from tests.unit.test_cart_use_case import CONVERSATION_ID, make_caller, make_cart_use_case, owned
+    from tests.unit.mod_cart.test_cart_use_case import CONVERSATION_ID, make_caller, make_cart_use_case, owned
     cart, conversations = make_cart_use_case()
     owned(cart, conversations)
     cart._catalog._prices["NIK-REV7-42-NEG"] = {**PRICE, "sku": "NIK-REV7-42-NEG"}
@@ -253,7 +253,7 @@ async def test_cart_expired_offer_notice_and_authoritative_evaluation():
 @pytest.mark.asyncio
 async def test_streamed_recommendations_reject_model_factual_justification():
     from src.modules.mod_chat.adapters.registry_tool_adapter import RegistryToolAdapter
-    from tests.unit.test_interpret_and_respond_use_case import build, reply, run, tool_turn
+    from tests.unit.mod_chat.test_interpret_and_respond_use_case import build, reply, run, tool_turn
     discovery, _ = service()
     adapter = RegistryToolAdapter(build_tool_registry(build_catalog_handlers(discovery)))
     engine, conversation, messages, _, _, _ = build([
@@ -278,7 +278,7 @@ async def test_streamed_recommendations_reject_model_factual_justification():
 async def test_stream_refusal_only_silences_pending_cross_sell(pending, text, expected):
     from src.modules.mod_chat.ports.tool_executor_port import ToolResult
     from tests.fakes.fake_tool_executor import FakeToolExecutor
-    from tests.unit.test_interpret_and_respond_use_case import build, reply, run
+    from tests.unit.mod_chat.test_interpret_and_respond_use_case import build, reply, run
     tools = FakeToolExecutor({"silenciar_complementos": ToolResult("OK", {"texto": "Silenciado"})})
     engine, conversation, _, _, _, _ = build([reply("Respuesta normal")], tools=tools)
     conversation.context = {"crossSellPending": pending}
