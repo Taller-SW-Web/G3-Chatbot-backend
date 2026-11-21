@@ -12,7 +12,7 @@ from sqlalchemy import engine_from_config, pool
 # con `uvicorn --env-file .env`.
 load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..", ".env")))
 
-# Permite `from src.adapters...` cuando se ejecuta `alembic` desde la raíz del backend.
+# Permite `from src.shared...` cuando se ejecuta `alembic` desde la raíz del backend.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..")))
 
 from src.shared.infrastructure.db.connection import Base  # noqa: E402

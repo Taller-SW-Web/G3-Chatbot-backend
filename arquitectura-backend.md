@@ -1,22 +1,46 @@
 # Arquitectura Backend — Canal Chatbot
 
-> **BFF hexagonal FastAPI.** Estado: **fase 0 — 105 ficheros en `src/`, todos en `0 bytes`**, `tests/` solo con `.gitkeep`. Estructura alineada a `../../PROYECTO CHATBOT/ARQUITECTURA-ICEPANEL.md §5-§6`, `G3-Chatbot-specs/docs/arquitectura/c4.md` (L2 + 3a + 3b) y `ADR-0002, 0005-0018`.
+> **BFF FastAPI en monolito modular (ADR-0024).** Corte por capacidad: `src/shared/` (kernel) y `src/modules/mod_*/` (8 módulos). Dentro de cada módulo se conserva el corte hexagonal de ADR-0002 (`domain/`, `application/`, `ports/`, `adapters/`). El detalle operativo vive en `modules.manifest.json`, `docs/adr/ADR-0024-modularizacion.md` y el `MODULE.md` de cada módulo.
+> Las tablas de las secciones 2–7 son el **plan histórico de fase 0** (nombres previstos, muchos nunca existieron): úsalas como referencia de intención, no como mapa de archivos. El mapa vigente es el de esta sección.
 > Regla: si contradice a una spec de `G3-Chatbot-specs/openspec/specs/`, manda la spec.
 
 ## 0. Cómo leer este repo
 
-Este backend es un **BFF hexagonal** (puertos y adaptadores, ADR-0002). La idea en una frase: **la lógica de negocio no sabe nada de FastAPI, httpx ni PostgreSQL**; solo habla con contratos (`ports/`). Los detalles externos viven en `adapters/`.
+Este backend es un **BFF** que aplica **Clean Architecture + Hexagonal** (ADR-0002) dentro de un **monolito modular por capacidad** (ADR-0024). Dos reglas y ya:
+
+1. **Dependencias hacia adentro**: `adapters → application → domain`; `ports` son los contratos. La lógica de negocio no sabe nada de FastAPI, httpx ni PostgreSQL.
+2. **Fronteras entre módulos**: un módulo importa solo `src/shared/*`, su propio árbol y `src.modules.<otro>.public`. Nada de `domain/`, `application/` ni `adapters/` ajenos. `scripts/check_modules.py` lo verifica en CI (advisory en esta fase).
+
+```text
+src/
+  shared/                     # kernel: sin reglas de negocio
+    domain/                   # caller_identity, block, masking, module_errors, request_context,
+                              # cart_errors y las entidades conversation/message (memoria compartida)
+    application/              # unit_of_work_port, puertos compartidos, tools (contratos), DTOs de comercio
+    infrastructure/           # config/settings, db (connection + models + migraciones), di (registry,
+                              # container, capabilities), http (problem, correlation, auth de
+                              # transporte, rate limit), auth (JWKS, service token, SecurityClient),
+                              # persistencia compartida (outbox, order_ref, phone verification,
+                              # conversación/mensaje/adjunto), worker (outbox loop) y fakes compartidos
+  modules/
+    mod_auth/                 # sesión, registro, MFA, perfil            (/sesion)
+    mod_catalog/              # catálogo, detalle, disponibilidad        (/catalogo)
+    mod_cart/                 # carrito, items, cupón                    (/carrito)
+    mod_shipping/             # cotización y direcciones                 (/direcciones, /envio)
+    mod_checkout/             # checkout, pago, outbox                   (/checkout)
+    mod_orders/               # pedidos, seguimiento, correo             (/pedidos)
+    mod_postventa/            # devoluciones, reclamos, CSAT             (/devoluciones, /reclamos)
+    mod_chat/                 # conversaciones, SSE, tools, LLM          (/chat/conversaciones)
+  infrastructure/
+    main.py                   # composition root: descubre módulos y monta routers
+    discovery.py              # pkgutil sobre src/modules/*/module.py
+```
+
+Cada módulo expone `MODULE.md`, `module.py` (`MODULE_ID`, `router`/`build_router`, `configure`) y `public.py`. `main.py` y el contenedor **no** tienen listas manuales: descubren y configuran. Cuando el manifiesto prohíbe una importación directa (por ejemplo checkout → orders), el módulo dueño registra una **capacidad** en `src/shared/infrastructure/di/capabilities.py` y el consumidor la resuelve en tiempo de request.
 
 Orden de lectura recomendado:
 
-1. `src/ports/inbound/chatbot_service_port.py` — el contrato único que exponen REST y WS hacia adentro.
-2. `src/application/use_cases/` — los 9 `Gestionar*` + `interpretar_responder`. Aquí vive el "qué hace el sistema".
-3. `src/domain/` — entidades y reglas puras, sin imports de framework.
-4. `src/adapters/inbound/http/` + `websocket/` — cómo entra el mundo exterior.
-5. `src/adapters/outbound/` — cómo salimos (4 módulos + LLM + pago/SMS/correo + DB).
-6. `src/infrastructure/` — quién cablea todo (DI, settings, DB, worker, prompts).
-
-Regla de dependencias (memorizar): `inbound → ports → application → domain ← outbound`. Nada apunta hacia afuera desde `application/` o `domain/`. `infrastructure/` puede conocer a todos para cablearlos.
+1. `src/modules/mod_chat/ports/chatbot_service_port.py` — el contrato único que exponen REST y SSE hacia adentro.
 
 ## 1. Árbol
 
@@ -169,16 +193,16 @@ Caso: cliente verificado pulsa "Confirmar y pagar S/ 299.90".
 
 Supón `GET /catalogo/similares?sku=` (SPEC-10 similares):
 
-1. Define el contrato en `src/ports/outbound/` si necesita un dato nuevo (o reutiliza `producto_repository_port.py`).
-2. Implementa la regla en `src/domain/services/` (p. ej. criterio de similitud) sin I/O.
-3. Crea/orquesta en `src/application/use_cases/gestionar_catalogo_use_case.py` (inyecta el puerto, no el adapter).
-4. Expón en `src/adapters/inbound/http/catalogo_router.py` con DTO Pydantic y `dependencies/`.
-5. Implementa el adapter en `src/adapters/outbound/http_clients/` con su timeout y URL de `settings.py`.
-6. Cablea en `src/infrastructure/config/container.py` y registra el router en `main.py`.
-7. Añade test en `tests/unit` (regla) + `tests/integration` (router con respx).
-8. Actualiza este `.md` y `ARQUITECTURA-ICEPANEL.md` si aparece un componente nuevo.
+1. Define el contrato en `src/modules/mod_catalog/ports/` si necesita un dato nuevo (o reutiliza `product_repository_port.py`).
+2. Implementa la regla en `src/modules/mod_catalog/domain/` (p. ej. criterio de similitud) sin I/O.
+3. Crea/orquesta en `src/modules/mod_catalog/application/manage_catalog_use_case.py` (inyecta el puerto, no el adapter).
+4. Expón en `src/modules/mod_catalog/adapters/http/catalog_router.py` con DTO Pydantic y `tags=[MODULE_ID]`.
+5. Implementa el adapter en `src/modules/mod_catalog/adapters/` con su timeout y URL de `settings.py`.
+6. Cablea en `src/modules/mod_catalog/module.py` (`provide_*` + `build_router`); `main.py` lo descubre solo.
+7. Añade test en `tests/unit/mod_catalog/` (regla) + `tests/integration/mod_catalog/` (router con respx).
+8. Actualiza `MODULE.md` y, si el comando público cambia, `docs/openapi.json` (`python scripts/export_openapi.py`).
 
-Checklist: ¿el caso importa algo de `adapters` o `infrastructure`? Debe responder no. ¿el router tiene `if` de negocio? Debe responder no.
+Checklist: ¿el caso importa algo de `adapters` o del interior de otro módulo? Debe responder no. ¿el router tiene `if` de negocio? Debe responder no. `python scripts/check_modules.py` lo comprueba.
 
 ## 11. Mapeo C4
 
