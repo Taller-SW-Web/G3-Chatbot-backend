@@ -12,7 +12,8 @@
 Búsqueda, detalle, disponibilidad, promociones y precio proyectado del catálogo
 de Productos, más las reglas puras de producto (variantes, ofertas, similitud,
 stock). **No** incluye carrito, checkout ni conversación: la memoria del chat se
-lee/escribe con los adaptadores compartidos de `src/shared`.
+lee/escribe con `ConversationContextPort`, implementado por `mod-chat` y
+resuelto por la capacidad `conversation_context`.
 
 ## Superficie pública
 

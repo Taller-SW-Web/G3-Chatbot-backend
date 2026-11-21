@@ -17,7 +17,7 @@ pedidos ni gestiona postventa.
 
 | Tipo | Archivo | Qué expone |
 |---|---|---|
-| Backend | `public.py` | `provide_checkout_service`, `provide_sales_port`, `provide_outbox_processor`, `ManageCheckoutUseCase`, `PaymentGatewayPort` |
+| Backend | `public.py` | `provide_checkout_service`, `provide_sales_port`, `provide_checkout_snapshot`, `provide_confirmation_outbox`, `provide_outbox_processor`, `ManageCheckoutUseCase`, `PaymentGatewayPort` |
 | Frontend | `public.ts` | Tipos de checkout, pago y resultado |
 
 ## Rutas
@@ -41,9 +41,9 @@ pedidos ni gestiona postventa.
 
 | Capacidad | Consumidor | Motivo |
 |---|---|---|
-| `checkout_document` | `mod-auth` | `ultimoDocumento` del perfil sin acoplar auth a checkout |
+| `checkout_document` | `mod-auth` (opcional) | `ultimoDocumento` del perfil sin acoplar auth a checkout |
 | `outbox_processor` | worker compartido | el lifespan no importa módulos |
-| `order_confirmation` (consumida) | este módulo | el correo pertenece a `mod-orders` |
+| `order_confirmation` (consumida) | este módulo | el correo pertenece a `mod-orders`; es requisito de arranque |
 
 ## Pruebas
 

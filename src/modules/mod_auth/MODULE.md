@@ -45,7 +45,8 @@ Ningún módulo importa `domain/`, `application/` ni `adapters/` de este paquete
   `shared/infrastructure/http/security_client.py` (login, MFA, registro, perfil).
 - `local_phone_verification` (tabla compartida) para `celularVerificado`.
 - Capacidad `checkout_document` (registrada por `mod-checkout`) para
-  `ultimoDocumento` sin importar el interior de checkout.
+  `ultimoDocumento` sin importar el interior de checkout. Es opcional: si falta,
+  el perfil usa un null object y `/health` reporta `degraded`.
 
 ## Pruebas
 

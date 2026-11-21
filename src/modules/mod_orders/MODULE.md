@@ -19,8 +19,10 @@ reenvío de la confirmación por correo (SPEC-16..18). **No** crea pedidos
 | Backend | `public.py` | `OrdersService`, `provide_orders_service`, `NotificationService`/`NotificationError`, `map_order_status_label`, `sanitize_tracking_payload` |
 | Frontend | `public.ts` | Tipos de pedido, seguimiento e hitos |
 
-`provide_sales_port` se reutiliza desde `mod-checkout.public` (dependencia
-declarada); el despacho se resuelve por la capacidad `dispatch_port`.
+`provide_sales_port`, `provide_checkout_snapshot` y `provide_confirmation_outbox`
+se reutilizan desde `mod-checkout.public` (dependencia declarada). El snapshot es
+el único acceso a `order_ref`/`checkout`/`payment_attempt`; el despacho se
+resuelve por la capacidad `dispatch_port`.
 
 ## Rutas
 
@@ -37,7 +39,8 @@ declarada); el despacho se resuelve por la capacidad `dispatch_port`.
 - **G2 Despacho** `GET /seguimientos/pedidos/{id}` con service token, vía
   capacidad `dispatch_port`.
 - **SMTP** (`SMTP_HOST`) o el `FakeEmailSender` en memoria.
-- Tablas `notification`, `outbox` y `order_ref` (modelos en `src/shared`).
+- Tabla `notification` (propia); `order_ref`/`checkout`/`payment_attempt` y el
+  outbox se leen/escriben a través de `mod-checkout.public`.
 
 ## Capacidades que registra
 

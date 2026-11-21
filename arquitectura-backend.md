@@ -1,240 +1,307 @@
 # Arquitectura Backend — Canal Chatbot
 
-> **BFF FastAPI en monolito modular (ADR-0024).** Corte por capacidad: `src/shared/` (kernel) y `src/modules/mod_*/` (8 módulos). Dentro de cada módulo se conserva el corte hexagonal de ADR-0002 (`domain/`, `application/`, `ports/`, `adapters/`). El detalle operativo vive en `modules.manifest.json`, `docs/adr/ADR-0024-modularizacion.md` y el `MODULE.md` de cada módulo.
-> Las tablas de las secciones 2–7 son el **plan histórico de fase 0** (nombres previstos, muchos nunca existieron): úsalas como referencia de intención, no como mapa de archivos. El mapa vigente es el de esta sección.
-> Regla: si contradice a una spec de `G3-Chatbot-specs/openspec/specs/`, manda la spec.
+> **BFF FastAPI en monolito modular (ADR-0024).** Corte por capacidad de negocio:
+> `src/shared/` (kernel) y `src/modules/mod_*/` (8 módulos). Dentro de cada módulo
+> se conserva el corte hexagonal de ADR-0002 (`domain/`, `application/`,
+> `ports/`, `adapters/`). La fuente de verdad de las fronteras es
+> [`modules.manifest.json`](modules.manifest.json) y el gate
+> [`scripts/check_modules.py`](scripts/check_modules.py); las decisiones están en
+> [`docs/adr/ADR-0024-modularizacion.md`](docs/adr/ADR-0024-modularizacion.md).
+>
+> Si este documento contradice una spec de `G3-Chatbot-specs/openspec/specs/`,
+> manda la spec. Si contradice el manifiesto o el checker, mandan ellos.
 
-## 0. Cómo leer este repo
+## 1. Reglas que no se negocian
 
-Este backend es un **BFF** que aplica **Clean Architecture + Hexagonal** (ADR-0002) dentro de un **monolito modular por capacidad** (ADR-0024). Dos reglas y ya:
+1. **Dependencias hacia adentro** dentro de cada módulo:
+   `adapters → application → domain`; `ports` son los contratos. La lógica de
+   negocio no conoce FastAPI, httpx, SQLAlchemy ni variables de entorno.
+2. **Fronteras entre módulos**: un módulo importa solo `src.shared.*`, su propio
+   árbol y `src.modules.<otro>.public`. Nunca `domain/`, `application/` ni
+   `adapters/` ajenos.
+3. **Sin listas manuales**: `src/infrastructure/main.py` descubre
+   `src/modules/*/module.py`; añadir un módulo no edita el composition root.
+4. **Contrato estable**: cada router declara `tags=[MODULE_ID]` y las rutas
+   públicas no cambian al mover código. `docs/openapi.json` se exporta con
+   `python scripts/export_openapi.py`.
+5. **Un PR toca un módulo**. `shared/` exige label `cross-modulo` y revisión del
+   owner de plataforma.
+6. **Toda capacidad cruzada es explícita**: o se declara en `dependsOn` y se
+   importa `public.py`, o el módulo dueño la registra en el registry y el
+   consumidor la resuelve. No hay `None` silencioso: al arrancar se validan las
+   capacidades requeridas y `/health` reporta las opcionales ausentes.
 
-1. **Dependencias hacia adentro**: `adapters → application → domain`; `ports` son los contratos. La lógica de negocio no sabe nada de FastAPI, httpx ni PostgreSQL.
-2. **Fronteras entre módulos**: un módulo importa solo `src/shared/*`, su propio árbol y `src.modules.<otro>.public`. Nada de `domain/`, `application/` ni `adapters/` ajenos. `scripts/check_modules.py` lo verifica en CI (advisory en esta fase).
+## 2. Árbol real
 
 ```text
 src/
-  shared/                     # kernel: sin reglas de negocio
-    domain/                   # caller_identity, block, masking, module_errors, request_context,
-                              # cart_errors y las entidades conversation/message (memoria compartida)
-    application/              # unit_of_work_port, puertos compartidos, tools (contratos), DTOs de comercio
-    infrastructure/           # config/settings, db (connection + models + migraciones), di (registry,
-                              # container, capabilities), http (problem, correlation, auth de
-                              # transporte, rate limit), auth (JWKS, service token, SecurityClient),
-                              # persistencia compartida (outbox, order_ref, phone verification,
-                              # conversación/mensaje/adjunto), worker (outbox loop) y fakes compartidos
+  shared/                         # kernel: sin reglas de negocio de un módulo
+    application/
+      dto/                        # contratos de comercio, order_ref, outbox
+      ports/                      # unit_of_work, security, token, phone,
+                                  # checkout_document, checkout_snapshot,
+                                  # conversation_context, notification,
+                                  # conversation/message repositories
+      tools/                      # contratos de tools y ExecutionContext
+    domain/                       # caller_identity, block, masking, errores,
+                                  # request_context, sensitive_data_filter,
+                                  # entidades conversation/message
+    infrastructure/
+      auth/                       # JWKS, service token, SecurityClient
+      config/                     # Settings (12-Factor, zod-like al arranque)
+      db/                         # engine/session, 14 modelos, migración 0001
+      di/                         # registry de capacidades, container
+      fakes/                      # Seguridad y Ventas en memoria
+      http/                       # problem+json, correlation, auth guard,
+                                  # rate limit, health, router options
+      persistence/                # outbox, order_ref, phone verification,
+                                  # conversation/message/attachment, UoW
+      worker/                     # outbox loop
   modules/
-    mod_auth/                 # sesión, registro, MFA, perfil            (/sesion)
-    mod_catalog/              # catálogo, detalle, disponibilidad        (/catalogo)
-    mod_cart/                 # carrito, items, cupón                    (/carrito)
-    mod_shipping/             # cotización y direcciones                 (/direcciones, /envio)
-    mod_checkout/             # checkout, pago, outbox                   (/checkout)
-    mod_orders/               # pedidos, seguimiento, correo             (/pedidos)
-    mod_postventa/            # devoluciones, reclamos, CSAT             (/devoluciones, /reclamos)
-    mod_chat/                 # conversaciones, SSE, tools, LLM          (/chat/conversaciones)
+    mod_auth/                     # sesión y cuenta                 (/sesion)
+    mod_catalog/                  # catálogo                        (/catalogo)
+    mod_cart/                     # carrito y cupón                 (/carrito)
+    mod_shipping/                 # envío y direcciones             (/envio, /direcciones)
+    mod_checkout/                 # checkout, pago y outbox         (/checkout)
+    mod_orders/                   # pedidos, seguimiento y correo   (/pedidos)
+    mod_postventa/                # devoluciones, reclamos, CSAT    (/devoluciones, /reclamos)
+    mod_chat/                     # conversaciones, SSE, tools, LLM (/chat/conversaciones)
   infrastructure/
-    main.py                   # composition root: descubre módulos y monta routers
-    discovery.py              # pkgutil sobre src/modules/*/module.py
+    main.py                       # composition root: descubre y monta
+    discovery.py                  # pkgutil + configure_modules + capacidades
 ```
 
-Cada módulo expone `MODULE.md`, `module.py` (`MODULE_ID`, `router`/`build_router`, `configure`) y `public.py`. `main.py` y el contenedor **no** tienen listas manuales: descubren y configuran. Cuando el manifiesto prohíbe una importación directa (por ejemplo checkout → orders), el módulo dueño registra una **capacidad** en `src/shared/infrastructure/di/capabilities.py` y el consumidor la resuelve en tiempo de request.
+Cada módulo expone:
 
-Orden de lectura recomendado:
-
-1. `src/modules/mod_chat/ports/chatbot_service_port.py` — el contrato único que exponen REST y SSE hacia adentro.
-
-## 1. Árbol
-
-```
-G3-Chatbot-backend/
-├── alembic.ini (0B, placeholder)
-├── requirements.txt (0B)
-├── arquitectura-backend.md (este archivo)
-├── docs/ (html/png/json visual-check, sin código)
-├── src/
-│   ├── adapters/
-│   │   ├── __init__.py
-│   │   ├── inbound/http/ (12 routers + dependencies/3)
-│   │   ├── inbound/websocket/ (1)
-│   │   └── outbound/ (auth/1, http_clients/8, nlp/3, notificaciones/2, pagos/1, persistence/9+models/14)
-│   ├── application/ (use_cases/10, tools/2, dto/2)
-│   ├── domain/ (entities/8, services/9, value_objects/2)
-│   ├── infrastructure/ (config/3, db/connection+migrations, worker/3, prompts/1, evals, main.py)
-│   └── ports/ (inbound/1, outbound/10)
-└── tests/ (unit, integration, evals — solo .gitkeep)
-```
-
-## 2. Raíz e infraestructura transversal
-
-| Fichero | Propósito | Origen | Estado |
-|---|---|---|---|
-| `alembic.ini` | Config migraciones: `sqlalchemy.url`, `script_location=src/infrastructure/db/migrations` | `README §1.5` SQLAlchemy+Alembic, `modelo-datos.md` 14 tablas | Vacío, rellenar con env en fase 1 |
-| `requirements.txt` | Deps `fastapi, pydantic v2, sqlalchemy, alembic, httpx, pyjwt, apscheduler, pytest, respx` | `README §1.5` | Vacío |
-| `src/infrastructure/main.py` | App FastAPI + lifespan (routers + worker) | `c4.md L2` BFF | Vacío |
-| `src/infrastructure/config/settings.py` | URLs base `SEG/PRO/VEN/DES`, LLM, SMTP, JWKS, timeouts | `ADR-0017`, `contratos §3` | Vacío |
-| `src/infrastructure/config/container.py` | DI: cablea casos, clientes, repos, providers | `ADR-0002` | Vacío |
-| `src/infrastructure/config/pesos_por_categoria.yaml` | Parche peso carrito hasta cerrar A6 | SPEC-12 Req.4, A6 | Vacío |
-| `src/infrastructure/db/connection.py` | Engine/sesión SQLAlchemy async | `modelo-datos.md` | Vacío |
-| `src/infrastructure/db/migrations/` + `versions/` | Migraciones 14 tablas | `modelo-datos.md` | Solo `.gitkeep` |
-| `src/infrastructure/worker/outbox_worker.py, jobs.py, scheduler.py` | `OutboxWorker NOTIFICAR_PAGO/SOLICITAR_ANULACION/ENVIAR_CORREO` + `ExpirarCheckouts 1min, limpieza carritos 7d, evidencias 24h` | SPEC-14,15,16,11,21, `ADR-0011` | Vacíos |
-| `src/infrastructure/prompts/sistema.md` | Prompt sistema versionado | SPEC-05 RNF | Vacío |
-| `src/infrastructure/evals/` | `pytest -m evals >=90%` 120 frases | SPEC-05 RNF | Solo `.gitkeep` |
-
-Por qué existe `infrastructure/`: es el único lugar que conoce secretos, URLs y el framework. Si mañana Productos cambia su ruta (riesgo R1, A5), solo se toca un adapter; si cambia el proveedor LLM, solo `nlp/`; los casos no se enteran.
-
-## 3. Adaptadores inbound (borde HTTP/WS)
-
-| Fichero | Propósito | Origen | Estado |
-|---|---|---|---|
-| `adapters/inbound/http/chatbot_router.py` | Conversaciones/mensajes/acciones `POST/GET /chat/conversaciones, /buscar, /{id}/mensajes → 202` | SPEC-05, `contratos §2.1` | Vacío |
-| `adapters/inbound/http/sesion_router.py` | `POST /sesion/registro, /login, /mfa/*, /refresh, /logout, GET /sesion/perfil, /politica-contrasena` | SPEC-01..03, `contratos §2.2` | Vacío |
-| `adapters/inbound/http/contacto_router.py` | `POST /contacto/celular/solicitar-otp, /verificar-otp` propio | SPEC-04, A2 | Vacío |
-| `adapters/inbound/http/catalogo_router.py` | `GET /catalogo/productos, /{id}, /promociones, /disponibilidad` | SPEC-06..10, `contratos §2.3` | Vacío |
-| `adapters/inbound/http/carrito_router.py` | `GET/DELETE /carrito, POST/PATCH/DELETE items, POST/DELETE /carrito/cupon` | SPEC-11,13, `contratos §2.4` | Vacío |
-| `adapters/inbound/http/envio_router.py` | `POST /envio/cotizar` + `GET /direcciones` proxy | SPEC-12, `contratos §2.4` | Vacío |
-| `adapters/inbound/http/checkout_router.py` | `POST /checkout, GET /checkout/{id}, POST /{id}/pago` + `Idempotency-Key` | SPEC-14, `contratos §2.5` | Vacío |
-| `adapters/inbound/http/pedidos_router.py` | `GET /pedidos, /{id}, /{id}/seguimiento, POST /{id}/reenviar-confirmacion` | SPEC-15..18 | Vacío |
-| `adapters/inbound/http/reclamos_router.py` | `POST/GET /reclamos, GET /reclamos/{codigo}` | SPEC-19,20 | Vacío |
-| `adapters/inbound/http/evidencias_router.py` | `POST /evidencias` proxy upload Ventas | SPEC-21, A13 | Vacío |
-| `adapters/inbound/http/devoluciones_router.py` | `POST/GET /devoluciones, GET /{id}` | SPEC-21,22 | Vacío |
-| `adapters/inbound/http/admin_router.py` | `GET /admin/outbox-fallidos` interno | `grabacion-pedido/design.md` | Vacío |
-| `adapters/inbound/http/dependencies/rate_limiter.py` | 20 msg/min, 5 cupones/10min, 5 registros/10min | SPEC-05 Req.11, SPEC-13, SPEC-01 | Vacío |
-| `adapters/inbound/http/dependencies/jwt_validator.py` | JWKS cache, `iss=auth-service tipo=acceso rol CLIENTE` | `contratos §1`, SPEC-03 | Vacío |
-| `adapters/inbound/http/dependencies/checkout_guard.py` | `exigir_celular_verificado()` 403 `CELULAR_NO_VERIFICADO` | SPEC-04, SPEC-14 Req.1 | Vacío |
-| `adapters/inbound/websocket/chatbot_ws_adapter.py` | WS `wss://.../api/v1/chat/ws?conversacionId=` eventos `token/bloque/fin/error` | SPEC-05 Req.4 | Vacío |
-
-Qué NO hacen los routers: sin reglas de negocio, sin httpx, sin SQL. Solo validan (Pydantic), aplican `dependencies/`, llaman al caso vía `ChatbotServicePort` y mapean errores a `problem+json` con `code`.
-
-## 4. Núcleo application
-
-| Fichero | Propósito | Origen | Estado |
-|---|---|---|---|
-| `application/use_cases/gestionar_conversacion_use_case.py` | Crear/listar/buscar/historial `customer_id/chat_sid` | SPEC-05, `ADR-0018` | Vacío (creado fase 0) |
-| `application/use_cases/interpretar_responder_use_case.py` | Ciclo LLM-tool-LLM max 5 it, prompt+resumen+12 msgs, publica WS | SPEC-05 Req.3,4,7 | Vacío (renombrado) |
-| `application/use_cases/gestionar_sesion_use_case.py` | SPEC-01..04: `SesionService.post_login`, fusiona carrito, `accionPendiente` | SPEC-01..04, hueco `ADR-0018` | Vacío (renombrado) |
-| `application/use_cases/gestionar_catalogo_use_case.py` | SPEC-06..09: `CatalogoService, Normalizador, Recomendacion, CrossSell, Promociones, PricingAdapter, VarianteResolver, StockValidator, Similares` | SPEC-06..09 | Vacío (renombrado) |
-| `application/use_cases/gestionar_carrito_use_case.py` | SPEC-10,11,13: `CarritoService, TotalesCalculator, ResolverLinea, CuponService`, límites 10/20 | SPEC-10,11,13 | Vacío (renombrado) |
-| `application/use_cases/gestionar_checkout_use_case.py` | SPEC-12,14: preconds ordenadas, 15 min, 3 intentos, `DocumentoValidator` A14 | SPEC-12,14 | Vacío (renombrado) |
-| `application/use_cases/gestionar_pedido_use_case.py` | SPEC-15,16,17: `PedidoService, SnapshotBuilder, NotificacionService, EstadoMapper` | SPEC-15,16,17 | Vacío (renombrado) |
-| `application/use_cases/gestionar_seguimiento_use_case.py` | SPEC-18: `SeguimientoMapper` lista blanca | SPEC-18, A11 | Vacío (repurposed) |
-| `application/use_cases/gestionar_postventa_use_case.py` | SPEC-19..22: `ReclamoService, DevolucionService` + consultas | SPEC-19..22 | Vacío (repurposed) |
-| `application/use_cases/gestionar_evidencias_use_case.py` | Upload evidencia `POST /evidencias` previo a devolución | SPEC-21, A13 | Vacío (creado) |
-| `application/tools/tool_registry.py, action_dispatcher.py` | Catálogo tools Pydantic + botones sin LLM | SPEC-05 Req.3,6,8 | Vacíos |
-| `application/dto/mensaje_entrante_dto.py, respuesta_chatbot_dto.py` | DTOs turno | SPEC-05 | Vacíos |
-
-Los casos orquestan: piden datos a puertos, aplican reglas de `domain/services`, persisten vía repos y devuelven DTOs. Nunca importan FastAPI, httpx ni SQLAlchemy.
-
-## 5. Adaptadores outbound + puertos
-
-| Fichero | Propósito | Origen | Estado |
-|---|---|---|---|
-| `adapters/outbound/http_clients/seguridad_api_adapter.py` + `cliente_repository_port.py` | Registro/login/MFA/direcciones/introspección | `contratos §3.1`, SPEC-01..03,12,14 | Vacíos |
-| `http_clients/introspeccion_api_adapter.py` | `POST /auth/introspeccion` 3 s sin caché, antes de pago | SPEC-14, A3 | Vacío |
-| `http_clients/productos_api_adapter.py, inventario_api_adapter.py, cupones_api_adapter.py, evaluacion_api_adapter.py` + `producto_repository_port.py` | Catálogo/precios/disponibilidad/cupones/evaluar | `contratos §3.2` A5 (provisional) | Vacíos |
-| `http_clients/ventas_api_adapter.py` + `pedido_repository_port.py` | Pedidos/reclamos/devoluciones, normaliza `codigo→code` 5 s | `contratos §3.3` v1.3.0 | Vacíos |
-| `http_clients/despacho_api_adapter.py` + `despacho_port.py` | `POST /zonas/cotizar` + `GET /seguimiento?idPedido=` 4 s | `contratos §3.4` A11,A12 | Vacíos |
-| `adapters/outbound/auth/service_token_provider.py` + `ports/outbound/service_token_port.py` | `client_credentials modulo-chatbot` cache hasta 60 s antes `exp`, Hito 4 | `ADR-0009`, SPEC-14,18 | Vacíos |
-| `adapters/outbound/nlp/llm_provider_base.py, openai_nlp_adapter.py, claude_nlp_adapter.py` + `ports/outbound/llm_provider_port.py` | Tool calling streaming 15 s, config env | SPEC-05, `ADR-0005` | Vacíos |
-| `adapters/outbound/pagos/payment_simulator_adapter.py` + `ports/outbound/payment_gateway_port.py` | Simulador determinista `SIM-...`, nunca persiste PAN/CVV | SPEC-14, `ADR-0014` | Vacíos |
-| `adapters/outbound/notificaciones/smtp_email_adapter.py` + `ports/outbound/email_sender_port.py` | Jinja2 `CONFIRMACION+REENVIO max2`, reintentos SMTP max3 | SPEC-16 | Vacíos |
-| `adapters/outbound/notificaciones/simulated_sms_adapter.py` + `ports/outbound/sms_sender_port.py` | OTP 6 díg 5 min 3 int | SPEC-04, `ADR-0015` | Vacíos |
-| `adapters/outbound/persistence/conversation_postgres_adapter.py, attachment_postgres_adapter.py, local_phone_verification_postgres_adapter.py, carrito_postgres_adapter.py, checkout_postgres_adapter.py, outbox_postgres_adapter.py, pedido/producto/cliente_postgres_adapter.py` + `ports/outbound/cliente_repository_port.py, conversacion_state_port.py` | Persistencia 14 tablas (nombres de tabla y columna en inglés); `checkout+intento+outbox` misma transacción | `modelo-datos.md`, SPEC-15 Req.3 | Vacíos |
-| `adapters/outbound/persistence/models/` 14 (tablas `conversation, message, local_phone_verification, cart, cart_item, checkout, payment_attempt, order_ref, notification, claim_ref, return_ref, evidence, attachment, outbox`; archivos pobladas con nombre en inglés: `conversation.py, attachment.py, local_phone_verification.py`; los vacíos conservan por ahora el nombre en español: `mensaje, carrito, item_carrito, checkout, intento_pago, pedido_ref, notificacion, reclamo_ref, devolucion_ref, evidencia, outbox`) | Tablas propias, solo refs externas | `modelo-datos.md` | Vacíos |
-| `ports/inbound/chatbot_service_port.py` | Contrato único REST+WS → casos | `motor-conversacion/design.md` | Vacío |
-
-Eliminados fase 0 por duplicados: `pasarela_pago_port, nlp_engine_port, notificador_port, pasarela_pago_adapter, email_sms_adapter`.
-
-## 6. Dominio
-
-| Fichero | Propósito | Origen | Estado |
-|---|---|---|---|
-| `domain/entities/conversacion.py, mensaje.py, cliente.py, carrito.py, item_carrito.py, checkout.py, intento_pago.py, pedido.py` | Entidades puras | `modelo-datos.md`, `ADR-0002` | Vacías |
-| `domain/services/sensitive_data_filter.py` | Redacta tarjeta Luhn/OTP/pass antes de LLM/persistir | SPEC-05 Req.9, `ADR-0006` | Vacío |
-| `domain/services/output_validator.py` | Compara montos texto vs tools, corrige en `fin` | SPEC-05 Req.7 | Vacío |
-| `domain/services/degraded_mode.py` | Keywords+menú si LLM >15 s/falla | SPEC-05 Req.10 | Vacío |
-| `domain/services/totales_calculator.py, snapshot_builder.py, estado_mapper.py, seguimiento_mapper.py, politica_descuento.py, regla_validacion_carrito.py` | Reglas comercio | SPEC-11,15,17,18 | Vacías |
-| `domain/value_objects/estado_conversacion.py, intencion.py` | `ACTIVE/ARCHIVED/CLOSED`, intenciones | SPEC-05, `flujos (a)` | Vacías |
-
-`domain/` no importa FastAPI, httpx, SQLAlchemy ni variables de entorno. Si un fichero necesita la hora, recibe el reloj por parámetro; si necesita un dato externo, lo recibe ya cargado desde el caso.
-
-## 7. Flujo A — turno de texto (trazado archivo por archivo)
-
-Caso: visitante escribe "busco zapatillas running talla 42" en `ChatPage`.
-
-1. `POST /chat/conversaciones/{id}/mensajes` → `adapters/inbound/http/chatbot_router.py`. Aplica `dependencies/rate_limiter.py` (20/min) y `jwt_validator.py` (opcional sin token). Responde `202 {mensajeId}` sin esperar al LLM.
-2. El router invoca `ports/inbound/chatbot_service_port.py` → `application/use_cases/interpretar_responder_use_case.py`.
-3. El caso carga historial vía `adapters/outbound/persistence/conversation_postgres_adapter.py` (últimos 12 + `summary`) y pasa el texto por `domain/services/sensitive_data_filter.py` antes de persistirlo en `mensaje.py`.
-4. Llama a `ports/outbound/llm_provider_port.py` (impl. `adapters/outbound/nlp/openai_nlp_adapter.py` o `claude_nlp_adapter.py`, timeout 15 s). El LLM devuelve tool call `buscar_productos`.
-5. `application/tools/tool_registry.py` valida args Pydantic + sesión (`requiere_sesion`) y ejecuta el handler = `gestionar_catalogo_use_case.py`, que usa `http_clients/productos_api_adapter.py` (4 s) e `inventario_api_adapter.py` (3 s).
-6. Con el resultado, el caso re-llama al LLM para redactar, publica `token*` y `bloque CARRUSEL_PRODUCTOS` por `adapters/inbound/websocket/chatbot_ws_adapter.py`, y `domain/services/output_validator.py` corrige montos en `fin`.
-7. Si el LLM tarda >15 s o falla, `domain/services/degraded_mode.py` responde menú por REST. Si el WS está caído, el frontend hace polling (el backend no cambia).
-
-## 8. Flujo B — checkout y pago (trazado)
-
-Caso: cliente verificado pulsa "Confirmar y pagar S/ 299.90".
-
-1. `POST /checkout` → `adapters/inbound/http/checkout_router.py` con `Idempotency-Key`. `dependencies/checkout_guard.py` exige celular verificado (403 si no).
-2. `application/use_cases/gestionar_checkout_use_case.py` verifica en orden SPEC-14: sesión → celular (`models/local_phone_verification.py`) → carrito revalidado (`gestionar_carrito_use_case.py` + `inventario_api_adapter.py`) → dirección/cotización (`adapters/outbound/http_clients/despacho_api_adapter.py`) → cupón (`cupones_api_adapter.py`).
-3. Crea `checkout` `PENDING_PAYMENT` 15 min + `pedido CREADO` en Ventas (`ventas_api_adapter.py`) + tarea outbox en **la misma transacción** (`checkout_postgres_adapter.py` + `outbox_postgres_adapter.py` + `models/checkout|intento_pago|outbox`).
-4. `POST /checkout/{id}/pago` → introspección (`introspeccion_api_adapter.py` 3 s) → `payment_simulator_adapter.py` (`SIM-...`, guarda solo marca+ult4 en `models/intento_pago.py`).
-5. APROBADO → `infrastructure/worker/outbox_worker.py` notifica a Ventas y encola correo (`smtp_email_adapter.py`, plantilla confirmación, `models/notificacion.py`). RECHAZADO x3 → FALLIDO + anulación `PAGO_NO_COMPLETADO`. `jobs.py/scheduler.py` expiran checkouts cada minuto.
-
-## 9. Reglas por capa (qué sí / qué no)
-
-| Capa | Sí | No |
-|---|---|---|
-| `adapters/inbound` | Validar DTOs, aplicar `dependencies/`, llamar 1 caso, mapear `code→HTTP` | Lógica de negocio, httpx, SQL |
-| `application/use_cases` | Orquestar puertos, aplicar orden de precondiciones, controlar transacción | Importar FastAPI/httpx/SQLAlchemy, leer `os.environ` |
-| `domain` | Reglas puras y testeables sin I/O | Cualquier import de framework o red |
-| `adapters/outbound` | Único lugar con httpx/SQL/SMTP/LLM, timeouts propios, normalizar `codigo→code` | Decidir reglas de negocio |
-| `ports` | Interfaces mínimas que el caso necesita | Implementaciones |
-| `infrastructure` | Settings por env, DI, `main.py`, worker schedule, prompts/evals | Lógica de negocio |
-
-## 10. Ejemplo: dar de alta un endpoint + caso nuevo
-
-Supón `GET /catalogo/similares?sku=` (SPEC-10 similares):
-
-1. Define el contrato en `src/modules/mod_catalog/ports/` si necesita un dato nuevo (o reutiliza `product_repository_port.py`).
-2. Implementa la regla en `src/modules/mod_catalog/domain/` (p. ej. criterio de similitud) sin I/O.
-3. Crea/orquesta en `src/modules/mod_catalog/application/manage_catalog_use_case.py` (inyecta el puerto, no el adapter).
-4. Expón en `src/modules/mod_catalog/adapters/http/catalog_router.py` con DTO Pydantic y `tags=[MODULE_ID]`.
-5. Implementa el adapter en `src/modules/mod_catalog/adapters/` con su timeout y URL de `settings.py`.
-6. Cablea en `src/modules/mod_catalog/module.py` (`provide_*` + `build_router`); `main.py` lo descubre solo.
-7. Añade test en `tests/unit/mod_catalog/` (regla) + `tests/integration/mod_catalog/` (router con respx).
-8. Actualiza `MODULE.md` y, si el comando público cambia, `docs/openapi.json` (`python scripts/export_openapi.py`).
-
-Checklist: ¿el caso importa algo de `adapters` o del interior de otro módulo? Debe responder no. ¿el router tiene `if` de negocio? Debe responder no. `python scripts/check_modules.py` lo comprueba.
-
-## 11. Mapeo C4
-
-| Nivel | Carpetas |
+| Archivo | Contrato |
 |---|---|
-| L2 App `Backend API` | `adapters/inbound/, application/, domain/, ports/, infrastructure/config, infrastructure/main.py` |
-| L2 App `Worker` | `infrastructure/worker/` |
-| L2 Store `DB` | `adapters/outbound/persistence/, infrastructure/db/` |
-| L3a Motor | `chatbot_router, chatbot_ws_adapter, ChatbotServicePort, gestionar_conversacion, interpretar_responder, tools/, sensitive/output/degraded, llm_provider, conversation_postgres, prompts/evals` |
-| L3b Comercio | 11 routers recurso + `gestionar_sesion/catalogo/carrito/checkout/pedido/seguimiento/postventa/evidencias`, simuladores, 8 clientes + service token, repos+outbox |
-| L4 | Link a cada ruta `src/...` de este archivo |
+| `MODULE.md` | owner, `basePath`, rutas, dependencias, capacidades y pruebas. |
+| `module.py` | `MODULE_ID`, `configure(container)`, `build_router(options)` / `router`, providers y `__all__`. |
+| `public.py` | única superficie importable por otros módulos. |
+| `__init__.py` | literal canónico `MODULE_ID = "mod-x"`. |
+| `domain/` | reglas puras y value objects. |
+| `application/` | casos de uso; orquestan puertos, no adapters ni ORM. |
+| `ports/` | contratos propios del módulo. |
+| `adapters/` | HTTP, clientes, persistencia, fakes; único lugar con I/O. |
 
-## 12. Glosario + errores comunes
+## 3. Los 8 módulos
 
-BFF: el frontend solo habla con este backend; los tokens de servicio nunca van al navegador. Outbox: escribir el efecto + la tarea pendiente en la misma transacción para reintentar sin perder pagos/correos. Idempotencia: `Idempotency-Key` evita pedidos/pagos duplicados ante reintentos. JWKS: validación local del JWT sin llamar a Seguridad en cada request. `conversacion_state_port` está pendiente de renombrar a `*_repository_port` por consistencia. Errores típicos: poner `httpx` en el caso, validar rol CLIENTE en el router en vez de `jwt_validator`, guardar PAN/CVV (prohibido, solo marca+ult4), llamar al LLM con datos sin pasar por `sensitive_data_filter`.
+| id | Owner | `basePath` | Depende de | Responsabilidad |
+|---|---|---|---|---|
+| `mod-auth` | @Ankarmin | `/sesion` | nadie | registro, login, MFA, refresh, logout, perfil, verificación de correo. |
+| `mod-catalog` | @SOoOnny | `/catalogo` | nadie | búsqueda, detalle, disponibilidad, promociones y reglas puras de producto. |
+| `mod-cart` | @SOoOnny | `/carrito` | `mod-catalog` | carrito anónimo/cliente, ítems, cupón, stock y totales. |
+| `mod-shipping` | @SOoOnny | `/envio`, `/direcciones` | `mod-cart` | cotización G2 y direcciones guardadas G1. |
+| `mod-checkout` | @MathiasTL | `/checkout` | `mod-cart`, `mod-shipping` | checkout, pago simulado, snapshot y outbox transaccional. |
+| `mod-orders` | @MathiasTL | `/pedidos` | `mod-checkout` | listado/detalle, seguimiento G2 y confirmación por correo. |
+| `mod-postventa` | @MathiasTL | `/devoluciones`, `/reclamos`, `/evidencias` | `mod-orders` | devoluciones, reclamos, evidencias y CSAT contra G5. |
+| `mod-chat` | @Ankarmin | `/chat/conversaciones` | todos | conversaciones, SSE, bucle LLM-tool y acciones directas. |
 
-## 13. Trazabilidad y gaps
+`mod-auth` es la base: el contrato de Seguridad (puertos, cliente HTTP, JWKS y
+service token) vive en `src/shared/infrastructure/auth` para que cualquier
+módulo autentique al titular sin importar `mod_auth`.
 
-SPEC-01..04 → `sesion/contacto routers, gestionar_sesion, jwt/rate/guard, seguridad/introspeccion clients, sms simulado, local_phone_verification model`.
+## 4. DAG
 
-SPEC-05 → motor completo.
+```text
+catalog ← cart ← checkout ← orders ← postventa
+             ↑        ↑
+          shipping ───┘
+chat → todos (orquestador)
+auth → usado por todos vía shared/auth
+```
 
-SPEC-06..09 → `catalogo router, gestionar_catalogo, productos/inventario/evaluacion clients`.
+- `chat` puede depender de todos; **ningún módulo importa chat**.
+- `shipping` declara `mod-cart` y consume `provide_cart_repositories` desde su
+  `public.py`; no hay capacidad oculta.
+- Un cambio de DAG se hace en `modules.manifest.json` **y** en este documento en
+  el mismo PR.
 
-SPEC-10,11,13 → `carrito router, gestionar_carrito, inventario/cupones clients, carrito/item models`.
+## 5. `shared/`: kernel, no cajón de sastre
 
-SPEC-12,14 → `envio/checkout routers, gestionar_checkout, despacho client, checkout/intento models, payment simulator`.
+`shared/` contiene solo lo que es transversal y no pertenece a un módulo:
 
-SPEC-15,16 → `pedidos router, gestionar_pedido, ventas client, pedido/notificacion/outbox models, worker+smtp`.
+- **Contratos**: `UnitOfWorkPort`, `SecurityPort`, `AccessTokenValidatorPort`,
+  `PhoneVerificationPort`, `CheckoutDocumentPort`, `CheckoutSnapshotPort`,
+  `ConversationContextPort`, `NotificationRepositoryPort`, `EmailOutboxPort`,
+  `ConfirmationSourcePort`.
+- **HTTP**: problem+json, correlation id, auth de transporte, rate limit,
+  `/health`, `RouterOptions`.
+- **Datos**: `Base`, engine/session, 14 modelos y la migración única de Alembic.
+- **Persistencia compartida**: outbox, `order_ref`, `local_phone_verification`,
+  conversación/mensaje/adjunto y `SqlAlchemyUnitOfWork`.
+- **Fakes de módulos externos**: Seguridad y Ventas en memoria (`MODULES_MODE`).
 
-SPEC-17,18 → `pedidos router, gestionar_pedido/seguimiento, ventas/despacho clients, service token`.
+`shared` **no importa** `src.modules.*`. El checker lo verifica.
 
-SPEC-19..22 → `reclamos/evidencias/devoluciones routers, gestionar_postventa/evidencias, ventas client, reclamo/devolucion/evidencia models`.
+### Puerto de contexto de conversación (H-02)
 
-Gaps fase 1: rellenar `settings/container/connection/main`, `alembic` inicial 14 tablas, 1 test por escenario (`unit/integration/evals`), cerrar A4,A5,A6,A7,A11,A12. Deuda: `conversacion_state_port` renombrar a `*_repository_port`.
+`mod-chat` es dueño de conversaciones y mensajes. `mod-cart` y `mod-catalog`
+solo necesitan memoria de trabajo (`ultimoCarrusel`, `filtrosVigentes`),
+ownership, `touch` y la fila TOOL de auditoría. Para no invertir el DAG ni
+importar la persistencia de chat:
+
+1. `ConversationContextPort` vive en
+   `src/shared/application/ports/conversation_context_port.py`.
+2. `mod-chat` lo implementa en
+   `src/modules/mod_chat/adapters/conversation_context_adapter.py`.
+3. `mod-chat.configure()` registra la capacidad `conversation_context`.
+4. Cart/catalog la resuelven en tiempo de request; el checker no ve imports
+   cruzados.
+
+### Snapshot de checkout (H-03)
+
+`order_ref`, `checkout` y `payment_attempt` son tablas de `mod-checkout`.
+`mod-orders` construye el correo con `CheckoutSnapshotPort` (shared) y
+`provide_confirmation_outbox`, ambos servidos por `mod-checkout.public`. Orders
+no consulta esas tablas ni importa sus modelos.
+
+## 6. Auto-discovery y composition root
+
+`src/infrastructure/discovery.py`:
+
+1. recorre `src/modules/*/module.py` con `pkgutil`;
+2. exige `MODULE_ID` y `configure(container)` (un módulo sin `configure` falla,
+   no se salta en silencio);
+3. ejecuta `configure(container)` de todos;
+4. valida `REQUIRED_CAPABILITIES`: si falta una, aborta el arranque con el
+   módulo que la requiere en el mensaje;
+5. registra `OPTIONAL_CAPABILITIES` ausentes, las loguea como `ERROR` y las
+   expone en `/health` como `{"status": "degraded", "missingCapabilities": [...]}`.
+
+`main.py` no conoce módulos concretos: descubre, monta
+`build_router(RouterOptions(...))` bajo `/api/v1` y añade middleware/health. El
+`ACTION_SCOPE` se resuelve de forma perezosa desde el registry, no con un import
+a `mod_chat`.
+
+### Capacidades actuales
+
+| Capacidad | La registra | La consume | ¿Requerida? |
+|---|---|---|---|
+| `conversation_context` | `mod-chat` | `mod-cart`, `mod-catalog` | sí |
+| `order_confirmation` | `mod-orders` | `mod-checkout`, worker | sí para checkout |
+| `dispatch_port` | `mod-shipping` | `mod-orders` | sí |
+| `checkout_document` | `mod-checkout` | `mod-auth` | no (perfil degrada) |
+| `outbox_processor` | `mod-checkout` | worker compartido | sí en producción |
+| `action_scope` | `mod-chat` | composition root | sí en producción |
+
+## 7. Contrato HTTP y OpenAPI
+
+- Prefijo global: `/api/v1`.
+- Cada router usa `APIRouter(..., tags=[MODULE_ID])`; el checker falla si falta.
+- `docs/openapi.json` se regenera con `python scripts/export_openapi.py` y se
+  verifica en CI con `python scripts/export_openapi.py --check`.
+- Los cambios de ruta o método son aditivos salvo decisión de spec. Un endpoint
+  nuevo actualiza `MODULE.md`, el test del router y el OpenAPI en el mismo PR.
+
+### Mapa de rutas
+
+| Módulo | Rutas |
+|---|---|
+| `mod-auth` | `POST /sesion/login`, `/registro`, `/mfa/solicitar`, `/mfa/verificar`, `/refresh`, `/logout`, `/verificar-correo`, `/verificar-correo/reenviar`; `GET /sesion/perfil`, `/politica-contrasena` |
+| `mod-catalog` | `GET /catalogo/productos`, `/productos/{id}`, `/promociones`, `/disponibilidad` |
+| `mod-cart` | `GET/DELETE /carrito`; `POST/PATCH/DELETE /carrito/items`; `POST/DELETE /carrito/cupon` |
+| `mod-shipping` | `GET /direcciones`; `POST /envio/cotizar` |
+| `mod-checkout` | `POST /checkout`; `GET /checkout/{id}`; `POST /checkout/{id}/pago` |
+| `mod-orders` | `GET /pedidos`, `/pedidos/{id}`, `/pedidos/{id}/seguimiento`; `POST /pedidos/{id}/reenviar-confirmacion` |
+| `mod-postventa` | `POST/GET /devoluciones`, `GET /devoluciones/{id}`; `POST/GET /reclamos`, `GET /reclamos/{codigo}`; `POST /evidencias`; `POST /pedidos/{id}/csat` |
+| `mod-chat` | `POST/GET /chat/conversaciones`, `GET /chat/conversaciones/buscar`, `GET/POST /chat/conversaciones/{id}/mensajes` (SSE/acción directa) |
+
+## 8. Gate de fronteras
+
+`python scripts/check_modules.py` verifica con `ast` (sin dependencias):
+
+- estructura: paquete, `MODULE.md`, `public.py`, `MODULE_ID` literal;
+- `module.py`: `configure` + `router`/`build_router`;
+- imports: resuelve `ImportFrom.level` (relativos), valida destinos constantes de
+  `importlib.import_module`/`__import__` y rechaza los dinámicos;
+- `shared` no importa módulos;
+- composition root solo importa `src.modules.<id>.module`;
+- routers con `tags=[MODULE_ID]`.
+
+La única excepción dinámica permitida es `src/infrastructure/discovery.py`
+(importa el nombre que descubre `pkgutil`). Cualquier otra se reporta como
+violación. `tests/unit/test_check_modules.py` es la regresión del gate.
+
+## 9. Datos y migraciones
+
+- Una sola cadena de Alembic en `src/shared/infrastructure/db/migrations`;
+  nombre `YYYYMMDD_mod_<id>_<desc>`.
+- 14 modelos en `src/shared/infrastructure/db/models`: `conversation`, `message`,
+  `attachment`, `local_phone_verification`, `cart`, `cart_item`, `checkout`,
+  `payment_attempt`, `order_ref`, `notification`, `claim_ref`, `return_ref`,
+  `evidence`, `outbox`.
+- **Aplicación no importa modelos ORM**: construye DTOs de inserción
+  (`NewCheckout`, `NewPaymentAttempt`, `NewOutboxTask`, `NewOrderReference`,
+  referencias de postventa) y el adapter PostgreSQL las convierte en filas.
+- **Transacciones**: checkout + intento + outbox comparten `SqlAlchemyUnitOfWork`;
+  los adapters hacen `flush`, nunca `commit`.
+
+## 10. Flujos de referencia
+
+### Turno de texto
+
+1. `POST /chat/conversaciones/{id}/mensajes` valida sesión, ownership y rate
+   limit; responde SSE.
+2. `InterpretAndRespondUseCase` carga historial, redacta datos sensibles y llama
+   al `LLMProvider` (timeout configurable).
+3. El LLM pide una tool; `RegistryToolAdapter` valida args y ejecuta el caso del
+   módulo dueño (catálogo, carrito, pedidos).
+4. La respuesta se persiste y se emite como `token*` + bloques + `fin`; si el
+   LLM falla, degrada sin romper el turno.
+
+### Checkout y pago
+
+1. `POST /checkout` exige `Idempotency-Key`, carrito activo, contacto, dirección
+   y cotización server-side de Despacho.
+2. Crea `checkout` + `order_ref` + tarea outbox en la misma transacción.
+3. `POST /checkout/{id}/pago` introspecciona el token, simula la tarjeta y
+   persiste solo marca + últimos 4.
+4. Aprobado: encola `NOTIFY_SALES_PAYMENT` y pide la confirmación por correo a
+   `mod-orders`; expirado/rechazado: `REQUEST_CANCELLATION`.
+5. El worker del outbox reintenta con backoff y DLQ lógica (`FAILED`).
+
+## 11. Añadir un endpoint o una capacidad
+
+1. Lee la spec del módulo y `MODULE.md`; si el cambio no está en la spec,
+   actualízala en el mismo PR.
+2. Define/extiende el puerto en `ports/`; no importes ORM ni adapters en
+   `application/`.
+3. Implementa la regla en `domain/` si es pura; orquesta en `application/`.
+4. Añade el adapter en `adapters/` y el DTO en `adapters/http/`.
+5. Cablea en `module.py` (`provide_*`, `build_router`, `configure`).
+6. Añade test unitario (regla) e integración de router (respx/TestClient).
+7. Actualiza `public.py` solo si otro módulo debe consumirlo. Si es capacidad,
+   declara `REQUIRED_CAPABILITIES`/`OPTIONAL_CAPABILITIES` y actualiza el
+   registry, el manifiesto y este documento.
+8. Ejecuta `pytest tests/unit -q`, `ruff check .`, `mypy src`,
+   `python scripts/check_modules.py` y
+   `python scripts/export_openapi.py --check`.
+
+## 12. Verificación y deuda conocida
+
+Comandos obligatorios en cada PR:
+
+```bash
+pytest tests/unit -q
+ruff check .
+mypy src
+python scripts/check_modules.py
+python scripts/export_openapi.py --check
+```
+
+Deuda conocida y hallazgos abiertos se registran en `docs/flujo-de-trabajo.md` y
+en el issue correspondiente. El más relevante hoy (H-17): el frontend llama
+`POST /api/v1/contacto/celular/verificar-otp` (y la spec define también
+`solicitar-otp`), pero el backend no expone esos endpoints ni tiene todavía el
+almacén/adaptador de OTP; no se implementó para no inventar una decisión de
+producto y de persistencia. Ver la evidencia en el reporte del PR.
+
+## 13. Enlaces
+
+- [ADR-0024 — monolito modular](docs/adr/ADR-0024-modularizacion.md)
+- [Manifiesto de módulos](modules.manifest.json)
+- [Checker de fronteras](scripts/check_modules.py)
+- [Flujo de trabajo](docs/flujo-de-trabajo.md)
+- [Reglas para agentes](AGENTS.md)
+- `MODULE.md` de cada módulo (owner, rutas, dependencias y capacidades).

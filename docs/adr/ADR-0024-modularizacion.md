@@ -42,7 +42,7 @@ correlation id, outbox y primitivas UI. **No contiene reglas de negocio.**
    ```text
    catalog ← cart ← checkout ← orders ← postventa
                ↑        ↑
-            shipping ───┘
+            shipping ───┘   (shipping declara cart: lee sus líneas)
    chat → todos (orquestador)
    auth → usado por todos vía shared/auth
    ```
