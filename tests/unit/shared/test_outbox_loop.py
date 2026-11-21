@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 from fastapi import FastAPI
+from sqlalchemy.exc import DBAPIError
 
 from src.shared.infrastructure.worker import outbox_loop
 from src.shared.infrastructure.worker.outbox_loop import outbox_worker_lifespan, run_outbox_loop
@@ -42,6 +43,42 @@ async def test_loop_survives_a_failed_iteration_and_logs_only_the_error_class(ca
             await task
     assert processor.calls >= 3
     assert "RuntimeError" in caplog.text
+    assert "secret-token-123" not in caplog.text
+
+
+class DriverCheckViolationError(Exception):
+    """Stands in for the asyncpg error chained under the SQLAlchemy dialect error."""
+
+
+class AdaptedIntegrityError(Exception):
+    """Stands in for SQLAlchemy's asyncpg dialect error (exposes sqlstate)."""
+
+    sqlstate = "23514"
+
+
+def _dbapi_error_with_secret():
+    orig = AdaptedIntegrityError('new row violates check constraint, password=hunter2')
+    orig.__cause__ = DriverCheckViolationError("password=hunter2")
+    return DBAPIError("INSERT INTO outbox VALUES (%(token)s)", {"token": "secret-token-123"}, orig)
+
+
+@pytest.mark.asyncio
+async def test_loop_logs_driver_error_class_and_sqlstate_without_messages(caplog):
+    processor = Processor([_dbapi_error_with_secret(), 0])
+    with caplog.at_level(logging.ERROR):
+        task = asyncio.create_task(run_outbox_loop(fake_session, lambda _s: processor, 0.01))
+        for _ in range(200):
+            if processor.calls >= 2:
+                break
+            await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert "DBAPIError" in caplog.text
+    assert "AdaptedIntegrityError" in caplog.text
+    assert "DriverCheckViolationError" in caplog.text
+    assert "sqlstate=23514" in caplog.text
+    assert "hunter2" not in caplog.text
     assert "secret-token-123" not in caplog.text
 
 

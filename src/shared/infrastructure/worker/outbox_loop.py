@@ -1,8 +1,9 @@
 """Background loop that runs the outbox worker inside the API process (SPEC-15, ADR-0011).
 
 Each iteration opens its own database session, processes one batch (one commit per job)
-and sleeps. A failed iteration is logged and the loop keeps going. Only the exception
-class is logged: messages of HTTP/DB errors could echo credentials.
+and sleeps. A failed iteration is logged and the loop keeps going. Only exception
+classes and the SQLSTATE code are logged: messages of HTTP/DB errors could echo
+credentials or bound parameters.
 """
 import asyncio
 import contextlib
@@ -26,6 +27,21 @@ SessionFactory = Callable[[], AbstractAsyncContextManager[Any]]
 ProcessorFactory = Callable[[Any], BatchProcessor]
 
 
+def describe_error(exc: BaseException) -> str:
+    """Safe summary: exception class, wrapped driver error classes and SQLSTATE, never messages."""
+    parts = [type(exc).__name__]
+    orig = getattr(exc, "orig", None)
+    if orig is not None:
+        parts.append(type(orig).__name__)
+        cause = orig.__cause__
+        if cause is not None:
+            parts.append(type(cause).__name__)
+        sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+        if sqlstate:
+            parts.append(f"sqlstate={sqlstate}")
+    return " / ".join(parts)
+
+
 async def run_outbox_loop(
     session_factory: SessionFactory,
     processor_factory: ProcessorFactory,
@@ -42,7 +58,7 @@ async def run_outbox_loop(
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.error("Outbox worker iteration failed: %s", type(exc).__name__)
+            logger.error("Outbox worker iteration failed: %s", describe_error(exc))
         await asyncio.sleep(interval_seconds)
 
 
