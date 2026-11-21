@@ -18,16 +18,21 @@ class EvidencePostgresAdapter:
 
     @staticmethod
     def tipo_desde_ventas(tipo: str) -> str:
-        """Normaliza el literal confirmado por Ventas al valor local en inglés.
-
-        No inventa una traducción para PDF ni para nuevos tipos del proveedor.
-        """
-        return "IMAGE" if tipo == "IMAGEN" else tipo
+        """Normaliza el literal confirmado por G5 al valor local en inglés."""
+        if tipo == "IMAGEN":
+            return "IMAGE"
+        if tipo == "DOCUMENTO":
+            return "DOCUMENT"
+        return tipo
 
     @staticmethod
     def tipo_hacia_ventas(tipo: str) -> str:
-        """Usar al ensamblar evidencias[] de la solicitud a Ventas."""
-        return "IMAGEN" if tipo == "IMAGE" else tipo
+        """Usar al ensamblar evidencias[] de la solicitud a G5."""
+        if tipo == "IMAGE":
+            return "IMAGEN"
+        if tipo in {"PDF", "DOCUMENT", "DOCUMENTO"}:
+            return "DOCUMENTO"
+        return tipo
 
     async def guardar(self, evidence: Evidence) -> Evidence:
         evidence.type = self.tipo_desde_ventas(evidence.type)

@@ -2,6 +2,7 @@
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from urllib.parse import urlparse
 
 LLM_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
 
@@ -82,6 +83,8 @@ class Settings:
     security_expected_issuer: str = "auth-service"
     products_base_url: str = "http://localhost:4011"
     sales_base_url: str = "http://localhost:4012"
+    # G5 M2 (Postventa): separate Render service from M1 (Ventas).
+    postventa_base_url: str = "http://localhost:8082"
     dispatch_base_url: str = "http://localhost:4013"
     # Seguridad client secret (ADR-0017/A3). No code default: SecurityClient
     # refuses to start without it (set SECURITY_CLIENT_SECRET, see .env.template).
@@ -108,6 +111,7 @@ class Settings:
     security_timeout_seconds: float = 5.0
     products_timeout_seconds: float = 4.0
     sales_timeout_seconds: float = 5.0
+    postventa_timeout_seconds: float = 5.0
     dispatch_timeout_seconds: float = 4.0
     # Order confirmation e-mail (SPEC-16). Without SMTP_HOST the in-memory
     # FakeEmailSender is used and nothing is delivered. Mailtrap in development.
@@ -164,6 +168,12 @@ def _origins(name: str, default: str) -> tuple[str, ...]:
     return tuple(origin.strip().rstrip("/").lower() for origin in raw.split(",") if origin.strip())
 
 
+def _is_onrender_host(url: str) -> bool:
+    """True only when the URL host is Render, not a lookalike in the path."""
+    host = (urlparse(url).hostname or "").lower()
+    return host == "onrender.com" or host.endswith(".onrender.com")
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings(
@@ -193,12 +203,21 @@ def get_settings() -> Settings:
         security_client_id=os.getenv("SECURITY_CLIENT_ID", "modulo-chatbot").strip() or "modulo-chatbot",
         products_base_url=os.getenv("PRODUCTS_BASE_URL", "http://localhost:4011").strip().rstrip("/"),
         sales_base_url=(sales_base := os.getenv("SALES_BASE_URL", "http://localhost:4012").strip().rstrip("/")),
+        postventa_base_url=(
+            postventa_base := os.getenv("POSTVENTA_BASE_URL", "http://localhost:8082").strip().rstrip("/")
+        ),
         dispatch_base_url=os.getenv("DISPATCH_BASE_URL", "http://localhost:4013").strip().rstrip("/"),
         security_timeout_seconds=_number("SECURITY_TIMEOUT_SECONDS", "5", float, minimum=0.1),
         products_timeout_seconds=_number("PRODUCTS_TIMEOUT_SECONDS", "4", float, minimum=0.1),
         sales_timeout_seconds=_number(
             "SALES_TIMEOUT_SECONDS",
-            "180" if "onrender.com" in sales_base else "5",
+            "180" if _is_onrender_host(sales_base) else "5",
+            float,
+            minimum=0.1,
+        ),
+        postventa_timeout_seconds=_number(
+            "POSTVENTA_TIMEOUT_SECONDS",
+            "180" if _is_onrender_host(postventa_base) else "5",
             float,
             minimum=0.1,
         ),

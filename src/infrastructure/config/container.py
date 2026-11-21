@@ -2,6 +2,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import lru_cache
+from typing import Any
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from src.adapters.outbound.auth.jwks_token_validator import JwksTokenValidator
 from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
 from src.adapters.outbound.fakes.fake_dispatch import FakeDispatchPort
 from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
+from src.adapters.outbound.fakes.fake_postventa import FakePostventaPort
 from src.adapters.outbound.fakes.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
@@ -27,6 +29,7 @@ from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
     InventoryClient,
 )
+from src.adapters.outbound.http_clients.postventa_client import PostventaClient
 from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.http_clients.security_client import SecurityClient
 from src.adapters.outbound.http_clients.ventas_client import VentasClient
@@ -84,6 +87,7 @@ from src.infrastructure.db import connection
 from src.infrastructure.db.connection import get_session
 from src.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, OutboxProcessor
 from src.ports.outbound.llm_provider_port import LLMProvider
+from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.ports.outbound.order_repository_port import SalesOrderPort
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
 
@@ -260,6 +264,7 @@ def provide_inventory_client(settings: Settings | None = None) -> InventoryClien
 
 
 _FAKE_SALES_PORT = FakeSalesPort()
+_FAKE_POSTVENTA_PORT = FakePostventaPort()
 
 
 def provide_sales_port(settings: Settings | None = None) -> SalesOrderPort:
@@ -271,6 +276,35 @@ def provide_sales_port(settings: Settings | None = None) -> SalesOrderPort:
         base_url=settings.sales_base_url,
         timeout_seconds=settings.sales_timeout_seconds,
         service_token_provider=provide_service_token_provider(settings),
+    )
+
+
+def provide_postventa_port(settings: Settings | None = None):
+    """G5 M2 Postventa: in-process fake in `SALES_MODE=fake`, HTTP otherwise."""
+    settings = settings or get_settings()
+    if settings.module_mode("sales") == "fake":
+        return _FAKE_POSTVENTA_PORT
+    return PostventaClient(
+        base_url=settings.postventa_base_url,
+        timeout_seconds=settings.postventa_timeout_seconds,
+    )
+
+
+def provide_postventa_service(session: AsyncSession = Depends(get_session)):
+    """Postventa service with local idempotency and customer-token strategy."""
+    settings = get_settings()
+    from src.adapters.outbound.persistence.claim_ref_postgres_adapter import ClaimRefPostgresAdapter
+    from src.adapters.outbound.persistence.evidence_postgres_adapter import EvidencePostgresAdapter
+    from src.adapters.outbound.persistence.return_ref_postgres_adapter import ReturnRefPostgresAdapter
+    from src.application.use_cases.postventa_service import PostventaService
+
+    fake = settings.module_mode("sales") == "fake"
+    return PostventaService(
+        postventa=provide_postventa_port(settings),
+        sales=provide_sales_port(settings),
+        claim_refs=None if fake else ClaimRefPostgresAdapter(session),
+        return_refs=None if fake else ReturnRefPostgresAdapter(session),
+        evidence=None if fake else EvidencePostgresAdapter(session),
     )
 
 
@@ -447,9 +481,11 @@ class OrdersService:
         self,
         notifications: NotificationService,
         sales_client: SalesOrderPort | None = None,
+        dispatch=None,
     ):
         self._notifications = notifications
         self._sales = sales_client
+        self._dispatch = dispatch
 
     async def resend_confirmation(self, customer_id, order_id, *, holder_token, idempotency_key):
         return await self._notifications.resend_confirmation(
@@ -484,16 +520,112 @@ class OrdersService:
     ):
         if self._sales:
             raw = await self._sales.get_customer_order(order_id, holder_token)
+            # G5 `PedidoDetalle` keeps money inside `pago` and history in
+            # `historialEstados`; the channel contract exposes them at the root.
+            payment_raw = raw.get("pago")
+            payment: dict[str, Any] = payment_raw if isinstance(payment_raw, dict) else {}
+            total = raw.get("total", payment.get("total", 0))
+            moneda = raw.get("moneda", payment.get("moneda", "PEN"))
+            history = raw.get("historial") or raw.get("historialEstados") or []
             return {
-                **_with_status_label(raw),
-                "historial": [_with_status_label(m, key="etiqueta") for m in raw.get("historial", [])],
+                **_with_status_label({**raw, "total": total, "moneda": moneda}),
+                "historial": [
+                    {**_with_status_label(m, key="etiqueta"), "completado": m.get("completado", True)}
+                    for m in history
+                ],
             }
         raise NotificationError("SERVICIO_NO_DISPONIBLE", "La consulta de pedidos aún no está disponible.")
 
-    async def _pending(self, *args, **kwargs):
-        raise NotificationError("SERVICIO_NO_DISPONIBLE", "El seguimiento de pedidos aún no está disponible.")
+    async def get_order_tracking(
+        self,
+        customer_id,
+        order_id: str,
+        *,
+        holder_token: str,
+    ):
+        """Order tracking (SPEC-18).
 
-    get_order_tracking = _pending
+        First proves ownership through Ventas with the customer token, then asks
+        Despacho with the service token. Despacho is optional: a 404 while the
+        order is still being prepared, a missing scope or a timeout degrade to
+        the order state from Ventas with ``detalleDisponible=false``.
+        """
+        if self._sales is None:
+            raise NotificationError(
+                "SERVICIO_NO_DISPONIBLE",
+                "La consulta de pedidos aún no está disponible.",
+            )
+        order = await self._sales.get_customer_order(order_id, holder_token)
+        estado = str(order.get("estado") or "").strip().upper()
+        envio_raw = order.get("envio")
+        envio: dict[str, Any] = envio_raw if isinstance(envio_raw, dict) else {}
+        fallback: dict[str, Any] = {
+            "pedidoId": order_id,
+            "estado": estado,
+            "estadoEtiqueta": map_order_status_label(estado),
+            "fechaProgramada": envio.get("fechaEstimadaEntrega"),
+            "distrito": envio.get("distrito"),
+            "hitos": [],
+            "detalleDisponible": False,
+            "mensaje": (
+                "Tu pedido está pendiente de pago."
+                if estado == "CREADO"
+                else "Tu pedido aún se está preparando; te mostraremos el seguimiento "
+                "cuando salga del centro de despacho."
+                if estado in {"PAGADO", "EN_PREPARACION"}
+                else "Tu pedido fue anulado."
+                if estado == "ANULADO"
+                else "El detalle del envío no está disponible ahora."
+            ),
+        }
+        # Ventas is the source of truth. Despacho only adds detail once the
+        # order is actually dispatched (or delivered); a paid order still in
+        # preparation must not show a synthetic "on the way" milestone.
+        if estado not in {"DESPACHADO", "ENTREGADO"}:
+            return fallback
+        if self._dispatch is None:
+            return fallback
+        try:
+            raw = await self._dispatch.get_order_tracking(order_id)
+        except (ModuleRequestError, ModuleUnavailableError):
+            # A 404 is normal before dispatch, and a missing scope or timeout
+            # must not hide the order status the customer can still see.
+            return fallback
+        if not isinstance(raw, dict) or not raw:
+            return fallback
+        tracking = dict(raw)
+        if estado == "ENTREGADO":
+            tracking["estado"] = "ENTREGADO"
+            tracking["estadoEtiqueta"] = map_order_status_label("ENTREGADO")
+            hitos = tracking.get("hitos")
+            if isinstance(hitos, list) and not any(
+                str(hito.get("titulo", "")).strip().casefold() == "entregado"
+                for hito in hitos
+                if isinstance(hito, dict)
+            ):
+                delivered_at = next(
+                    (
+                        str(item.get("fecha"))
+                        for item in order.get("historial") or []
+                        if isinstance(item, dict) and item.get("estado") == "ENTREGADO"
+                    ),
+                    "",
+                )
+                hitos.append(
+                    {
+                        "titulo": "Entregado",
+                        "fecha": delivered_at,
+                        "completado": True,
+                    }
+                )
+        elif estado == "ANULADO":
+            tracking["estado"] = "ANULADO"
+            tracking["estadoEtiqueta"] = map_order_status_label("ANULADO")
+        tracking.setdefault("pedidoId", order_id)
+        tracking.setdefault("distrito", envio.get("distrito"))
+        tracking.setdefault("fechaProgramada", envio.get("fechaEstimadaEntrega"))
+        tracking.setdefault("detalleDisponible", True)
+        return tracking
 
 
 def provide_orders_service(session: AsyncSession = Depends(get_session)) -> OrdersService:
@@ -501,6 +633,7 @@ def provide_orders_service(session: AsyncSession = Depends(get_session)) -> Orde
     return OrdersService(
         notifications=build_notification_service(session),
         sales_client=provide_sales_port(settings),
+        dispatch=provide_despacho_client(settings),
     )
 
 

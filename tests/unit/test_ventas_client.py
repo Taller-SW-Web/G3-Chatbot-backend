@@ -10,12 +10,17 @@ from src.ports.outbound.service_token_port import ServiceTokenProvider
 
 
 class StubTokenProvider(ServiceTokenProvider):
+    def __init__(self) -> None:
+        self.audiences: list[str | None] = []
+
     async def get_token(
         self,
         *,
         correlation_id: str | None = None,
         scope: str | None = None,
+        audience: str | None = None,
     ) -> str:
+        self.audiences.append(audience)
         return "fake-ventas-service-token"
 
 
@@ -42,10 +47,11 @@ def test_create_order_sends_service_token_and_idempotency_key():
 
     respx.post(f"{BASE_URL}/api/v1/pedidos").mock(side_effect=handler)
 
+    tokens = StubTokenProvider()
     client = VentasClient(
         base_url=BASE_URL,
         timeout_seconds=5.0,
-        service_token_provider=StubTokenProvider(),
+        service_token_provider=tokens,
     )
     snapshot = {"canal": "CHATBOT", "pago": {"total": 299.90}}
 
@@ -58,6 +64,7 @@ def test_create_order_sends_service_token_and_idempotency_key():
     assert seen_headers["authorization"] == "Bearer fake-ventas-service-token"
     assert seen_headers["idempotency-key"] == "key-abc"
     assert "x-correlation-id" in seen_headers
+    assert tokens.audiences == ["api-ventas"]
 
 
 @respx.mock

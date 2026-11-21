@@ -3,6 +3,7 @@
 # Fijado para Hito 2. No agregar drivers sync salvo necesidad de Alembic offline.
 
 fastapi>=0.115,<1.0
+python-multipart>=0.0.20,<1.0  # Form/UploadFile endpoints (evidencias de postventa).
 uvicorn[standard]>=0.30,<1.0
 python-dotenv>=1.2.4,<2.0  # Carga .env en alembic; el servidor usa `uvicorn --env-file`.
 pydantic>=2.14.3,<3.0

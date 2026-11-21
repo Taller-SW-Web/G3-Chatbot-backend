@@ -415,7 +415,7 @@ class OrderLineItemDTO(BaseModel):
 
 
 class OrderHistoryMilestoneDTO(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     estado: str
     etiqueta: str
@@ -424,7 +424,7 @@ class OrderHistoryMilestoneDTO(BaseModel):
 
 
 class OrderDetailResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     pedidoId: str
     canal: str = "CHATBOT"

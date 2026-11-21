@@ -46,9 +46,7 @@ class FakeDispatchPort:
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
         destino = destino or {}
-        if not str(destino.get("destinatario") or "").strip() or not str(
-            destino.get("direccion") or ""
-        ).strip():
+        if not str(destino.get("distrito") or "").strip():
             raise ModuleRequestError(
                 self.module, 400, "DESP_ERROR_DESTINO_REQUERIDO"
             )
