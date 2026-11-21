@@ -6,12 +6,12 @@ from typing import Any
 
 import pytest
 
-from src.adapters.outbound.fakes.fake_ventas import FakeSalesPort
 from src.application.tools.catalog_tools import OrderQueryArguments, build_tool_registry
 from src.application.tools.order_handlers import build_order_handlers
-from src.application.tools.tool_registry import ExecutionContext
 from src.infrastructure.config.container import OrdersService
-from src.ports.outbound.module_errors import ModuleUnavailableError
+from src.shared.application.tools.tool_registry import ExecutionContext
+from src.shared.domain.module_errors import ModuleUnavailableError
+from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 
 CUSTOMER_ID = uuid.UUID("11111111-2222-3333-4444-555555555555")
 OTHER_CUSTOMER = uuid.UUID("99999999-8888-7777-6666-555555555555")

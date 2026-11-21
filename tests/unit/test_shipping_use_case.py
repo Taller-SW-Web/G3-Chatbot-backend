@@ -7,13 +7,13 @@ import uuid
 
 import pytest
 
-from src.application.dto.commerce_contracts_dto import ShippingQuoteRequest
 from src.application.use_cases.manage_shipping_use_case import (
     EMPTY_CART_CODE,
     ManageShippingUseCase,
 )
 from src.application.use_cases.shipping_quote import build_destination, parse_quote
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteRequest
+from src.shared.domain.module_errors import ModuleRequestError
 from tests.fakes.fake_commerce import FakeCarts, FakeItems
 
 CUSTOMER_ID = uuid.uuid4()

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models.payment_attempt import PaymentAttempt
+from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
 
 
 class PaymentAttemptPostgresAdapter:

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models.checkout import Checkout
+from src.shared.infrastructure.db.models.checkout import Checkout
 
 
 class CheckoutPostgresAdapter:

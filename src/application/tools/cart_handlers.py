@@ -5,13 +5,13 @@ the dispatcher calls them with validated arguments while the router
 validates the explicit UI confirmation for `vaciar_carrito` beforehand.
 """
 
-from src.application.tools.tool_context import (
+from src.application.use_cases.manage_cart_use_case import CartError
+from src.shared.application.tools.tool_context import (
     caller_from_context,
     conversation_id_from_context,
 )
-from src.application.tools.tool_registry import ExecutionContext, ToolResult
-from src.application.use_cases.manage_cart_use_case import CartError
-from src.ports.outbound.module_errors import ModuleUnavailableError
+from src.shared.application.tools.tool_registry import ExecutionContext, ToolResult
+from src.shared.domain.module_errors import ModuleUnavailableError
 
 
 def build_cart_handlers(cart_use_case) -> dict:

@@ -3,7 +3,7 @@ import uuid
 
 import pytest
 
-from src.domain.value_objects.caller_identity import CallerIdentity
+from src.shared.domain.caller_identity import CallerIdentity
 
 CUSTOMER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 

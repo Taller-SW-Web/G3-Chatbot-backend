@@ -9,7 +9,6 @@ import httpx
 import pytest
 import respx
 
-from src.adapters.outbound.http_clients.base_client import ModuleUnavailableError
 from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
     InventoryClient,
@@ -19,8 +18,9 @@ from src.infrastructure.config.container import (
     provide_inventory_client,
     provide_products_client,
 )
-from src.infrastructure.config.settings import Settings
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.infrastructure.config.settings import Settings
+from src.shared.infrastructure.http.base_client import ModuleUnavailableError
 from tests.helpers import product_mocks
 
 BASE_URL = "http://mock:4011"

@@ -14,11 +14,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
-from src.adapters.outbound.persistence.models.cart_item import CartItem
 from src.ports.outbound.cart_repository_port import (
     CartConflictError,
     StaleCartError,
 )
+from src.shared.infrastructure.db.models.cart_item import CartItem
 
 
 class CartItemPostgresAdapter:

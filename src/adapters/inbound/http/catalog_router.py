@@ -9,7 +9,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.adapters.inbound.http.problem import ProblemError
 from src.application.tools.catalog_tools import (
     ProductArguments,
     SearchArguments,
@@ -18,6 +17,7 @@ from src.application.use_cases.manage_catalog_use_case import (
     CatalogError,
     ManageCatalogUseCase,
 )
+from src.shared.infrastructure.http.problem import ProblemError
 
 
 class AvailabilityOut(BaseModel):
@@ -81,7 +81,7 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         tamanio: int = Query(default=10, ge=1, le=10),
         service: ManageCatalogUseCase = Depends(catalog_provider),
     ) -> dict[str, Any]:
-        from src.application.tools.tool_registry import ExecutionContext
+        from src.shared.application.tools.tool_registry import ExecutionContext
 
         _ = orden  # server-side ordering is name-only; kept for the contract shape
         try:
@@ -114,7 +114,7 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         product_id: str,
         service: ManageCatalogUseCase = Depends(catalog_provider),
     ) -> dict[str, Any]:
-        from src.application.tools.tool_registry import ExecutionContext
+        from src.shared.application.tools.tool_registry import ExecutionContext
 
         try:
             result = await service.detail(
@@ -164,7 +164,7 @@ def create_catalog_router(catalog_provider) -> APIRouter:
 
 def _as_catalog_error(exc: Exception) -> CatalogError:
     from src.application.use_cases.manage_catalog_use_case import CatalogError as Error
-    from src.ports.outbound.module_errors import (
+    from src.shared.domain.module_errors import (
         ModuleRequestError,
         ModuleUnavailableError,
     )

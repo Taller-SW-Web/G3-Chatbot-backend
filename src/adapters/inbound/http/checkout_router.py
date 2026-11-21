@@ -6,17 +6,17 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from pydantic import BaseModel, ConfigDict
 
-from src.adapters.inbound.http.dependencies.auth_guard import require_customer
-from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
-from src.adapters.inbound.http.problem import ProblemError
-from src.application.dto.commerce_contracts_dto import CreateCheckoutRequest
 from src.application.use_cases.manage_checkout_use_case import (
     CheckoutError,
     CreateCheckoutInput,
     ManageCheckoutUseCase,
     ProcessPaymentInput,
 )
-from src.domain.value_objects.caller_identity import CallerIdentity
+from src.shared.application.dto.commerce_contracts_dto import CreateCheckoutRequest
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
+from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
+from src.shared.infrastructure.http.problem import ProblemError
 
 
 async def _safe_call(obj: Any, method_name: str, *args: Any, **kwargs: Any) -> Any:

@@ -4,9 +4,9 @@ import httpx
 import pytest
 import respx
 
-from src.adapters.outbound.http_clients.ventas_client import VentasClient
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
-from src.ports.outbound.service_token_port import ServiceTokenProvider
+from src.shared.application.ports.service_token_port import ServiceTokenProvider
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.infrastructure.http.ventas_client import VentasClient
 
 
 class StubTokenProvider(ServiceTokenProvider):

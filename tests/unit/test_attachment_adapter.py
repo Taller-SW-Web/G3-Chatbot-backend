@@ -6,8 +6,8 @@ El test de integración contra Supabase queda para la migración compartida.
 """
 from sqlalchemy import CheckConstraint, UniqueConstraint
 
-from src.adapters.outbound.persistence.attachment_postgres_adapter import AttachmentPostgresAdapter
-from src.adapters.outbound.persistence.models import Attachment, Base
+from src.shared.infrastructure.db.models import Attachment, Base
+from src.shared.infrastructure.persistence.attachment_postgres_adapter import AttachmentPostgresAdapter
 
 table = Base.metadata.tables["attachment"]
 

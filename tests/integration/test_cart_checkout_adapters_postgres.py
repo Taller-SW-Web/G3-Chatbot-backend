@@ -19,8 +19,8 @@ from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgres
 from src.adapters.outbound.persistence.checkout_postgres_adapter import (
     CheckoutPostgresAdapter,
 )
-from src.adapters.outbound.persistence.models import Checkout, Conversation
 from src.ports.outbound.cart_repository_port import CartConflictError
+from src.shared.infrastructure.db.models import Checkout, Conversation
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

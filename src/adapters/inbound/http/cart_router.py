@@ -10,15 +10,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
-from src.adapters.inbound.http.dependencies.auth_guard import require_customer
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
-from src.adapters.inbound.http.problem import ProblemError
-from src.application.dto.commerce_contracts_dto import ApplyCouponRequest
 from src.application.use_cases.manage_cart_use_case import (
     CartError,
     ManageCartUseCase,
 )
-from src.domain.value_objects.caller_identity import CallerIdentity
+from src.shared.application.dto.commerce_contracts_dto import ApplyCouponRequest
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
+from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
+from src.shared.infrastructure.http.problem import ProblemError
 
 ERROR_STATUS = {
     "REQUIERE_SESION": 401,

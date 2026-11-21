@@ -1,13 +1,13 @@
 """In-process Seguridad fakes (ADR-0022): demo flow without network or email."""
 import pytest
 
-from src.adapters.outbound.fakes.fake_security import (
+from src.shared.application.ports.token_validator_port import InvalidTokenError
+from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.infrastructure.fakes.fake_security import (
     FakeAccessTokenValidator,
     FakeSecurityAdapter,
     FakeServiceTokenProvider,
 )
-from src.ports.outbound.module_errors import ModuleRequestError
-from src.ports.outbound.token_validator_port import InvalidTokenError
 
 
 @pytest.mark.asyncio

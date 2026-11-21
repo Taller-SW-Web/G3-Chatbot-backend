@@ -2,7 +2,7 @@
 import pytest
 from starlette.requests import Request
 
-from src.adapters.inbound.http.dependencies.rate_limiter import (
+from src.shared.infrastructure.http.dependencies.rate_limiter import (
     REGISTER_DEBOUNCE_PER_EMAIL,
     REGISTER_PER_IP,
     RESEND_PER_EMAIL,

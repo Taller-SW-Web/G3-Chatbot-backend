@@ -8,21 +8,21 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.adapters.inbound.http.chatbot_router import create_chatbot_router
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
-from src.adapters.inbound.http.dependencies.jwt_validator import get_access_token_validator
-from src.adapters.inbound.http.health_router import router as health_router
-from src.adapters.inbound.http.problem import register_problem_handlers
-from src.domain.entities.conversation import (
+from src.infrastructure.main import create_app
+from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
+from src.shared.application.ports.token_validator_port import InvalidTokenError
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.entities.conversation import (
     Conversation,
     ConversationSummary,
     HighlightSegment,
     SearchHighlight,
 )
-from src.domain.entities.message import Message, MessageRole
-from src.domain.value_objects.caller_identity import CallerIdentity
-from src.infrastructure.main import create_app
-from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
-from src.ports.outbound.token_validator_port import InvalidTokenError
+from src.shared.domain.entities.message import Message, MessageRole
+from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
+from src.shared.infrastructure.http.dependencies.jwt_validator import get_access_token_validator
+from src.shared.infrastructure.http.health_router import router as health_router
+from src.shared.infrastructure.http.problem import register_problem_handlers
 
 NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 CID = uuid.uuid4()

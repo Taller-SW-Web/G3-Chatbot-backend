@@ -8,12 +8,12 @@ import pytest
 from fastapi import FastAPI
 
 from src.adapters.inbound.http.checkout_router import create_checkout_router
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
-from src.adapters.inbound.http.problem import register_problem_handlers
-from src.adapters.outbound.persistence.models.checkout import Checkout
-from src.adapters.outbound.persistence.models.payment_attempt import PaymentAttempt
 from src.application.use_cases.manage_checkout_use_case import CheckoutError
-from src.domain.value_objects.caller_identity import CallerIdentity
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.db.models.checkout import Checkout
+from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
+from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
+from src.shared.infrastructure.http.problem import register_problem_handlers
 
 FRONTEND_PAYLOAD = {
     "direccion": {"direccionExacta": "Av. Larco 1234", "distrito": "Miraflores"},

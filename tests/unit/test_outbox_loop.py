@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 import pytest
 from fastapi import FastAPI
 
-from src.infrastructure.worker import outbox_loop
-from src.infrastructure.worker.outbox_loop import outbox_worker_lifespan, run_outbox_loop
+from src.shared.infrastructure.worker import outbox_loop
+from src.shared.infrastructure.worker.outbox_loop import outbox_worker_lifespan, run_outbox_loop
 
 
 @asynccontextmanager
@@ -47,8 +47,9 @@ async def test_loop_survives_a_failed_iteration_and_logs_only_the_error_class(ca
 
 @pytest.mark.asyncio
 async def test_lifespan_starts_and_cancels_the_loop(monkeypatch):
-    from src.infrastructure.config import container, settings
-    from src.infrastructure.db import connection
+    from src.infrastructure.config import container
+    from src.shared.infrastructure.config import settings
+    from src.shared.infrastructure.db import connection
 
     started = asyncio.Event()
     cancelled = asyncio.Event()
@@ -75,7 +76,7 @@ async def test_lifespan_starts_and_cancels_the_loop(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_lifespan_does_nothing_when_disabled(monkeypatch):
-    from src.infrastructure.config import settings
+    from src.shared.infrastructure.config import settings
 
     def boom(*args, **kwargs):
         raise AssertionError("loop must not start")

@@ -1,20 +1,20 @@
 """Seguridad wiring: fake/http selection and the process-wide rate limiter (ADR-0022)."""
-from src.adapters.inbound.http.dependencies.rate_limiter import InMemoryRateLimiter
-from src.adapters.outbound.auth.jwks_token_validator import JwksTokenValidator
-from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
-from src.adapters.outbound.fakes.fake_security import (
-    FakeAccessTokenValidator,
-    FakeSecurityAdapter,
-    FakeServiceTokenProvider,
-)
-from src.adapters.outbound.http_clients.security_client import SecurityClient
 from src.infrastructure.config.container import (
     provide_access_token_validator,
     provide_rate_limiter,
     provide_security_port,
     provide_service_token_provider,
 )
-from src.infrastructure.config.settings import Settings
+from src.shared.infrastructure.auth.jwks_token_validator import JwksTokenValidator
+from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
+from src.shared.infrastructure.config.settings import Settings
+from src.shared.infrastructure.fakes.fake_security import (
+    FakeAccessTokenValidator,
+    FakeSecurityAdapter,
+    FakeServiceTokenProvider,
+)
+from src.shared.infrastructure.http.dependencies.rate_limiter import InMemoryRateLimiter
+from src.shared.infrastructure.http.security_client import SecurityClient
 
 
 def test_fake_mode_returns_in_process_security_ports():
@@ -48,7 +48,7 @@ def test_rate_limiter_is_a_process_singleton():
 
 
 def test_expected_issuer_setting_reaches_the_token_validator(monkeypatch):
-    from src.infrastructure.config.settings import get_settings
+    from src.shared.infrastructure.config.settings import get_settings
 
     monkeypatch.setenv("SECURITY_EXPECTED_ISSUER", "https://issuer.example/api/v1/auth")
     get_settings.cache_clear()

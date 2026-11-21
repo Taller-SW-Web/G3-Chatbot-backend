@@ -20,17 +20,17 @@ from src.application.catalog.product_lookup import (
     resolve_product_id,
 )
 from src.application.tools.catalog_tools import SearchArguments
-from src.application.tools.tool_context import (
-    caller_from_context,
-    conversation_id_from_context,
-)
 from src.domain.services.offer_policy import price_projection
 from src.domain.services.product_normalizer import ProductNormalizer
 from src.domain.services.product_projection import normalize_detail, sellable_skus
 from src.domain.services.similar_products import SimilarProducts
 from src.domain.services.stock_validator import StockValidator
 from src.domain.services.variant_resolver import VariantResolver, known_selection
-from src.ports.outbound.module_errors import (
+from src.shared.application.tools.tool_context import (
+    caller_from_context,
+    conversation_id_from_context,
+)
+from src.shared.domain.module_errors import (
     ModuleRequestError,
     ModuleUnavailableError,
 )

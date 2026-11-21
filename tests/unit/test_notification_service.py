@@ -14,9 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
 from src.adapters.inbound.http.orders_router import create_orders_router
-from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
 from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
 from src.application.use_cases.notification_service import (
@@ -24,13 +22,15 @@ from src.application.use_cases.notification_service import (
     NotificationService,
     SendOutcome,
 )
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.infrastructure.config.container import OrdersService
-from src.ports.outbound.notification_repository_port import (
+from src.shared.application.ports.notification_repository_port import (
     ConfirmationSource,
     EmailTask,
     NotificationRecord,
 )
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
+from src.shared.infrastructure.http.problem import register_problem_handlers
 
 ORDER_ID = "PED-2026-00891"
 CUSTOMER_ID = uuid.UUID("11111111-2222-3333-4444-555555555555")

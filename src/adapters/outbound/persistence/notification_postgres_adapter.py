@@ -11,8 +11,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models.notification import Notification
-from src.ports.outbound.notification_repository_port import NotificationRecord
+from src.shared.application.ports.notification_repository_port import NotificationRecord
+from src.shared.infrastructure.db.models.notification import Notification
 
 CONFIRMATION = "ORDER_CONFIRMATION"
 RESEND = "CONFIRMATION_RESEND"

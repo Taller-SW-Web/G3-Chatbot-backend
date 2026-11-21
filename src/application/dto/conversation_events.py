@@ -6,7 +6,7 @@ FinalEvent -> `fin`. MessageAcceptedEvent and DegradedEvent are informational fo
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from src.domain.entities.message import Message
+from src.shared.domain.entities.message import Message
 
 DegradedReason = Literal["timeout", "unavailable", "iteration_limit", "invalid_arguments"]
 

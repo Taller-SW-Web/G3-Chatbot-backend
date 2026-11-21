@@ -8,11 +8,12 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from src.adapters.inbound.http.cart_router import create_cart_router
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
 from src.adapters.inbound.http.orders_router import OrderError, create_orders_router
-from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.inbound.http.shipping_router import ShippingError, create_shipping_router
-from src.application.dto.commerce_contracts_dto import (
+from src.application.use_cases.manage_cart_use_case import CartError
+from src.domain.services.status_mapper import map_order_status_label
+from src.domain.services.tracking_mapper import sanitize_tracking_payload
+from src.shared.application.dto.commerce_contracts_dto import (
     CHECKOUT_ERROR_STATUS,
     COUPON_REJECTION_MESSAGES,
     ORDERS_ERROR_STATUS,
@@ -28,11 +29,10 @@ from src.application.dto.commerce_contracts_dto import (
     ShippingQuoteRequest,
     validate_buyer_document,
 )
-from src.application.use_cases.manage_cart_use_case import CartError
-from src.domain.services.status_mapper import map_order_status_label
-from src.domain.services.tracking_mapper import sanitize_tracking_payload
-from src.domain.value_objects.caller_identity import CallerIdentity
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
+from src.shared.infrastructure.http.problem import register_problem_handlers
 
 CUSTOMER_ID = uuid.UUID("11111111-2222-3333-4444-555555555555")
 AUTH_HEADER = {"Authorization": "Bearer valid-customer-jwt"}

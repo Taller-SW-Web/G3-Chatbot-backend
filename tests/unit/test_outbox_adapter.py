@@ -12,8 +12,8 @@ from sqlalchemy import CheckConstraint
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models import Base, Outbox
-from src.adapters.outbound.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
+from src.shared.infrastructure.db.models import Base, Outbox
+from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 
 table = Base.metadata.tables["outbox"]
 

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from src.infrastructure.db import connection
+from src.shared.infrastructure.db import connection
 
 
 class FakeSession:

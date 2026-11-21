@@ -5,7 +5,7 @@ import pytest
 import respx
 
 from src.adapters.outbound.http_clients.postventa_client import PostventaClient
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.shared.domain.module_errors import ModuleRequestError
 
 BASE_URL = "http://mock-postventa:8082"
 HOLDER = "fake-access-customer-1"

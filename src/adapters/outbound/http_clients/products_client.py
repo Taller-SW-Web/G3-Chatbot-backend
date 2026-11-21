@@ -25,17 +25,17 @@ from urllib.parse import quote
 
 import httpx
 
-from src.adapters.outbound.http_clients.base_client import BaseModuleClient
 from src.domain.services.product_projection import normalize_detail
-from src.ports.outbound.module_errors import (
-    ModuleRequestError,
-    ModuleUnavailableError,
-)
 from src.ports.outbound.product_repository_port import (
     MAX_SKUS_PER_CALL,
     normalize_sku_list,
 )
-from src.ports.outbound.request_context import correlation_id_var
+from src.shared.domain.module_errors import (
+    ModuleRequestError,
+    ModuleUnavailableError,
+)
+from src.shared.domain.request_context import correlation_id_var
+from src.shared.infrastructure.http.base_client import BaseModuleClient
 
 logger = logging.getLogger(__name__)
 

@@ -8,9 +8,9 @@ from typing import Any
 
 import httpx
 
-from src.adapters.outbound.http_clients.base_client import BaseModuleClient
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.ports.outbound.postventa_port import PostventaPort
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.infrastructure.http.base_client import BaseModuleClient
 
 
 class PostventaClient(BaseModuleClient, PostventaPort):

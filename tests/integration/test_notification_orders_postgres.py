@@ -15,28 +15,28 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
 from src.adapters.inbound.http.orders_router import create_orders_router
-from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
-from src.adapters.outbound.fakes.fake_ventas import FakeSalesPort
 from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
 from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
-from src.adapters.outbound.persistence.models import Checkout, OrderRef
 from src.adapters.outbound.persistence.notification_postgres_adapter import (
     NotificationPostgresAdapter,
 )
 from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
     OrderConfirmationPostgresAdapter,
 )
-from src.adapters.outbound.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
-from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.application.use_cases.notification_service import (
     NotificationService,
     SendOutcome,
 )
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.infrastructure.config.container import OrdersService
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.db.models import Checkout, OrderRef
+from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
+from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
+from src.shared.infrastructure.http.problem import register_problem_handlers
+from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
+from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -96,7 +96,7 @@ def _service(session, sender: FakeEmailSender, *, send_inline: bool = False) -> 
 async def _outbox_rows(session) -> list[Any]:
     from sqlalchemy import select
 
-    from src.adapters.outbound.persistence.models import Outbox
+    from src.shared.infrastructure.db.models import Outbox
 
     return list((await session.execute(select(Outbox))).scalars().all())
 

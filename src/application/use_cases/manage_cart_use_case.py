@@ -21,8 +21,6 @@ from src.application.catalog.product_lookup import (
     resolve_product_id,
 )
 from src.application.services.coupon_attempts import CouponAttempts
-from src.application.tools.tool_registry import ExecutionContext
-from src.domain.entities.message import MessageRole
 from src.domain.services.cart_line_resolver import CartLineResolver
 from src.domain.services.offer_policy import amount, instant, price_projection
 from src.domain.services.product_projection import normalize_detail, sellable_skus
@@ -33,7 +31,9 @@ from src.ports.outbound.cart_repository_port import (
     CartConflictError,
     StaleCartError,
 )
-from src.ports.outbound.module_errors import (
+from src.shared.application.tools.tool_registry import ExecutionContext
+from src.shared.domain.entities.message import MessageRole
+from src.shared.domain.module_errors import (
     GENERIC_UNAVAILABLE_TEXT,
     ModuleRequestError,
     ModuleUnavailableError,

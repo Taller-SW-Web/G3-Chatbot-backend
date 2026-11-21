@@ -9,8 +9,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from src.domain.entities.conversation import ConversationSummary, HighlightSegment
-from src.domain.entities.message import Message, MessageRole
+from src.shared.domain.entities.conversation import ConversationSummary, HighlightSegment
+from src.shared.domain.entities.message import Message, MessageRole
 
 
 class ConversationCreatedOut(BaseModel):

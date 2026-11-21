@@ -2,9 +2,9 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from src.adapters.outbound.fakes.fake_ventas import _holder_id
-from src.ports.outbound.module_errors import ModuleRequestError
 from src.ports.outbound.postventa_port import PostventaPort
+from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.infrastructure.fakes.fake_ventas import _holder_id
 
 
 class FakePostventaPort(PostventaPort):

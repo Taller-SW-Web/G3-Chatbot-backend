@@ -15,7 +15,7 @@ from src.infrastructure.config.container import (
     provide_product_catalog,
     provide_product_inventory,
 )
-from src.infrastructure.config.settings import Settings, get_settings
+from src.shared.infrastructure.config.settings import Settings, get_settings
 
 
 def test_fake_mode_returns_in_memory_ports():

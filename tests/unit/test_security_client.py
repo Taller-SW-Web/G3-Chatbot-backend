@@ -9,11 +9,11 @@ import httpx
 import pytest
 import respx
 
-from src.adapters.outbound.http_clients.base_client import ModuleUnavailableError
-from src.adapters.outbound.http_clients.security_client import SecurityClient
 from src.infrastructure.config.container import provide_security_client
-from src.infrastructure.config.settings import get_settings
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.infrastructure.config.settings import get_settings
+from src.shared.infrastructure.http.base_client import ModuleUnavailableError
+from src.shared.infrastructure.http.security_client import SecurityClient
 from tests.helpers import security_mocks
 
 BASE_URL = "http://mock:4010"

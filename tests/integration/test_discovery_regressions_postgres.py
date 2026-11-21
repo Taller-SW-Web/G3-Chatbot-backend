@@ -15,23 +15,23 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.adapters.inbound.http.catalog_router import create_catalog_router
 from src.adapters.inbound.http.chatbot_router import create_chatbot_router
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
-from src.adapters.inbound.http.problem import register_problem_handlers
-from src.adapters.outbound.persistence.conversation_postgres_adapter import ConversationPostgresAdapter
-from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
-from src.adapters.outbound.persistence.models.conversation import Conversation
-from src.adapters.outbound.persistence.models.message import Message
-from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
 from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.catalog_handlers import build_catalog_handlers
 from src.application.tools.catalog_tools import EmptyArguments, RecommendationArguments, build_tool_registry
-from src.application.tools.tool_registry import ExecutionContext
 from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_catalog_use_case import ManageCatalogUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
-from src.domain.value_objects.caller_identity import CallerIdentity
+from src.shared.application.tools.tool_registry import ExecutionContext
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.db.models.conversation import Conversation
+from src.shared.infrastructure.db.models.message import Message
+from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
+from src.shared.infrastructure.http.problem import register_problem_handlers
+from src.shared.infrastructure.persistence.conversation_postgres_adapter import ConversationPostgresAdapter
+from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from tests.fakes.fake_llm_provider import FakeLLMProvider
 from tests.unit.test_discovery import PROMO, service
 from tests.unit.test_interpret_and_respond_use_case import reply, tool_turn

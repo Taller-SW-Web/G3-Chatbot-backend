@@ -8,14 +8,14 @@ import uuid
 import pytest
 
 from src.adapters.outbound.fakes.fake_products import FakeCatalogPort, FakeInventoryPort
-from src.adapters.outbound.persistence.conversation_postgres_adapter import (
+from src.application.tools.catalog_tools import ProductArguments, SearchArguments
+from src.application.use_cases.manage_catalog_use_case import CatalogError, ManageCatalogUseCase
+from src.shared.application.tools.tool_registry import ExecutionContext
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
-from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
-from src.application.tools.catalog_tools import ProductArguments, SearchArguments
-from src.application.tools.tool_registry import ExecutionContext
-from src.application.use_cases.manage_catalog_use_case import CatalogError, ManageCatalogUseCase
-from src.domain.value_objects.caller_identity import CallerIdentity
+from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

@@ -10,9 +10,9 @@ import httpx
 import pytest
 import respx
 
-from src.adapters.outbound.http_clients.base_client import ModuleUnavailableError
 from src.adapters.outbound.http_clients.despacho_api_adapter import DespachoClient
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.infrastructure.http.base_client import ModuleUnavailableError
 
 BASE_URL = "http://mock-despacho:4013"
 QUOTE = {

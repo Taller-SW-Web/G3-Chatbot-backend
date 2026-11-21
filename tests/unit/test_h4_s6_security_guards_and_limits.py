@@ -10,25 +10,25 @@ from fastapi.testclient import TestClient
 from src.adapters.inbound.http.cart_router import create_cart_router
 from src.adapters.inbound.http.chatbot_router import create_chatbot_router
 from src.adapters.inbound.http.checkout_router import create_checkout_router
-from src.adapters.inbound.http.dependencies.auth_guard import require_customer
-from src.adapters.inbound.http.dependencies.caller_identity import hash_chat_sid
-from src.adapters.inbound.http.dependencies.checkout_guard import (
-    require_customer as legacy_require_customer,
-)
-from src.adapters.inbound.http.dependencies.jwt_validator import get_access_token_validator
-from src.adapters.inbound.http.dependencies.rate_limiter import (
-    CHAT_MESSAGES_PER_MINUTE,
-    LOGIN_PER_IP,
-    InMemoryRateLimiter,
-)
 from src.adapters.inbound.http.orders_router import create_orders_router
-from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.inbound.http.session_router import create_session_router
 from src.adapters.inbound.http.shipping_router import create_shipping_router
 from src.application.dto.conversation_events import FinalEvent, MessageAcceptedEvent
 from src.application.use_cases.manage_session_use_case import InvalidCredentialsError
-from src.domain.entities.message import Message, MessageRole
-from src.ports.outbound.token_validator_port import InvalidTokenError
+from src.shared.application.ports.token_validator_port import InvalidTokenError
+from src.shared.domain.entities.message import Message, MessageRole
+from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
+from src.shared.infrastructure.http.dependencies.caller_identity import hash_chat_sid
+from src.shared.infrastructure.http.dependencies.checkout_guard import (
+    require_customer as legacy_require_customer,
+)
+from src.shared.infrastructure.http.dependencies.jwt_validator import get_access_token_validator
+from src.shared.infrastructure.http.dependencies.rate_limiter import (
+    CHAT_MESSAGES_PER_MINUTE,
+    LOGIN_PER_IP,
+    InMemoryRateLimiter,
+)
+from src.shared.infrastructure.http.problem import register_problem_handlers
 
 CUSTOMER_ID = uuid.UUID("00000000-0000-0000-0000-000000000077")
 CHECKOUT_ID = uuid.UUID("00000000-0000-0000-0000-000000000088")

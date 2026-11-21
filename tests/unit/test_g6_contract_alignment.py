@@ -8,11 +8,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.adapters.inbound.http.catalog_router import create_catalog_router
-from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.outbound.fakes.fake_products import FakeCatalogPort
 from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.application.tools.catalog_tools import AvailabilityArguments, SearchArguments
 from src.application.use_cases.manage_catalog_use_case import CatalogError
+from src.shared.infrastructure.http.problem import register_problem_handlers
 from tests.unit.test_astra_regressions import cards, g6_detail, g6_service
 
 BASE = "http://g6.test"

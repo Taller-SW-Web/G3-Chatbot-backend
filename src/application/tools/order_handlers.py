@@ -11,11 +11,11 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
 from src.application.tools.catalog_tools import OrderQueryArguments
-from src.application.tools.tool_context import caller_from_context
-from src.application.tools.tool_registry import ExecutionContext, ToolResult
 from src.application.use_cases.notification_service import NotificationError
 from src.domain.services.status_mapper import SALES_STATUS_LABELS, map_order_status_label
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.application.tools.tool_context import caller_from_context
+from src.shared.application.tools.tool_registry import ExecutionContext, ToolResult
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 
 LIMA = timezone(timedelta(hours=-5))
 ORDER_FLOW = ("CREADO", "PAGADO", "EN_PREPARACION", "DESPACHADO", "ENTREGADO")

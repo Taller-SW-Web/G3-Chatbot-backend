@@ -11,8 +11,8 @@ import pytest
 from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models import Base, OrderRef
-from src.adapters.outbound.persistence.order_ref_postgres_adapter import OrderRefPostgresAdapter
+from src.shared.infrastructure.db.models import Base, OrderRef
+from src.shared.infrastructure.persistence.order_ref_postgres_adapter import OrderRefPostgresAdapter
 
 table = Base.metadata.tables["order_ref"]
 

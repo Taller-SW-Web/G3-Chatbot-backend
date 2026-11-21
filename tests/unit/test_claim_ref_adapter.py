@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.adapters.outbound.persistence.claim_ref_postgres_adapter import (
     ClaimRefPostgresAdapter,
 )
-from src.adapters.outbound.persistence.models import Base, ClaimRef
+from src.shared.infrastructure.db.models import Base, ClaimRef
 
 table = Base.metadata.tables["claim_ref"]
 

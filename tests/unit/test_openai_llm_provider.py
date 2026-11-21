@@ -12,7 +12,6 @@ from openai import AsyncOpenAI
 
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.infrastructure.config.container import provide_llm_provider
-from src.infrastructure.config.settings import Settings
 from src.ports.outbound.llm_provider_port import (
     Completed,
     ImagePart,
@@ -27,6 +26,7 @@ from src.ports.outbound.llm_provider_port import (
     ToolCallRequested,
     ToolDefinition,
 )
+from src.shared.infrastructure.config.settings import Settings
 from tests.fakes.fake_llm_provider import FakeLLMProvider
 
 URL = "https://api.openai.com/v1/responses"
@@ -390,7 +390,7 @@ async def test_fake_provider_replays_scripted_turns():
 
 
 def test_settings_reasoning_effort_defaults_to_none_and_validates(monkeypatch):
-    from src.infrastructure.config.settings import get_settings
+    from src.shared.infrastructure.config.settings import get_settings
 
     monkeypatch.delenv("LLM_REASONING_EFFORT", raising=False)
     get_settings.cache_clear()

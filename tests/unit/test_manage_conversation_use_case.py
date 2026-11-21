@@ -9,10 +9,10 @@ from src.application.use_cases.manage_conversation_use_case import (
     HISTORY_LIMIT,
     ManageConversationUseCase,
 )
-from src.domain.entities.conversation import Conversation, ConversationSummary
-from src.domain.entities.message import Message, MessageRole
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.entities.conversation import Conversation, ConversationSummary
+from src.shared.domain.entities.message import Message, MessageRole
 
 NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 ANA = CallerIdentity(customer_id=uuid.uuid4())

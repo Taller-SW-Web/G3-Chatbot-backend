@@ -7,10 +7,10 @@ brand and last 4 digits, never the PAN).
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models.checkout import Checkout
-from src.adapters.outbound.persistence.models.order_ref import OrderRef
-from src.adapters.outbound.persistence.models.payment_attempt import PaymentAttempt
-from src.ports.outbound.notification_repository_port import ConfirmationSource
+from src.shared.application.ports.notification_repository_port import ConfirmationSource
+from src.shared.infrastructure.db.models.checkout import Checkout
+from src.shared.infrastructure.db.models.order_ref import OrderRef
+from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
 
 
 class OrderConfirmationPostgresAdapter:

@@ -1,8 +1,8 @@
 """FakeSalesPort: idempotency, restart-safe ids and per-customer visibility (SALES_MODE=fake)."""
 import pytest
 
-from src.adapters.outbound.fakes.fake_ventas import FakeSalesPort
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 
 
 def snapshot(customer_id: str, total: float = 100.0) -> dict:

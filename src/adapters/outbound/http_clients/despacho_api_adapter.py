@@ -15,12 +15,12 @@ from urllib.parse import quote
 
 import httpx
 
-from src.adapters.outbound.http_clients.base_client import BaseModuleClient
-from src.ports.outbound.module_errors import (
+from src.shared.application.ports.service_token_port import ServiceTokenProvider
+from src.shared.domain.module_errors import (
     ModuleRequestError,
     ModuleUnavailableError,
 )
-from src.ports.outbound.service_token_port import ServiceTokenProvider
+from src.shared.infrastructure.http.base_client import BaseModuleClient
 
 
 class DespachoClient(BaseModuleClient):

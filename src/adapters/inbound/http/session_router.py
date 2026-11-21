@@ -16,8 +16,16 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.adapters.inbound.http.dependencies.auth_guard import require_customer
-from src.adapters.inbound.http.dependencies.rate_limiter import (
+from src.application.use_cases.manage_session_use_case import (
+    InvalidCredentialsError,
+    ManageSessionUseCase,
+    RefreshInvalidError,
+)
+from src.shared.application.ports.token_validator_port import AccountNotAllowedError, InvalidTokenError
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
+from src.shared.infrastructure.http.dependencies.rate_limiter import (
     LOGIN_PER_IP,
     REGISTER_DEBOUNCE_PER_EMAIL,
     REGISTER_PER_IP,
@@ -25,15 +33,7 @@ from src.adapters.inbound.http.dependencies.rate_limiter import (
     InMemoryRateLimiter,
     client_ip,
 )
-from src.adapters.inbound.http.problem import ProblemError
-from src.application.use_cases.manage_session_use_case import (
-    InvalidCredentialsError,
-    ManageSessionUseCase,
-    RefreshInvalidError,
-)
-from src.domain.value_objects.caller_identity import CallerIdentity
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
-from src.ports.outbound.token_validator_port import AccountNotAllowedError, InvalidTokenError
+from src.shared.infrastructure.http.problem import ProblemError
 
 logger = logging.getLogger(__name__)
 

@@ -8,11 +8,11 @@ from typing import Any, Iterable
 
 from pydantic import ValidationError
 
-from src.application.dto.commerce_contracts_dto import (
+from src.shared.application.dto.commerce_contracts_dto import (
     ShippingQuoteRequest,
     ShippingQuoteResponse,
 )
-from src.ports.outbound.module_errors import ModuleUnavailableError
+from src.shared.domain.module_errors import ModuleUnavailableError
 
 
 def build_destination(payload: ShippingQuoteRequest) -> dict[str, Any]:

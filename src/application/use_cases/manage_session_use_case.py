@@ -11,15 +11,15 @@ import logging
 import time
 import uuid
 
-from src.ports.outbound.checkout_document_port import CheckoutDocumentPort
-from src.ports.outbound.module_errors import ModuleRequestError
-from src.ports.outbound.phone_verification_port import PhoneVerificationPort
-from src.ports.outbound.security_port import SecurityPort
-from src.ports.outbound.token_validator_port import (
+from src.shared.application.ports.checkout_document_port import CheckoutDocumentPort
+from src.shared.application.ports.phone_verification_port import PhoneVerificationPort
+from src.shared.application.ports.security_port import SecurityPort
+from src.shared.application.ports.token_validator_port import (
     AccessTokenValidatorPort,
     AccountNotAllowedError,
     InvalidTokenError,
 )
+from src.shared.domain.module_errors import ModuleRequestError
 
 logger = logging.getLogger(__name__)
 

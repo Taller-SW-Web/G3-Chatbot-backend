@@ -13,10 +13,10 @@ import pytest
 from sqlalchemy import CheckConstraint
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models import Base, ReturnRef
 from src.adapters.outbound.persistence.return_ref_postgres_adapter import (
     ReturnRefPostgresAdapter,
 )
+from src.shared.infrastructure.db.models import Base, ReturnRef
 
 table = Base.metadata.tables["return_ref"]
 

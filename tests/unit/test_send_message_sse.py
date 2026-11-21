@@ -9,8 +9,6 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.requests import ClientDisconnect
 
-from src.adapters.inbound.http.dependencies.caller_identity import hash_chat_sid
-from src.adapters.inbound.http.dependencies.jwt_validator import get_access_token_validator
 from src.application.dto.conversation_events import (
     BlockEvent,
     DegradedEvent,
@@ -19,11 +17,13 @@ from src.application.dto.conversation_events import (
     TokenEvent,
 )
 from src.application.use_cases.interpret_and_respond_use_case import InvalidMessageError
-from src.domain.entities.message import Message, MessageRole
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.infrastructure.main import create_app
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
-from src.ports.outbound.token_validator_port import InvalidTokenError
+from src.shared.application.ports.token_validator_port import InvalidTokenError
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.entities.message import Message, MessageRole
+from src.shared.infrastructure.http.dependencies.caller_identity import hash_chat_sid
+from src.shared.infrastructure.http.dependencies.jwt_validator import get_access_token_validator
 
 NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 CID = uuid.uuid4()

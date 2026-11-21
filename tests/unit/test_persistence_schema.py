@@ -3,7 +3,7 @@
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateIndex, CreateTable
 
-from src.adapters.outbound.persistence.models import Attachment, Base, Conversation, Evidence, Message
+from src.shared.infrastructure.db.models import Attachment, Base, Conversation, Evidence, Message
 
 
 def test_modelos_registrados_sin_inventar_tablas_de_companeros():

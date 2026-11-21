@@ -4,13 +4,13 @@ import pytest
 import respx
 from pydantic import ValidationError
 
-from src.adapters.outbound.http_clients.base_client import BaseModuleClient, ModuleUnavailableError
 from src.application.dto.chatbot_response_dto import AssistantTurnResult, ChatBlock
 from src.application.dto.incoming_message_dto import SendMessageRequest
-from src.application.tools.tool_contracts import TOOL_CONTRACTS, get_tool_contract
-from src.domain.value_objects.block import BlockType, FormKind, QuickActionId
 from src.infrastructure.config.container import provide_module_client
-from src.infrastructure.config.settings import _is_onrender_host, get_settings
+from src.shared.application.tools.tool_contracts import TOOL_CONTRACTS, get_tool_contract
+from src.shared.domain.block import BlockType, FormKind, QuickActionId
+from src.shared.infrastructure.config.settings import _is_onrender_host, get_settings
+from src.shared.infrastructure.http.base_client import BaseModuleClient, ModuleUnavailableError
 
 
 def test_settings_module_urls_from_env(monkeypatch):
@@ -36,7 +36,7 @@ def test_normalize_codigo_to_code():
 
 def test_module_unavailable_error_is_a_port_error():
     # The exception belongs to the ports layer; the HTTP clients re-export it.
-    from src.ports.outbound.module_errors import ModuleUnavailableError as PortError
+    from src.shared.domain.module_errors import ModuleUnavailableError as PortError
 
     assert PortError is ModuleUnavailableError
 

@@ -16,9 +16,9 @@ from src.application.dto.postventa_dto import (
     to_g5_return_reason,
     to_g5_return_type,
 )
-from src.ports.outbound.module_errors import ModuleRequestError
-from src.ports.outbound.order_repository_port import SalesOrderPort
 from src.ports.outbound.postventa_port import PostventaPort
+from src.shared.application.ports.order_repository_port import SalesOrderPort
+from src.shared.domain.module_errors import ModuleRequestError
 
 
 class PostventaService:
@@ -54,7 +54,7 @@ class PostventaService:
             correlation_id=correlation_id,
         )
         if conversation_id and self._evidence is not None:
-            from src.adapters.outbound.persistence.models.evidence import Evidence
+            from src.shared.infrastructure.db.models.evidence import Evidence
 
             row = Evidence(
                 conversation_id=conversation_id,
@@ -92,7 +92,7 @@ class PostventaService:
             normalized, holder_token=holder_token, correlation_id=correlation_id
         )
         if self._return_refs is not None:
-            from src.adapters.outbound.persistence.models.return_ref import ReturnRef
+            from src.shared.infrastructure.db.models.return_ref import ReturnRef
 
             await self._return_refs.guardar(
                 ReturnRef(
@@ -183,7 +183,7 @@ class PostventaService:
             normalized, holder_token=holder_token, correlation_id=correlation_id
         )
         if self._claim_refs is not None:
-            from src.adapters.outbound.persistence.models.claim_ref import ClaimRef
+            from src.shared.infrastructure.db.models.claim_ref import ClaimRef
 
             await self._claim_refs.guardar(
                 ClaimRef(

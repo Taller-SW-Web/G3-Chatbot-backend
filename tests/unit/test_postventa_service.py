@@ -3,9 +3,9 @@ import anyio
 import pytest
 
 from src.adapters.outbound.fakes.fake_postventa import FakePostventaPort
-from src.adapters.outbound.fakes.fake_ventas import FakeSalesPort
 from src.application.dto.postventa_dto import PostventaError
 from src.application.use_cases.postventa_service import PostventaService
+from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 
 
 class MemoryRefs:

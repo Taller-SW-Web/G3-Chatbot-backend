@@ -7,8 +7,8 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
-from src.adapters.outbound.persistence.models import Message
+from src.shared.infrastructure.db.models import Message
+from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
 
 
 @pytest.fixture

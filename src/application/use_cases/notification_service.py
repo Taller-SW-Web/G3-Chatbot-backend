@@ -35,13 +35,13 @@ from src.ports.outbound.email_sender_port import (
     EmailSenderPort,
     EmailTemplatePort,
 )
-from src.ports.outbound.notification_repository_port import (
+from src.shared.application.ports.notification_repository_port import (
     ConfirmationSourcePort,
     EmailOutboxPort,
     EmailTask,
     NotificationRepositoryPort,
 )
-from src.ports.outbound.unit_of_work_port import UnitOfWorkPort
+from src.shared.application.unit_of_work_port import UnitOfWorkPort
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ from src.application.catalog.partial import PartialRows
 from src.application.tools.catalog_tools import SearchArguments
 from src.domain.services.offer_policy import promotion_summaries
 from src.domain.services.product_normalizer import ProductNormalizer
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 
 logger = logging.getLogger(__name__)
 

@@ -4,13 +4,13 @@ import uuid
 import pytest
 from starlette.requests import Request
 
-from src.adapters.inbound.http.dependencies import jwt_validator
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
-from src.adapters.inbound.http.problem import ProblemError
-from src.adapters.outbound.fakes.fake_security import FakeAccessTokenValidator
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.infrastructure.config.container import provide_security_port
-from src.infrastructure.config.settings import Settings
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.config.settings import Settings
+from src.shared.infrastructure.fakes.fake_security import FakeAccessTokenValidator
+from src.shared.infrastructure.http.dependencies import jwt_validator
+from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
+from src.shared.infrastructure.http.problem import ProblemError
 
 SEED_CUSTOMER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 

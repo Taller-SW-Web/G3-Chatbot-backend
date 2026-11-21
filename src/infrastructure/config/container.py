@@ -7,9 +7,6 @@ from typing import Any
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.inbound.http.dependencies.rate_limiter import InMemoryRateLimiter
-from src.adapters.outbound.auth.jwks_token_validator import JwksTokenValidator
-from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
 from src.adapters.outbound.fakes.fake_dispatch import FakeDispatchPort
 from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
 from src.adapters.outbound.fakes.fake_postventa import FakePostventaPort
@@ -17,13 +14,6 @@ from src.adapters.outbound.fakes.fake_products import (
     FakeCatalogPort,
     FakeInventoryPort,
 )
-from src.adapters.outbound.fakes.fake_security import (
-    FakeAccessTokenValidator,
-    FakeSecurityAdapter,
-    FakeServiceTokenProvider,
-)
-from src.adapters.outbound.fakes.fake_ventas import FakeSalesPort
-from src.adapters.outbound.http_clients.base_client import BaseModuleClient
 from src.adapters.outbound.http_clients.despacho_api_adapter import DespachoClient
 from src.adapters.outbound.http_clients.inventory_client import (
     INVENTORY_TIMEOUT_SECONDS,
@@ -31,8 +21,6 @@ from src.adapters.outbound.http_clients.inventory_client import (
 )
 from src.adapters.outbound.http_clients.postventa_client import PostventaClient
 from src.adapters.outbound.http_clients.products_client import ProductsClient
-from src.adapters.outbound.http_clients.security_client import SecurityClient
-from src.adapters.outbound.http_clients.ventas_client import VentasClient
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
 from src.adapters.outbound.notificaciones.smtp_email_adapter import SmtpEmailSender
@@ -42,32 +30,19 @@ from src.adapters.outbound.persistence.cart_item_postgres_adapter import (
 )
 from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
 from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
-from src.adapters.outbound.persistence.conversation_postgres_adapter import (
-    ConversationPostgresAdapter,
-)
-from src.adapters.outbound.persistence.local_phone_verification_postgres_adapter import (
-    LocalPhoneVerificationPostgresAdapter,
-)
-from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
 from src.adapters.outbound.persistence.notification_postgres_adapter import NotificationPostgresAdapter
 from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
     OrderConfirmationPostgresAdapter,
 )
-from src.adapters.outbound.persistence.order_ref_postgres_adapter import (
-    OrderRefPostgresAdapter,
-)
-from src.adapters.outbound.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
 )
-from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
 from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.cart_handlers import build_cart_handlers
 from src.application.tools.catalog_handlers import build_catalog_handlers
 from src.application.tools.catalog_tools import build_tool_registry
 from src.application.tools.order_handlers import build_order_handlers
-from src.application.tools.tool_registry import ToolRegistry
 from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_cart_use_case import ManageCartUseCase
@@ -80,16 +55,41 @@ from src.application.use_cases.manage_conversation_use_case import ManageConvers
 from src.application.use_cases.manage_session_use_case import ManageSessionUseCase
 from src.application.use_cases.manage_shipping_use_case import ManageShippingUseCase
 from src.application.use_cases.notification_service import NotificationError, NotificationService
-from src.domain.services.sensitive_data_filter import SensitiveDataFilter
 from src.domain.services.status_mapper import map_order_status_label
-from src.infrastructure.config.settings import Settings, get_settings
-from src.infrastructure.db import connection
-from src.infrastructure.db.connection import get_session
-from src.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, OutboxProcessor
 from src.ports.outbound.llm_provider_port import LLMProvider
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
-from src.ports.outbound.order_repository_port import SalesOrderPort
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
+from src.shared.application.ports.order_repository_port import SalesOrderPort
+from src.shared.application.tools.tool_registry import ToolRegistry
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
+from src.shared.infrastructure.auth.jwks_token_validator import JwksTokenValidator
+from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
+from src.shared.infrastructure.config.settings import Settings, get_settings
+from src.shared.infrastructure.db import connection
+from src.shared.infrastructure.db.connection import get_session
+from src.shared.infrastructure.fakes.fake_security import (
+    FakeAccessTokenValidator,
+    FakeSecurityAdapter,
+    FakeServiceTokenProvider,
+)
+from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
+from src.shared.infrastructure.http.base_client import BaseModuleClient
+from src.shared.infrastructure.http.dependencies.rate_limiter import InMemoryRateLimiter
+from src.shared.infrastructure.http.security_client import SecurityClient
+from src.shared.infrastructure.http.ventas_client import VentasClient
+from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
+    ConversationPostgresAdapter,
+)
+from src.shared.infrastructure.persistence.local_phone_verification_postgres_adapter import (
+    LocalPhoneVerificationPostgresAdapter,
+)
+from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.shared.infrastructure.persistence.order_ref_postgres_adapter import (
+    OrderRefPostgresAdapter,
+)
+from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
+from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from src.shared.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, OutboxProcessor
 
 # Categories/brands list cache shared across requests (SPEC-06): created once
 # by the wiring and injected, so use cases never share a module global.
@@ -694,7 +694,7 @@ async def provide_action_scope() -> AsyncIterator[DispatchDirectActionUseCase]:
 
 class _MissingProductsCredential:
     async def get_token(self, *, correlation_id=None, scope=None, audience=None):
-        from src.ports.outbound.module_errors import ModuleUnavailableError
+        from src.shared.domain.module_errors import ModuleUnavailableError
         raise ModuleUnavailableError("security", "SECURITY_CLIENT_SECRET required for G6 M2M")
 
 

@@ -20,9 +20,6 @@ from src.application.use_cases.interpret_and_respond_use_case import (
     InvalidMessageError,
     derive_title,
 )
-from src.domain.entities.conversation import Conversation
-from src.domain.entities.message import Message, MessageRole
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
 from src.ports.outbound.llm_provider_port import (
     Completed,
@@ -36,6 +33,9 @@ from src.ports.outbound.llm_provider_port import (
     ToolCallRequested,
 )
 from src.ports.outbound.tool_executor_port import INVALID_ARGUMENTS, ToolResult
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.entities.conversation import Conversation
+from src.shared.domain.entities.message import Message, MessageRole
 from tests.fakes.fake_llm_provider import FakeLLMProvider
 from tests.fakes.fake_tool_executor import FakeToolExecutor
 
@@ -515,7 +515,7 @@ async def test_system_prompt_introduces_the_assistant_only_on_the_first_reply():
 @pytest.mark.asyncio
 async def test_sanitizer_runs_before_persisting_prompting_and_titling():
     """SPEC-05 Req. 9: the filter of the tools module plugs in as `sanitize_text`."""
-    from src.domain.services.sensitive_data_filter import SensitiveDataFilter
+    from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
 
     uc, conv, messages, _, llm, _ = build(
         [reply("ok")], sanitize=lambda t: SensitiveDataFilter().redactar(t).texto

@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models.evidence import Evidence
+from src.shared.infrastructure.db.models.evidence import Evidence
 
 
 class EvidencePostgresAdapter:

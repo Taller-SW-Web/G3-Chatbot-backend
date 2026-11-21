@@ -7,12 +7,12 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.dependencies.caller_identity import get_caller_identity
 from src.adapters.inbound.http.orders_router import create_orders_router
-from src.adapters.inbound.http.problem import register_problem_handlers
-from src.adapters.outbound.fakes.fake_ventas import FakeSalesPort
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.infrastructure.config.container import OrdersService
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
+from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
+from src.shared.infrastructure.http.problem import register_problem_handlers
 
 CUSTOMER_ID = uuid.UUID("11111111-2222-3333-4444-555555555555")
 

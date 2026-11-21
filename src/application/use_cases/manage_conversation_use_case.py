@@ -1,13 +1,13 @@
 """Conversation operations of SPEC-05 Req. 1: create, list, open history (ADR-0018)."""
 import uuid
 
-from src.domain.entities.conversation import Conversation, ConversationSummary
-from src.domain.entities.message import Message, MessageRole
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
-from src.ports.outbound.conversation_repository_port import ConversationRepositoryPort
-from src.ports.outbound.message_repository_port import MessageRepositoryPort
-from src.ports.outbound.unit_of_work_port import UnitOfWorkPort
+from src.shared.application.ports.conversation_repository_port import ConversationRepositoryPort
+from src.shared.application.ports.message_repository_port import MessageRepositoryPort
+from src.shared.application.unit_of_work_port import UnitOfWorkPort
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.entities.conversation import Conversation, ConversationSummary
+from src.shared.domain.entities.message import Message, MessageRole
 
 # Provisional values: the specs leave them undefined.
 CONVERSATIONS_PAGE_SIZE = 20

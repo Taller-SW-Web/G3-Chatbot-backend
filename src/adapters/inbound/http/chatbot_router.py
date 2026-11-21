@@ -8,17 +8,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from src.adapters.inbound.http.dependencies.caller_identity import (
-    CHAT_SID_COOKIE,
-    get_caller_identity,
-    hash_chat_sid,
-)
-from src.adapters.inbound.http.dependencies.rate_limiter import (
-    CHAT_MESSAGES_PER_MINUTE,
-    InMemoryRateLimiter,
-    client_ip,
-)
-from src.adapters.inbound.http.problem import ProblemError, not_found
 from src.adapters.inbound.http.schemas.conversation_schemas import (
     ConversationCreatedOut,
     ConversationSearchResultOut,
@@ -32,8 +21,19 @@ from src.application.use_cases.interpret_and_respond_use_case import (
     InterpretAndRespondUseCase,
     InvalidMessageError,
 )
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.inbound.chatbot_service_port import ChatbotServicePort, ConversationNotFoundError
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.http.dependencies.caller_identity import (
+    CHAT_SID_COOKIE,
+    get_caller_identity,
+    hash_chat_sid,
+)
+from src.shared.infrastructure.http.dependencies.rate_limiter import (
+    CHAT_MESSAGES_PER_MINUTE,
+    InMemoryRateLimiter,
+    client_ip,
+)
+from src.shared.infrastructure.http.problem import ProblemError, not_found
 
 # Provisional: the specs leave the search query length undefined.
 SEARCH_QUERY_MAX_CHARS = 100

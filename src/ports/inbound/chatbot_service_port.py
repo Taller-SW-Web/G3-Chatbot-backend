@@ -2,9 +2,9 @@
 import uuid
 from typing import Protocol
 
-from src.domain.entities.conversation import Conversation, ConversationSummary
-from src.domain.entities.message import Message
-from src.domain.value_objects.caller_identity import CallerIdentity
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.entities.conversation import Conversation, ConversationSummary
+from src.shared.domain.entities.message import Message
 
 
 class ConversationNotFoundError(Exception):

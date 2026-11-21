@@ -19,12 +19,12 @@ from src.application.tools.catalog_tools import (
     SearchArguments,
     build_tool_registry,
 )
-from src.application.tools.tool_registry import ExecutionContext
 from src.application.use_cases import manage_catalog_use_case as catalog_module
 from src.application.use_cases.manage_catalog_use_case import CatalogError
 from src.domain.services.offer_policy import price_projection
 from src.domain.services.product_projection import sellable_skus
 from src.domain.services.variant_resolver import VariantResolver
+from src.shared.application.tools.tool_registry import ExecutionContext
 from tests.unit.test_astra_regressions import cards, g6_service
 from tests.unit.test_cart_use_case import CONVERSATION_ID, CUSTOMER_ID, make_cart_use_case, owned
 

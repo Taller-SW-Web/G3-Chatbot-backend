@@ -10,7 +10,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.application.tools.tool_registry import (
+from src.shared.application.tools.tool_registry import (
     ExecutionContext,
     ToolDefinition,
     ToolHandler,

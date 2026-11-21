@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from typing import Any
 
-from src.application.tools.tool_registry import ExecutionContext, ToolRegistry, ToolResult
+from src.shared.application.tools.tool_registry import ExecutionContext, ToolRegistry, ToolResult
 
 QUICK_ACTIONS = {
     "VER_OFERTAS": "consultar_promociones",

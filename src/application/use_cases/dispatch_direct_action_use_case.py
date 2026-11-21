@@ -7,14 +7,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.application.tools.action_dispatcher import ActionDispatcher
-from src.application.tools.tool_registry import ExecutionContext
-from src.domain.entities.message import Message, MessageRole
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
-from src.ports.outbound.conversation_repository_port import ConversationRepositoryPort
-from src.ports.outbound.message_repository_port import MessageRepositoryPort
-from src.ports.outbound.request_context import correlation_id_var
-from src.ports.outbound.unit_of_work_port import UnitOfWorkPort
+from src.shared.application.ports.conversation_repository_port import ConversationRepositoryPort
+from src.shared.application.ports.message_repository_port import MessageRepositoryPort
+from src.shared.application.tools.tool_registry import ExecutionContext
+from src.shared.application.unit_of_work_port import UnitOfWorkPort
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.entities.message import Message, MessageRole
+from src.shared.domain.request_context import correlation_id_var
 
 
 @dataclass(frozen=True, slots=True)

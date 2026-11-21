@@ -6,10 +6,10 @@ import pytest
 from src.application.tools.action_dispatcher import ActionDispatcher
 from src.application.tools.catalog_tools import build_tool_registry
 from src.application.use_cases.dispatch_direct_action_use_case import DispatchDirectActionUseCase
-from src.domain.entities.conversation import Conversation
-from src.domain.entities.message import Message, MessageRole
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.inbound.chatbot_service_port import ConversationNotFoundError
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.entities.conversation import Conversation
+from src.shared.domain.entities.message import Message, MessageRole
 
 NOW = datetime(2026, 10, 16, tzinfo=timezone.utc)
 
@@ -123,7 +123,7 @@ async def test_direct_action_reports_unregistered_tools_without_fabricating_resu
 async def test_confirmed_click_clears_the_cart_but_unconfirmed_actions_do_not():
     from unittest.mock import AsyncMock
 
-    from src.application.tools.tool_registry import ToolResult
+    from src.shared.application.tools.tool_registry import ToolResult
 
     caller = CallerIdentity(customer_id=uuid.uuid4())
     handler = AsyncMock(return_value=ToolResult("OK", {"texto": "Vaciamos tu carrito."}))

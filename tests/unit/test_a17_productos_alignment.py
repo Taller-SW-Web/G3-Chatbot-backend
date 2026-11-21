@@ -19,9 +19,9 @@ from src.adapters.outbound.http_clients.products_client import (
 )
 from src.application.use_cases.manage_cart_use_case import CartError, ManageCartUseCase
 from src.domain.services.stock_validator import StockValidator
-from src.domain.value_objects.caller_identity import CallerIdentity
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
-from src.ports.outbound.request_context import correlation_id_var
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.request_context import correlation_id_var
 from tests.fakes.fake_commerce import FakeCarts, FakeConversations, FakeItems, FakeMessages, FakeUow
 
 BASE = "http://g6.test"

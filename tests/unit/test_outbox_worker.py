@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.adapters.outbound.persistence.models.outbox import Outbox
-from src.infrastructure.worker.outbox_worker import OutboxProcessor
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.infrastructure.db.models.outbox import Outbox
+from src.shared.infrastructure.worker.outbox_worker import OutboxProcessor
 
 
 @pytest.fixture

@@ -13,13 +13,13 @@ import respx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from src.adapters.outbound.auth.jwks_token_validator import (
+from src.shared.application.ports.token_validator_port import AccountNotAllowedError, InvalidTokenError
+from src.shared.domain.module_errors import ModuleUnavailableError
+from src.shared.infrastructure.auth.jwks_token_validator import (
     JwksTokenValidator,
     check_claims,
     extract_roles,
 )
-from src.ports.outbound.module_errors import ModuleUnavailableError
-from src.ports.outbound.token_validator_port import AccountNotAllowedError, InvalidTokenError
 
 BASE_URL = "http://seguridad:4010"
 JWKS_URL = BASE_URL + "/auth/.well-known/jwks.json"

@@ -12,10 +12,10 @@ import pytest
 from sqlalchemy import CheckConstraint
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models import Base, PaymentAttempt
 from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
 )
+from src.shared.infrastructure.db.models import Base, PaymentAttempt
 
 table = Base.metadata.tables["payment_attempt"]
 

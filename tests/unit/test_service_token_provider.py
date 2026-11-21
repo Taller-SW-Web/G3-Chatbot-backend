@@ -5,8 +5,8 @@ import httpx
 import pytest
 import respx
 
-from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
 
 BASE_URL = "http://mock:4010"
 

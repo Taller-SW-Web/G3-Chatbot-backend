@@ -9,9 +9,9 @@ here imports FastAPI, httpx or SQLAlchemy.
 import uuid
 from typing import Any
 
-from src.application.dto.commerce_contracts_dto import ShippingQuoteRequest
 from src.application.use_cases.shipping_quote import build_destination, build_quote_lines
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteRequest
+from src.shared.domain.module_errors import ModuleRequestError
 
 # Despacho's own code for a quote without lines; validating it here avoids a
 # pointless round trip and the shipping router maps it to `400 VALIDACION`.

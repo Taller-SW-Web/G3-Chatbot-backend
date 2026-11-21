@@ -11,8 +11,8 @@ from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
 from src.adapters.outbound.notificaciones import smtp_email_adapter
 from src.adapters.outbound.notificaciones.smtp_email_adapter import SmtpEmailSender
 from src.infrastructure.config import container
-from src.infrastructure.config.settings import Settings
 from src.ports.outbound.email_sender_port import EmailDeliveryError, EmailMessage
+from src.shared.infrastructure.config.settings import Settings
 
 MESSAGE = EmailMessage(to="maria@ejemplo.com", subject="Confirmamos tu pedido PED-1", html="<p>hola</p>", text="hola")
 

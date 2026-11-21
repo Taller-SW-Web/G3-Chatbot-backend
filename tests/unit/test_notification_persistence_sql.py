@@ -10,12 +10,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from src.adapters.outbound.persistence.models import Notification
 from src.adapters.outbound.persistence.notification_postgres_adapter import NotificationPostgresAdapter
 from src.adapters.outbound.persistence.order_confirmation_postgres_adapter import (
     OrderConfirmationPostgresAdapter,
 )
-from src.adapters.outbound.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
+from src.shared.infrastructure.db.models import Notification
+from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 
 
 def _sql(stmt) -> str:

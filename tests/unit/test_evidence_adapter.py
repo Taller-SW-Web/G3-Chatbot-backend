@@ -8,7 +8,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.persistence.evidence_postgres_adapter import EvidencePostgresAdapter
-from src.adapters.outbound.persistence.models import Evidence
+from src.shared.infrastructure.db.models import Evidence
 
 
 @pytest.fixture

@@ -2,11 +2,11 @@
 import pytest
 
 from src.adapters.outbound.fakes.fake_products import FakeCatalogPort
-from src.adapters.outbound.fakes.fake_security import FakeSecurityAdapter
 from src.adapters.outbound.http_clients.products_client import ProductsClient
-from src.adapters.outbound.http_clients.security_client import SecurityClient
 from src.infrastructure.config.container import provide_product_catalog, provide_security_port
-from src.infrastructure.config.settings import Settings, get_settings
+from src.shared.infrastructure.config.settings import Settings, get_settings
+from src.shared.infrastructure.fakes.fake_security import FakeSecurityAdapter
+from src.shared.infrastructure.http.security_client import SecurityClient
 
 
 def test_modules_inherit_the_global_mode_without_overrides():

@@ -12,8 +12,6 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from src.adapters.inbound.http.catalog_router import create_catalog_router
-from src.adapters.inbound.http.problem import register_problem_handlers
-from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
 from src.adapters.outbound.fakes.fake_products import FakeCatalogPort, FakeInventoryPort
 from src.adapters.outbound.http_clients.inventory_client import InventoryClient
 from src.adapters.outbound.http_clients.products_client import ProductsClient
@@ -27,10 +25,12 @@ from src.application.tools.catalog_tools import (
     SearchArguments,
     build_tool_registry,
 )
-from src.application.tools.tool_registry import ExecutionContext
 from src.application.use_cases.manage_catalog_use_case import CatalogError, ManageCatalogUseCase
 from src.domain.services.offer_policy import price_projection, promotion_summaries
-from src.ports.outbound.module_errors import ModuleUnavailableError
+from src.shared.application.tools.tool_registry import ExecutionContext
+from src.shared.domain.module_errors import ModuleUnavailableError
+from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
+from src.shared.infrastructure.http.problem import register_problem_handlers
 from tests.fakes.fake_commerce import FakeConversations, FakeUow
 
 NOW = datetime(2026, 11, 5, tzinfo=timezone.utc)
@@ -187,7 +187,7 @@ async def test_actual_http_bearer_canal_candidates_and_retry_after():
     assert all(request.headers["Authorization"] == "Bearer service-token" for request in requests)
     assert dict(requests[0].url.params) == {"canal": "CHATBOT", "vigentes": "true"}
     assert dict(requests[1].url.params) == {"productoId": "product with spaces", "canal": "CHATBOT"}
-    from src.ports.outbound.module_errors import ModuleRequestError
+    from src.shared.domain.module_errors import ModuleRequestError
     with pytest.raises(ModuleRequestError) as error:
         await products.search_products()
     assert error.value.retry_after == "12" and "estado" not in requests[-1].url.params

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models.claim_ref import ClaimRef
+from src.shared.infrastructure.db.models.claim_ref import ClaimRef
 
 
 class ClaimRefPostgresAdapter:

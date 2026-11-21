@@ -16,11 +16,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
-from src.adapters.outbound.persistence.models.cart import Cart
 from src.ports.outbound.cart_repository_port import (
     CartConflictError,
     StaleCartError,
 )
+from src.shared.infrastructure.db.models.cart import Cart
 
 OPEN_STATUSES = ("ACTIVE", "IN_CHECKOUT")
 

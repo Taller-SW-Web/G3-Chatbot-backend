@@ -8,20 +8,20 @@ from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
-from src.adapters.inbound.http.dependencies.auth_guard import require_customer
-from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
-from src.adapters.inbound.http.problem import ProblemError, not_found
-from src.application.dto.commerce_contracts_dto import (
+from src.application.use_cases.notification_service import NotificationError
+from src.domain.services.tracking_mapper import sanitize_tracking_payload
+from src.shared.application.dto.commerce_contracts_dto import (
     ORDERS_ERROR_STATUS,
     OrderDetailResponse,
     OrderListResponse,
     OrderTrackingResponse,
     ResendConfirmationResponse,
 )
-from src.application.use_cases.notification_service import NotificationError
-from src.domain.services.tracking_mapper import sanitize_tracking_payload
-from src.domain.value_objects.caller_identity import CallerIdentity
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
+from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
+from src.shared.infrastructure.http.problem import ProblemError, not_found
 
 
 class OrderError(Exception):

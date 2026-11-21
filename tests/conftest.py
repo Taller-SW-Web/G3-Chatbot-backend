@@ -8,7 +8,8 @@ import pytest_asyncio
 from sqlalchemy import Column, MetaData, Table, Text, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.persistence.models import (
+from src.shared.infrastructure.db.connection import create_engine
+from src.shared.infrastructure.db.models import (
     Attachment,
     Cart,
     CartItem,
@@ -21,7 +22,6 @@ from src.adapters.outbound.persistence.models import (
     Outbox,
     PaymentAttempt,
 )
-from src.infrastructure.db.connection import create_engine
 
 # The in-process outbox worker (lifespan) must never poll a database during tests.
 os.environ.setdefault("OUTBOX_WORKER_ENABLED", "false")

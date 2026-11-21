@@ -3,17 +3,17 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.adapters.inbound.http.dependencies.auth_guard import require_customer
-from src.adapters.inbound.http.dependencies.jwt_validator import get_current_customer
-from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.inbound.http.session_router import create_session_router
 from src.application.use_cases.manage_session_use_case import (
     InvalidCredentialsError,
     RefreshInvalidError,
 )
-from src.domain.value_objects.caller_identity import CallerIdentity
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
-from src.ports.outbound.token_validator_port import AccountNotAllowedError
+from src.shared.application.ports.token_validator_port import AccountNotAllowedError
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
+from src.shared.infrastructure.http.dependencies.jwt_validator import get_current_customer
+from src.shared.infrastructure.http.problem import register_problem_handlers
 
 CSRF = {"X-Requested-With": "XMLHttpRequest"}
 CUSTOMER_ID = "00000000-0000-0000-0000-000000000001"

@@ -8,9 +8,9 @@ import uuid
 from collections.abc import Mapping
 from typing import Any
 
-from src.application.tools.tool_registry import ExecutionContext, ToolRegistry
 from src.ports.outbound.llm_provider_port import ToolDefinition
 from src.ports.outbound.tool_executor_port import ToolExecutionContext, ToolResult
+from src.shared.application.tools.tool_registry import ExecutionContext, ToolRegistry
 
 _CONFIRMATION_REQUIRED = "REQUIERE_CONFIRMACION"
 # Codes the registry returns on its own, before any handler runs. They are fed back to the model as errors.

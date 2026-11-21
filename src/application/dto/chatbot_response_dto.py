@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from src.domain.value_objects.block import BlockType
+from src.shared.domain.block import BlockType
 
 
 class ChatBlock(BaseModel):

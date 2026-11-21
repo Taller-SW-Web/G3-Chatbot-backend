@@ -11,8 +11,8 @@ from src.adapters.outbound.fakes.fake_dispatch import (
     FakeDispatchPort,
 )
 from src.infrastructure.config.container import provide_despacho_client
-from src.infrastructure.config.settings import Settings
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.infrastructure.config.settings import Settings
 
 DESTINO = {
     "destinatario": "Ana Díaz",

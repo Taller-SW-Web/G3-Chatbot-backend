@@ -12,12 +12,9 @@ from pydantic import ValidationError
 
 from src.adapters.outbound.pagos.payment_simulator_adapter import CardValidationError
 from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
-from src.adapters.outbound.persistence.models.checkout import Checkout
-from src.adapters.outbound.persistence.models.payment_attempt import PaymentAttempt
 from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
 )
-from src.application.dto.commerce_contracts_dto import ShippingQuoteRequest
 from src.application.use_cases.notification_service import NotificationService
 from src.application.use_cases.shipping_quote import (
     build_destination,
@@ -26,8 +23,11 @@ from src.application.use_cases.shipping_quote import (
 )
 from src.domain.entities.checkout import CheckoutStatus
 from src.domain.entities.payment_attempt import PaymentRejectReason, PaymentResult
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.ports.outbound.payment_gateway_port import PaymentGatewayPort
+from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteRequest
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.infrastructure.db.models.checkout import Checkout
+from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
 
 logger = logging.getLogger(__name__)
 DOCUMENT_PATTERNS = {
@@ -254,7 +254,7 @@ class ManageCheckoutUseCase:
 
         if self.sales_client:
             from src.domain.services.snapshot_builder import SnapshotBuilder, SnapshotValidationError
-            from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+            from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 
             snapshot_items = [
                 {
@@ -369,7 +369,7 @@ class ManageCheckoutUseCase:
 
         # Registrar referencia del pedido en Ventas (SPEC-14, SPEC-15)
         if self.orders:
-            from src.adapters.outbound.persistence.models.order_ref import OrderRef
+            from src.shared.infrastructure.db.models.order_ref import OrderRef
 
             try:
                 await _safe_call(
@@ -513,7 +513,7 @@ class ManageCheckoutUseCase:
                 if ord_row and getattr(ord_row, "order_id", None):
                     await _safe_call(self.orders, "actualizar_estado", ord_row.order_id, "CANCELLED")
                     if self.outbox:
-                        from src.adapters.outbound.persistence.models.outbox import Outbox
+                        from src.shared.infrastructure.db.models.outbox import Outbox
 
                         outbox_entry = Outbox(
                             type="REQUEST_CANCELLATION",
@@ -598,7 +598,7 @@ class ManageCheckoutUseCase:
 
             # Encolar notificación a Ventas en outbox (SPEC-15 Req. 2)
             if order_id and self.outbox:
-                from src.adapters.outbound.persistence.models.outbox import Outbox
+                from src.shared.infrastructure.db.models.outbox import Outbox
 
                 payment_payload = {
                     "transaccionId": payment_res.transaction_id or f"SIM-{uuid.uuid4().hex[:8].upper()}",
@@ -651,7 +651,7 @@ class ManageCheckoutUseCase:
             if ord_row and getattr(ord_row, "order_id", None):
                 await _safe_call(self.orders, "actualizar_estado", ord_row.order_id, "CANCELLED")
                 if self.outbox:
-                    from src.adapters.outbound.persistence.models.outbox import Outbox
+                    from src.shared.infrastructure.db.models.outbox import Outbox
 
                     outbox_entry = Outbox(
                         type="REQUEST_CANCELLATION",

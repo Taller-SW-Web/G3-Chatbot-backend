@@ -13,8 +13,8 @@ from sqlalchemy import MetaData, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.adapters.outbound.persistence.cart_postgres_adapter import CartPostgresAdapter
-from src.adapters.outbound.persistence.models.cart import Cart
-from src.adapters.outbound.persistence.models.conversation import Conversation
+from src.shared.infrastructure.db.models.cart import Cart
+from src.shared.infrastructure.db.models.conversation import Conversation
 
 
 @pytest_asyncio.fixture

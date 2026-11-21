@@ -1,7 +1,7 @@
 target-version = "py312"
 line-length = 120
 # Merged migrations are never edited, not even for style.
-extend-exclude = [".venv", "src/infrastructure/db/migrations/versions"]
+extend-exclude = [".venv", "src/shared/infrastructure/db/migrations/versions"]
 
 [lint]
 # Correctness (pyflakes), pycodestyle errors and warnings, import order and
@@ -28,4 +28,4 @@ extend-immutable-calls = [
 
 [lint.per-file-ignores]
 # Models are imported in groups so Alembic autogenerate sees every table.
-"src/adapters/outbound/persistence/models/__init__.py" = ["E402", "I001"]
+"src/shared/infrastructure/db/models/__init__.py" = ["E402", "I001"]

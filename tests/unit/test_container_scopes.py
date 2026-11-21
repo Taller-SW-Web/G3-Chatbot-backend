@@ -2,7 +2,7 @@
 import pytest
 
 from src.infrastructure.config import container
-from src.infrastructure.db import connection
+from src.shared.infrastructure.db import connection
 
 
 class FakeSession:

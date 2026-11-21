@@ -7,8 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.adapters.outbound.pagos.payment_simulator_adapter import PaymentSimulatorAdapter
-from src.adapters.outbound.persistence.models.checkout import Checkout
-from src.adapters.outbound.persistence.models.payment_attempt import PaymentAttempt
 from src.application.use_cases.manage_checkout_use_case import (
     CheckoutError,
     CreateCheckoutInput,
@@ -17,7 +15,9 @@ from src.application.use_cases.manage_checkout_use_case import (
 )
 from src.domain.entities.checkout import CheckoutStatus
 from src.domain.entities.payment_attempt import PaymentResult
-from src.ports.outbound.module_errors import ModuleUnavailableError
+from src.shared.domain.module_errors import ModuleUnavailableError
+from src.shared.infrastructure.db.models.checkout import Checkout
+from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
 from tests.fakes.fake_commerce import FakeDispatch
 
 VALID_ADDRESS = {"direccionExacta": "Av. Larco 1234", "distrito": "Miraflores"}
@@ -1022,7 +1022,7 @@ async def test_create_checkout_calls_sales_client_and_records_order_id(
 async def test_create_checkout_handles_stock_insuficiente_409(
     mock_checkouts, mock_attempts, payment_gateway
 ):
-    from src.ports.outbound.module_errors import ModuleRequestError
+    from src.shared.domain.module_errors import ModuleRequestError
 
     cust_id = uuid.uuid4()
     cart_id = uuid.uuid4()

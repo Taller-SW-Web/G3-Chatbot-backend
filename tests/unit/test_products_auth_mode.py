@@ -5,8 +5,8 @@ import respx
 
 from src.adapters.outbound.fakes.fake_products import FakeCatalogPort, FakeInventoryPort
 from src.infrastructure.config.container import provide_product_catalog, provide_product_inventory
-from src.infrastructure.config.settings import Settings, get_settings
-from src.ports.outbound.module_errors import ModuleUnavailableError
+from src.shared.domain.module_errors import ModuleUnavailableError
+from src.shared.infrastructure.config.settings import Settings, get_settings
 
 G6 = "https://products.example/api/v1"
 G7 = "https://security.example/api/v1"

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from src.domain.services.offer_policy import price_projection
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.shared.domain.module_errors import ModuleRequestError
 
 SEEDS = Path(__file__).resolve().parent / "seeds"
 

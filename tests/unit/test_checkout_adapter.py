@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.outbound.persistence.checkout_postgres_adapter import CheckoutPostgresAdapter
-from src.adapters.outbound.persistence.models import Base, Checkout
+from src.shared.infrastructure.db.models import Base, Checkout
 
 table = Base.metadata.tables["checkout"]
 

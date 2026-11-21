@@ -7,8 +7,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.adapters.inbound.http.catalog_router import create_catalog_router
-from src.adapters.inbound.http.problem import register_problem_handlers
-from src.adapters.outbound.auth.service_token_provider import SecurityServiceTokenProvider
 from src.adapters.outbound.http_clients.products_client import ProductsClient
 from src.adapters.outbound.tools.registry_tool_adapter import RegistryToolAdapter
 from src.application.dto.conversation_events import TokenEvent
@@ -16,7 +14,9 @@ from src.application.tools.catalog_handlers import build_catalog_handlers
 from src.application.tools.catalog_tools import RecommendationArguments, SearchArguments, build_tool_registry
 from src.domain.services.offer_policy import price_projection, promotion_summaries
 from src.ports.outbound.llm_provider_port import TextDelta
-from src.ports.outbound.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.infrastructure.auth.service_token_provider import SecurityServiceTokenProvider
+from src.shared.infrastructure.http.problem import register_problem_handlers
 from tests.unit.test_cart_use_case import CONVERSATION_ID, make_caller, make_cart_use_case, owned
 from tests.unit.test_discovery import NOW, PRICE, PROMO, service
 from tests.unit.test_interpret_and_respond_use_case import build, reply, run, tool_turn

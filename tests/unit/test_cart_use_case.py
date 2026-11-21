@@ -7,8 +7,8 @@ from src.application.use_cases.manage_cart_use_case import (
     CartError,
     ManageCartUseCase,
 )
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.outbound.cart_repository_port import StaleCartError
+from src.shared.domain.caller_identity import CallerIdentity
 from tests.fakes.fake_commerce import (
     FakeCarts,
     FakeCatalogPort,

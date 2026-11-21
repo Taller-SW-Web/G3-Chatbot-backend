@@ -8,11 +8,11 @@ from src.application.tools.catalog_tools import (
     ProductArguments,
     SearchArguments,
 )
-from src.application.tools.tool_registry import ExecutionContext
 from src.application.use_cases.manage_catalog_use_case import (
     CatalogError,
     ManageCatalogUseCase,
 )
+from src.shared.application.tools.tool_registry import ExecutionContext
 from tests.fakes.fake_commerce import (
     FakeCatalogPort,
     FakeConversations,

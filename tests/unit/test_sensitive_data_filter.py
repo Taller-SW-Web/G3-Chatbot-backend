@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domain.services.sensitive_data_filter import SensitiveDataFilter
+from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
 
 
 @pytest.mark.parametrize("number", [

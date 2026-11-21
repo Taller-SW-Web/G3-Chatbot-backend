@@ -3,15 +3,15 @@ from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
-from src.adapters.inbound.http.dependencies.auth_guard import require_customer
-from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
 from src.adapters.inbound.http.postventa_errors import translate_postventa_error
 from src.application.dto.postventa_dto import (
     ClaimDetailResponse,
     ClaimListResponse,
     CreateClaimRequest,
 )
-from src.domain.value_objects.caller_identity import CallerIdentity
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
+from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
 
 
 class ClaimsServicePort(Protocol):
@@ -51,7 +51,7 @@ def create_claims_router(service_provider: Callable[..., ClaimsServicePort]) -> 
     ) -> ClaimDetailResponse:
         idempotency_key = request.headers.get("Idempotency-Key", "").strip()
         if not idempotency_key:
-            from src.adapters.inbound.http.problem import ProblemError
+            from src.shared.infrastructure.http.problem import ProblemError
 
             raise ProblemError(
                 status=400,

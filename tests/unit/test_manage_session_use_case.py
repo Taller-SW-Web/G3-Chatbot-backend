@@ -11,8 +11,8 @@ from src.application.use_cases.manage_session_use_case import (
     mask_email,
     merge_cart_lines,
 )
-from src.ports.outbound.module_errors import ModuleRequestError
-from src.ports.outbound.token_validator_port import AccountNotAllowedError
+from src.shared.application.ports.token_validator_port import AccountNotAllowedError
+from src.shared.domain.module_errors import ModuleRequestError
 
 CUSTOMER_ID = "00000000-0000-0000-0000-000000000001"
 

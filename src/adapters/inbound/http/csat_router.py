@@ -3,11 +3,11 @@ from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Request, Response, status
 
-from src.adapters.inbound.http.dependencies.auth_guard import require_customer
-from src.adapters.inbound.http.dependencies.jwt_validator import get_bearer_token
 from src.adapters.inbound.http.postventa_errors import translate_postventa_error
 from src.application.dto.postventa_dto import CreateCsatRequest
-from src.domain.value_objects.caller_identity import CallerIdentity
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
+from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
 
 
 class CsatServicePort(Protocol):

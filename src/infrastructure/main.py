@@ -8,11 +8,8 @@ from src.adapters.inbound.http.catalog_router import create_catalog_router
 from src.adapters.inbound.http.chatbot_router import ActionScope, TurnScope, create_chatbot_router
 from src.adapters.inbound.http.checkout_router import create_checkout_router
 from src.adapters.inbound.http.claims_router import create_claims_router
-from src.adapters.inbound.http.correlation import CorrelationMiddleware
 from src.adapters.inbound.http.csat_router import create_csat_router
-from src.adapters.inbound.http.health_router import router as health_router
 from src.adapters.inbound.http.orders_router import create_orders_router
-from src.adapters.inbound.http.problem import register_problem_handlers
 from src.adapters.inbound.http.returns_router import create_returns_router
 from src.adapters.inbound.http.session_router import create_session_router
 from src.adapters.inbound.http.shipping_router import create_shipping_router
@@ -29,8 +26,11 @@ from src.infrastructure.config.container import (
     provide_shipping_service,
     provide_turn_scope,
 )
-from src.infrastructure.config.settings import MODULES_WITH_ADAPTERS, get_settings
-from src.infrastructure.worker.outbox_loop import outbox_worker_lifespan
+from src.shared.infrastructure.config.settings import MODULES_WITH_ADAPTERS, get_settings
+from src.shared.infrastructure.http.correlation import CorrelationMiddleware
+from src.shared.infrastructure.http.health_router import router as health_router
+from src.shared.infrastructure.http.problem import register_problem_handlers
+from src.shared.infrastructure.worker.outbox_loop import outbox_worker_lifespan
 
 API_PREFIX = "/api/v1"
 

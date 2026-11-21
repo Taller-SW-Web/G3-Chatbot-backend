@@ -4,13 +4,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.adapters.outbound.persistence.conversation_postgres_adapter import (
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.entities.message import MessageRole
+from src.shared.infrastructure.db.models import Conversation, Message
+from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     ConversationPostgresAdapter,
 )
-from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
-from src.adapters.outbound.persistence.models import Conversation, Message
-from src.domain.entities.message import MessageRole
-from src.domain.value_objects.caller_identity import CallerIdentity
+from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

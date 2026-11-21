@@ -11,7 +11,7 @@ Es determinista a propósito: la demo no depende de la red ni de G2.
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from src.ports.outbound.module_errors import ModuleRequestError
+from src.shared.domain.module_errors import ModuleRequestError
 
 # Distritos con cobertura del mock: los mismos que ofrece el checkout.
 DISTRITOS_CON_COBERTURA = frozenset({

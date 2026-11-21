@@ -5,19 +5,19 @@ from decimal import Decimal
 
 import pytest
 
-from src.adapters.outbound.persistence.conversation_postgres_adapter import (
-    ConversationPostgresAdapter,
-)
-from src.adapters.outbound.persistence.message_postgres_adapter import MessagePostgresAdapter
-from src.adapters.outbound.persistence.models import Conversation
-from src.adapters.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from src.application.dto.conversation_events import FinalEvent
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
-from src.domain.entities.message import MessageRole
-from src.domain.value_objects.caller_identity import CallerIdentity
 from src.ports.outbound.llm_provider_port import Completed, TextDelta, ToolCall, ToolCallRequested
 from src.ports.outbound.tool_executor_port import ToolResult
+from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.entities.message import MessageRole
+from src.shared.infrastructure.db.models import Conversation
+from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
+    ConversationPostgresAdapter,
+)
+from src.shared.infrastructure.persistence.message_postgres_adapter import MessagePostgresAdapter
+from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from tests.fakes.fake_llm_provider import FakeLLMProvider
 from tests.fakes.fake_tool_executor import FakeToolExecutor
 
@@ -55,7 +55,7 @@ async def test_add_persists_customer_assistant_and_tool_rows(postgres_session):
 
     from sqlalchemy import select
 
-    from src.adapters.outbound.persistence.models import Message
+    from src.shared.infrastructure.db.models import Message
     rows = {r.role: r for r in (await postgres_session.execute(select(Message))).scalars()}
     assert (rows["TOOL"].tool_name, rows["TOOL"].arguments, rows["TOOL"].result_code) == (
         "buscar_productos", {"marca": "Nike"}, "OK")
@@ -83,7 +83,7 @@ async def test_blocks_with_decimal_prices_are_stored_like_the_sse_frame(postgres
 
     from sqlalchemy import select
 
-    from src.adapters.outbound.persistence.models import Message
+    from src.shared.infrastructure.db.models import Message
     stored = (await postgres_session.execute(
         select(Message.blocks).where(Message.conversation_id == cid)
     )).scalar_one()

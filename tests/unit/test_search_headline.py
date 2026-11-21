@@ -1,14 +1,14 @@
 """H3-15: parsing of ts_headline output into highlight segments (SPEC-05 Req. 1 · Buscar chats)."""
-from src.adapters.outbound.persistence.conversation_postgres_adapter import (
+from src.shared.domain.entities.conversation import HighlightSegment as Seg
+from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     HIGHLIGHT_START as S,
 )
-from src.adapters.outbound.persistence.conversation_postgres_adapter import (
+from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     HIGHLIGHT_STOP as E,
 )
-from src.adapters.outbound.persistence.conversation_postgres_adapter import (
+from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
     parse_headline,
 )
-from src.domain.entities.conversation import HighlightSegment as Seg
 
 
 def test_separa_texto_plano_y_coincidencias():
