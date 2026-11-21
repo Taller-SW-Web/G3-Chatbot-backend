@@ -2,8 +2,8 @@
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from src.ports.outbound.llm_provider_port import ToolDefinition
-from src.ports.outbound.tool_executor_port import ToolExecutionContext, ToolResult
+from src.modules.mod_chat.ports.llm_provider_port import ToolDefinition
+from src.modules.mod_chat.ports.tool_executor_port import ToolExecutionContext, ToolResult
 
 
 class FakeToolExecutor:

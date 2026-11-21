@@ -2183,7 +2183,7 @@
         },
         "summary": "Clear Cart",
         "tags": [
-          "carrito"
+          "mod-cart"
         ]
       },
       "get": {
@@ -2233,7 +2233,7 @@
         },
         "summary": "View Cart",
         "tags": [
-          "carrito"
+          "mod-cart"
         ]
       }
     },
@@ -2285,7 +2285,7 @@
         },
         "summary": "Remove Coupon",
         "tags": [
-          "carrito"
+          "mod-cart"
         ]
       },
       "post": {
@@ -2345,7 +2345,7 @@
         },
         "summary": "Apply Coupon",
         "tags": [
-          "carrito"
+          "mod-cart"
         ]
       }
     },
@@ -2407,7 +2407,7 @@
         },
         "summary": "Add Item",
         "tags": [
-          "carrito"
+          "mod-cart"
         ]
       }
     },
@@ -2468,7 +2468,7 @@
         },
         "summary": "Remove Item",
         "tags": [
-          "carrito"
+          "mod-cart"
         ]
       },
       "patch": {
@@ -2537,7 +2537,7 @@
         },
         "summary": "Set Quantity",
         "tags": [
-          "carrito"
+          "mod-cart"
         ]
       }
     },
@@ -2600,7 +2600,7 @@
         },
         "summary": "Availability",
         "tags": [
-          "catalogo"
+          "mod-catalog"
         ]
       }
     },
@@ -2796,7 +2796,7 @@
         },
         "summary": "Search Products",
         "tags": [
-          "catalogo"
+          "mod-catalog"
         ]
       }
     },
@@ -2840,7 +2840,7 @@
         },
         "summary": "Product Detail",
         "tags": [
-          "catalogo"
+          "mod-catalog"
         ]
       }
     },
@@ -2859,7 +2859,7 @@
         },
         "summary": "Promotions",
         "tags": [
-          "catalogo"
+          "mod-catalog"
         ]
       }
     },
@@ -2907,7 +2907,7 @@
         },
         "summary": "List Conversations",
         "tags": [
-          "conversaciones"
+          "mod-chat"
         ]
       },
       "post": {
@@ -2926,7 +2926,7 @@
         },
         "summary": "Create Conversation",
         "tags": [
-          "conversaciones"
+          "mod-chat"
         ]
       }
     },
@@ -2984,7 +2984,7 @@
         },
         "summary": "Search Conversations",
         "tags": [
-          "conversaciones"
+          "mod-chat"
         ]
       }
     },
@@ -3031,7 +3031,7 @@
         },
         "summary": "Get History",
         "tags": [
-          "conversaciones"
+          "mod-chat"
         ]
       },
       "post": {
@@ -3081,7 +3081,7 @@
         },
         "summary": "Send Message",
         "tags": [
-          "conversaciones"
+          "mod-chat"
         ]
       }
     },
@@ -3142,7 +3142,7 @@
         },
         "summary": "Create Checkout",
         "tags": [
-          "checkout"
+          "mod-checkout"
         ]
       }
     },
@@ -3187,7 +3187,7 @@
         },
         "summary": "Get Checkout",
         "tags": [
-          "checkout"
+          "mod-checkout"
         ]
       }
     },
@@ -3258,7 +3258,7 @@
         },
         "summary": "Process Payment",
         "tags": [
-          "checkout"
+          "mod-checkout"
         ]
       }
     },
@@ -3346,7 +3346,7 @@
         },
         "summary": "List Returns",
         "tags": [
-          "devoluciones"
+          "mod-postventa"
         ]
       },
       "post": {
@@ -3385,7 +3385,7 @@
         },
         "summary": "Create Return",
         "tags": [
-          "devoluciones"
+          "mod-postventa"
         ]
       }
     },
@@ -3427,7 +3427,7 @@
         },
         "summary": "Get Return",
         "tags": [
-          "devoluciones"
+          "mod-postventa"
         ]
       }
     },
@@ -3448,7 +3448,7 @@
         },
         "summary": "List Saved Addresses",
         "tags": [
-          "envio"
+          "mod-shipping"
         ]
       }
     },
@@ -3489,7 +3489,7 @@
         },
         "summary": "Quote Shipping",
         "tags": [
-          "envio"
+          "mod-shipping"
         ]
       }
     },
@@ -3530,7 +3530,7 @@
         },
         "summary": "Upload Evidence",
         "tags": [
-          "devoluciones"
+          "mod-postventa"
         ]
       }
     },
@@ -3602,7 +3602,7 @@
         },
         "summary": "List Orders",
         "tags": [
-          "pedidos"
+          "mod-orders"
         ]
       }
     },
@@ -3644,7 +3644,7 @@
         },
         "summary": "Get Order Detail",
         "tags": [
-          "pedidos"
+          "mod-orders"
         ]
       }
     },
@@ -3694,7 +3694,7 @@
         },
         "summary": "Create Csat",
         "tags": [
-          "csat"
+          "mod-postventa"
         ]
       }
     },
@@ -3736,7 +3736,7 @@
         },
         "summary": "Resend Confirmation",
         "tags": [
-          "pedidos"
+          "mod-orders"
         ]
       }
     },
@@ -3778,7 +3778,7 @@
         },
         "summary": "Get Order Tracking",
         "tags": [
-          "pedidos"
+          "mod-orders"
         ]
       }
     },
@@ -3850,7 +3850,7 @@
         },
         "summary": "List Claims",
         "tags": [
-          "reclamos"
+          "mod-postventa"
         ]
       },
       "post": {
@@ -3889,7 +3889,7 @@
         },
         "summary": "Create Claim",
         "tags": [
-          "reclamos"
+          "mod-postventa"
         ]
       }
     },
@@ -3931,7 +3931,7 @@
         },
         "summary": "Get Claim",
         "tags": [
-          "reclamos"
+          "mod-postventa"
         ]
       }
     },
@@ -3980,7 +3980,7 @@
         },
         "summary": "Login",
         "tags": [
-          "sesion"
+          "mod-auth"
         ]
       }
     },
@@ -4001,7 +4001,7 @@
         },
         "summary": "Logout",
         "tags": [
-          "sesion"
+          "mod-auth"
         ]
       }
     },
@@ -4042,7 +4042,7 @@
         },
         "summary": "Request Mfa",
         "tags": [
-          "sesion"
+          "mod-auth"
         ]
       }
     },
@@ -4083,7 +4083,7 @@
         },
         "summary": "Verify Mfa",
         "tags": [
-          "sesion"
+          "mod-auth"
         ]
       }
     },
@@ -4102,7 +4102,7 @@
         },
         "summary": "Profile",
         "tags": [
-          "sesion"
+          "mod-auth"
         ]
       }
     },
@@ -4122,7 +4122,7 @@
         },
         "summary": "Password Policy",
         "tags": [
-          "sesion"
+          "mod-auth"
         ]
       }
     },
@@ -4143,7 +4143,7 @@
         },
         "summary": "Refresh",
         "tags": [
-          "sesion"
+          "mod-auth"
         ]
       }
     },
@@ -4185,7 +4185,7 @@
         },
         "summary": "Register",
         "tags": [
-          "sesion"
+          "mod-auth"
         ]
       }
     },
@@ -4220,7 +4220,7 @@
         },
         "summary": "Verify Email",
         "tags": [
-          "sesion"
+          "mod-auth"
         ]
       }
     },
@@ -4262,7 +4262,7 @@
         },
         "summary": "Resend Verification",
         "tags": [
-          "sesion"
+          "mod-auth"
         ]
       }
     },

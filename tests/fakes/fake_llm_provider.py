@@ -1,7 +1,7 @@
 """Scriptable LLMProvider for tests of the agent loop: no SDK, no network."""
 from collections.abc import AsyncIterator, Sequence
 
-from src.ports.outbound.llm_provider_port import LLMEvent, LLMMessage, ToolDefinition
+from src.modules.mod_chat.ports.llm_provider_port import LLMEvent, LLMMessage, ToolDefinition
 
 
 class FakeLLMProvider:

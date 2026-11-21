@@ -4,9 +4,9 @@ Fuente funcional: SPEC-01, SPEC-05, SPEC-06, SPEC-09, SPEC-10 y SPEC-11 de `G3-C
 
 ## Contratos para conectar
 
-`build_tool_registry(handlers)` registra `solicitar_registro` siempre (ya devuelve el texto y el formulario) y solo los handlers comerciales recibidos en el mapeo nombre → handler (puede estar vacío). Los nombres soportados son `buscar_productos`, `ver_detalle_producto`, `consultar_disponibilidad`, `agregar_al_carrito`, `ver_carrito`, `cambiar_cantidad`, `quitar_del_carrito` y `vaciar_carrito`. Un nombre desconocido o un handler no invocable lanza `ValueError`. Los esquemas y descripciones de cada herramienta viven junto al constructor (`catalog_tools.py`): quien integra un módulo solo aporta el handler y lo agrega al mapeo de `provide_tool_executor()` en el contenedor.
+`build_tool_registry(handlers)` registra `solicitar_registro` siempre (ya devuelve el texto y el formulario) y solo los handlers comerciales recibidos en el mapeo nombre → handler (puede estar vacío). Los nombres soportados son `buscar_productos`, `ver_detalle_producto`, `consultar_disponibilidad`, `agregar_al_carrito`, `ver_carrito`, `cambiar_cantidad`, `quitar_del_carrito` y `vaciar_carrito`. Un nombre desconocido o un handler no invocable lanza `ValueError`. Los esquemas y descripciones de cada herramienta viven junto al constructor (`mod_catalog/application/tools.py`): quien integra un módulo solo aporta el handler y lo agrega al mapeo de `provide_tool_executor()` en `src/modules/mod_chat/module.py`.
 
-`RegistryToolAdapter` (`src/adapters/outbound/tools/registry_tool_adapter.py`) implementa `ToolExecutorPort` sobre el `ToolRegistry` y es lo que usa el bucle del agente:
+`RegistryToolAdapter` (`src/modules/mod_chat/adapters/registry_tool_adapter.py`) implementa `ToolExecutorPort` sobre el `ToolRegistry` y es lo que usa el bucle del agente:
 
 - `definitions()` traduce `registry.catalogo()` a `ToolDefinition` del proveedor LLM (`nombre`, `descripcion`, `parametros`).
 - `execute()` convierte `ToolExecutionContext` en `ExecutionContext` (UUID a texto, `anonymous_sid` a `chat_sid`, `None` se conserva) y llama a `registry.ejecutar`, que nunca confirma acciones.

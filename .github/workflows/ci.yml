@@ -152,7 +152,22 @@ jobs:
           path: coverage-integration.xml
           if-no-files-found: error
 
-  # Advisory during Fase 2: a finding is reported but does not block the gate yet.
+  # Fase 4 de ADR-0024: el checker es bloqueante. Si falla, hay imports
+  # cruzados entre módulos o falta la estructura obligatoria.
+  modules:
+    name: Module boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Check modules manifest, MODULE.md, MODULE_ID and import boundaries
+        run: python scripts/check_modules.py
+
   security:
     name: Dependency audit
     runs-on: ubuntu-latest
@@ -266,7 +281,7 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [lint, types, unit-tests, openapi, integration-tests, security, dependency-review, docker, sonar]
+    needs: [lint, types, unit-tests, openapi, integration-tests, modules, security, dependency-review, docker, sonar]
     if: always()
     steps:
       - name: Require every job to succeed

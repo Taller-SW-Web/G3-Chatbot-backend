@@ -7,8 +7,8 @@
 - Engine **async** (`create_async_engine` + `asyncpg` + `AsyncSession`), acorde a FastAPI + httpx async del proyecto.
 
 ## Convención models/__init__.py
-- Todo modelo hereda de `src.infrastructure.db.connection.Base`.
-- Todo modelo se importa en `src/adapters/outbound/persistence/models/__init__.py`.
+- Todo modelo hereda de `src.shared.infrastructure.db.connection.Base`.
+- Todo modelo se importa en `src/shared/infrastructure/db/models/__init__.py`.
 - Si no se importa ahí, `alembic revision --autogenerate` no lo detecta (falla silenciosa típica).
 - H2-03..H2-07 deben agregar su import en ese `__init__.py`, sin generar migraciones.
 

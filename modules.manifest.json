@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "updated": "2026-11-21",
+  "ownerDefault": "@Ankarmin",
+  "modules": [
+    {
+      "id": "mod-auth",
+      "name": "Autenticación y cuenta",
+      "owner": "@Ankarmin",
+      "dependsOn": []
+    },
+    {
+      "id": "mod-catalog",
+      "name": "Catálogo",
+      "owner": "@SOoOnny",
+      "dependsOn": []
+    },
+    {
+      "id": "mod-cart",
+      "name": "Carrito",
+      "owner": "@SOoOnny",
+      "dependsOn": ["mod-catalog"]
+    },
+    {
+      "id": "mod-shipping",
+      "name": "Envío",
+      "owner": "@SOoOnny",
+      "dependsOn": []
+    },
+    {
+      "id": "mod-checkout",
+      "name": "Checkout y pago",
+      "owner": "@MathiasTL",
+      "dependsOn": ["mod-cart", "mod-shipping"]
+    },
+    {
+      "id": "mod-orders",
+      "name": "Pedidos y seguimiento",
+      "owner": "@MathiasTL",
+      "dependsOn": ["mod-checkout"]
+    },
+    {
+      "id": "mod-postventa",
+      "name": "Postventa",
+      "owner": "@MathiasTL",
+      "dependsOn": ["mod-orders"]
+    },
+    {
+      "id": "mod-chat",
+      "name": "Chat",
+      "owner": "@Ankarmin",
+      "dependsOn": [
+        "mod-auth",
+        "mod-catalog",
+        "mod-cart",
+        "mod-shipping",
+        "mod-checkout",
+        "mod-orders",
+        "mod-postventa"
+      ]
+    }
+  ]
+}
