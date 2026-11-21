@@ -14,6 +14,7 @@ from src.modules.mod_checkout.adapters.payment_simulator_adapter import CardVali
 from src.modules.mod_checkout.domain.checkout import CheckoutStatus, NewCheckout
 from src.modules.mod_checkout.domain.payment_attempt import (
     NewPaymentAttempt,
+    PaymentConflictError,
     PaymentRejectReason,
     PaymentResult,
 )
@@ -614,9 +615,16 @@ class ManageCheckoutUseCase:
         if replay is not None:
             return replay
 
-        row = await self.checkouts.obtener_por_id(input_data.checkout_id)
+        # Row lock for the rest of the transaction: concurrent payments of one checkout serialize here.
+        row = await self.checkouts.obtener_por_id(input_data.checkout_id, for_update=True)
         if not row or row.customer_id != input_data.customer_id:
             raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
+
+        # A request with the same key may have won the lock first: re-check under the lock.
+        existing_attempt = await _safe_call(self.payment_attempts, "obtener_por_idempotency_key", input_data.idempotency_key)
+        replay = await self._replay_existing_attempt(existing_attempt, input_data)
+        if replay is not None:
+            return replay
 
         now = datetime.now(timezone.utc)
         if row.status == CheckoutStatus.EXPIRED.value or (
@@ -706,7 +714,10 @@ class ManageCheckoutUseCase:
                 amount=row.total,
                 transaction_id=payment_res.transaction_id,
             )
-            saved_attempt = await self.payment_attempts.guardar(attempt)
+            try:
+                saved_attempt = await self.payment_attempts.guardar(attempt)
+            except PaymentConflictError as exc:
+                raise CheckoutError("CONFLICTO", "El checkout ya tiene un pago aprobado") from exc
 
             # Encolar notificación a Ventas en outbox (SPEC-15 Req. 2)
             if order_id and self.outbox:
@@ -748,8 +759,15 @@ class ManageCheckoutUseCase:
             return saved_attempt
 
         # 5. Caso rechazado o error
-        await self.checkouts.incrementar_intentos(row.id)
-        current_attempts = (row.payment_attempts or 0) + 1
+        updated = await self.checkouts.incrementar_intentos(row.id)
+        if updated is None:
+            raise CheckoutError(
+                "PAGO_RECHAZADO",
+                "Se agotaron los intentos de pago permitidos",
+                {"motivo": "INTENTOS_AGOTADOS", "intentosRestantes": 0},
+            )
+        counted = getattr(updated, "payment_attempts", None)
+        current_attempts = counted if isinstance(counted, int) else (row.payment_attempts or 0) + 1
         remaining = max(0, 3 - current_attempts)
 
         if current_attempts >= 3:

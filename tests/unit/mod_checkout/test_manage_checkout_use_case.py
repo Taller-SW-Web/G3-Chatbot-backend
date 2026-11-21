@@ -1295,3 +1295,63 @@ async def test_payment_replay_of_non_approved_attempt_reraises_original_outcome(
         )
     assert exc_info.value.code == code
     assert exc_info.value.extra["intentosRestantes"] == 2
+
+
+def _pending_checkout(checkout_id, cust_id, attempts=0):
+    return Checkout(
+        id=checkout_id, cart_id=uuid.uuid4(), customer_id=cust_id, status="PENDING_PAYMENT",
+        summary={}, total=150.0, payment_attempts=attempts,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10), idempotency_key="k1",
+    )
+
+
+def _payment_input(checkout_id, cust_id, card="4111 1111 1111 1111", key="pay-key-lock"):
+    return ProcessPaymentInput(
+        checkout_id=checkout_id, customer_id=cust_id, idempotency_key=key,
+        numero_tarjeta=card, titular="Diego Valido", vencimiento="10/29", cvv="456",
+    )
+
+
+@pytest.mark.asyncio
+async def test_payment_locks_the_checkout_row(use_case, mock_checkouts):
+    checkout_id, cust_id = uuid.uuid4(), uuid.uuid4()
+    mock_checkouts.obtener_por_id.return_value = _pending_checkout(checkout_id, cust_id)
+    await use_case.process_payment(_payment_input(checkout_id, cust_id))
+    mock_checkouts.obtener_por_id.assert_any_call(checkout_id, for_update=True)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_approved_payment_maps_to_conflict(use_case, mock_checkouts, mock_attempts):
+    from src.modules.mod_checkout.domain.payment_attempt import PaymentConflictError
+
+    checkout_id, cust_id = uuid.uuid4(), uuid.uuid4()
+    mock_checkouts.obtener_por_id.return_value = _pending_checkout(checkout_id, cust_id)
+    mock_attempts.guardar = AsyncMock(side_effect=PaymentConflictError("dup"))
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.process_payment(_payment_input(checkout_id, cust_id))
+    assert exc_info.value.code == "CONFLICTO"
+
+
+@pytest.mark.asyncio
+async def test_attempt_counter_at_cap_reports_exhausted_instead_of_overflowing(use_case, mock_checkouts):
+    checkout_id, cust_id = uuid.uuid4(), uuid.uuid4()
+    mock_checkouts.obtener_por_id.return_value = _pending_checkout(checkout_id, cust_id, attempts=2)
+    mock_checkouts.incrementar_intentos = AsyncMock(return_value=None)
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.process_payment(_payment_input(checkout_id, cust_id, card="4000 0000 0000 0002"))
+    assert exc_info.value.code == "PAGO_RECHAZADO"
+    assert exc_info.value.extra["intentosRestantes"] == 0
+
+
+@pytest.mark.asyncio
+async def test_same_key_won_under_the_lock_is_replayed_not_reprocessed(use_case, mock_checkouts, mock_attempts):
+    checkout_id, cust_id = uuid.uuid4(), uuid.uuid4()
+    mock_checkouts.obtener_por_id.return_value = _pending_checkout(checkout_id, cust_id)
+    winner = PaymentAttempt(
+        id=uuid.uuid4(), checkout_id=checkout_id, idempotency_key="pay-key-lock", result="APPROVED",
+        brand="VISA", last4="1111", amount=150.0,
+    )
+    mock_attempts.obtener_por_idempotency_key = AsyncMock(side_effect=[None, winner])
+    attempt = await use_case.process_payment(_payment_input(checkout_id, cust_id))
+    assert attempt is winner
+    mock_checkouts.marcar_estado.assert_not_called()
