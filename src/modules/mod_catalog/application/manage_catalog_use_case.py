@@ -22,6 +22,7 @@ from src.modules.mod_catalog.application.product_lookup import (
 from src.modules.mod_catalog.application.tools import SearchArguments
 from src.modules.mod_catalog.domain.offer_policy import price_projection
 from src.modules.mod_catalog.domain.product_normalizer import ProductNormalizer
+from src.modules.mod_catalog.domain.product_ordering import sort_summaries
 from src.modules.mod_catalog.domain.product_projection import normalize_detail, sellable_skus
 from src.modules.mod_catalog.domain.similar_products import SimilarProducts
 from src.modules.mod_catalog.domain.stock_validator import StockValidator
@@ -211,6 +212,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
             else:
                 text += (" Resultado parcial: no pudimos obtener algunos productos o datos" +
                          ("; puede haber más ofertas." if args.soloOfertas else "."))
+        summaries = sort_summaries(summaries, getattr(args, "orden", None))
         for index, row in enumerate(summaries, 1):
             row["ref"] = index
         memory[MEMORY_CAROUSEL_KEY] = [s["product_id"] for s in summaries]

@@ -59,7 +59,11 @@ class SearchArguments(ToolArguments):
     talla: Text | None = None
     color: Text | None = None
     soloOfertas: bool | None = Field(default=None, strict=True)
-    orden: Literal["PRECIO_ASC", "PRECIO_DESC", "RELEVANCIA", "NOVEDAD"] | None = None
+    orden: Literal[
+        "PRECIO_ASC", "PRECIO_DESC", "RELEVANCIA", "NOVEDAD",
+        "NOMBRE_ASC", "NOMBRE_DESC",
+        "relevancia", "precio_asc", "precio_desc", "nombre_asc", "nombre_desc",
+    ] | None = None
     precioMin: Money | None = None
     precioMax: Money | None = None
     pagina: PositiveInt = 1

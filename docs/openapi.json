@@ -2808,6 +2808,13 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "relevancia",
+                    "precio_asc",
+                    "precio_desc",
+                    "nombre_asc",
+                    "nombre_desc"
+                  ],
                   "type": "string"
                 },
                 {
