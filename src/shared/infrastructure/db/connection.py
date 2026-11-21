@@ -10,6 +10,7 @@ Decisión: PostgreSQL 18 + Python 3.12.7.
 import json
 import os
 from collections.abc import AsyncIterator
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -33,9 +34,28 @@ def _json_serializer(value) -> str:
     return json.dumps(value, ensure_ascii=False, default=str)
 
 
+def _unique_statement_name() -> str:
+    return f"__asyncpg_{uuid4()}__"
+
+
+# The Supabase pooler (Supavisor, PgBouncer-like) shares server connections between
+# clients, so cached or sequentially named prepared statements collide (SQLSTATE 42P05).
+# See SQLAlchemy docs: "Prepared Statement Name with PGBouncer".
+_POOLER_SAFE_CONNECT_ARGS = {
+    "statement_cache_size": 0,
+    "prepared_statement_cache_size": 0,
+    "prepared_statement_name_func": _unique_statement_name,
+}
+
+
 def create_engine(url: str) -> AsyncEngine:
     """Engine shared by the app and the integration tests."""
-    return create_async_engine(url, pool_pre_ping=True, json_serializer=_json_serializer)
+    return create_async_engine(
+        url,
+        pool_pre_ping=True,
+        json_serializer=_json_serializer,
+        connect_args=dict(_POOLER_SAFE_CONNECT_ARGS),
+    )
 
 
 engine: AsyncEngine | None = None
