@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_cart import MODULE_ID
 from src.modules.mod_cart.adapters.cart_item_postgres_adapter import CartItemPostgresAdapter
 from src.modules.mod_cart.adapters.cart_postgres_adapter import CartPostgresAdapter
 from src.modules.mod_cart.adapters.http.cart_router import create_cart_router
@@ -65,3 +66,13 @@ router = build_router(RouterOptions())
 def configure(container) -> None:
     """Shipping depends on no module but needs the cart lines: expose them by capability."""
     container.register(CART_REPOSITORIES, provide_cart_repositories)
+
+
+__all__ = [
+    "MODULE_ID",
+    "build_router",
+    "configure",
+    "provide_cart_repositories",
+    "provide_cart_service",
+    "router",
+]

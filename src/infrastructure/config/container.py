@@ -6,10 +6,8 @@ from typing import Any
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.outbound.fakes.fake_dispatch import FakeDispatchPort
 from src.adapters.outbound.fakes.fake_email_sender import FakeEmailSender
 from src.adapters.outbound.fakes.fake_postventa import FakePostventaPort
-from src.adapters.outbound.http_clients.despacho_api_adapter import DespachoClient
 from src.adapters.outbound.http_clients.postventa_client import PostventaClient
 from src.adapters.outbound.nlp.openai_nlp_adapter import OpenAILLMProvider
 from src.adapters.outbound.notificaciones.jinja_email_renderer import JinjaEmailRenderer
@@ -32,7 +30,6 @@ from src.application.use_cases.dispatch_direct_action_use_case import DispatchDi
 from src.application.use_cases.interpret_and_respond_use_case import InterpretAndRespondUseCase
 from src.application.use_cases.manage_checkout_use_case import ManageCheckoutUseCase
 from src.application.use_cases.manage_conversation_use_case import ManageConversationUseCase
-from src.application.use_cases.manage_shipping_use_case import ManageShippingUseCase
 from src.application.use_cases.notification_service import NotificationError, NotificationService
 from src.domain.services.status_mapper import map_order_status_label
 from src.modules.mod_cart.public import provide_cart_repositories, provide_cart_service
@@ -40,6 +37,7 @@ from src.modules.mod_catalog.application.tools import build_tool_registry
 from src.modules.mod_catalog.public import (
     provide_catalog_service,
 )
+from src.modules.mod_shipping.module import provide_despacho_client
 from src.ports.outbound.llm_provider_port import LLMProvider
 from src.ports.outbound.tool_executor_port import ToolExecutorPort
 from src.shared.application.ports.order_repository_port import SalesOrderPort
@@ -121,24 +119,6 @@ def provide_action_dispatcher(session: AsyncSession) -> ActionDispatcher:
     return ActionDispatcher(provide_tool_registry(session))
 
 
-def provide_shipping_service(
-    session: AsyncSession = Depends(get_session),
-) -> ManageShippingUseCase:
-    """Shipping quote and saved addresses (SPEC-12).
-
-    The cart ports give the lines the client never sends; Seguridad prefill
-    addresses and Despacho the real quote with the service token.
-    """
-    settings = get_settings()
-    repositories = provide_cart_repositories(session)
-    return ManageShippingUseCase(
-        repositories.carts,
-        repositories.items,
-        provide_despacho_client(settings),
-        provide_security_port(settings),
-    )
-
-
 def sanitize_sensitive_text(text: str) -> str:
     """Redact customer secrets before they are persisted or sent to the LLM."""
     return SensitiveDataFilter().redactar(text).texto
@@ -208,22 +188,6 @@ def provide_postventa_service(session: AsyncSession = Depends(get_session)):
         claim_refs=None if fake else ClaimRefPostgresAdapter(session),
         return_refs=None if fake else ReturnRefPostgresAdapter(session),
         evidence=None if fake else EvidencePostgresAdapter(session),
-    )
-
-
-def provide_despacho_client(settings: Settings | None = None):
-    """Despacho port honoring `DISPATCH_MODE` (ADR-0022): in-process fake or HTTP.
-
-    The HTTP client authenticates as `modulo-chatbot` with the service token
-    provider (ADR-0009); the fake keeps the demo working without G2 credentials.
-    """
-    settings = settings or get_settings()
-    if settings.module_mode("dispatch") == "fake":
-        return FakeDispatchPort()
-    return DespachoClient(
-        base_url=settings.dispatch_base_url,
-        timeout_seconds=settings.dispatch_timeout_seconds,
-        service_token_provider=provide_service_token_provider(settings),
     )
 
 

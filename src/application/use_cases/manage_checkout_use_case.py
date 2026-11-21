@@ -16,13 +16,13 @@ from src.adapters.outbound.persistence.payment_attempt_postgres_adapter import (
     PaymentAttemptPostgresAdapter,
 )
 from src.application.use_cases.notification_service import NotificationService
-from src.application.use_cases.shipping_quote import (
+from src.domain.entities.checkout import CheckoutStatus
+from src.domain.entities.payment_attempt import PaymentRejectReason, PaymentResult
+from src.modules.mod_shipping.application.shipping_quote import (
     build_destination,
     build_quote_lines,
     parse_quote,
 )
-from src.domain.entities.checkout import CheckoutStatus
-from src.domain.entities.payment_attempt import PaymentRejectReason, PaymentResult
 from src.ports.outbound.payment_gateway_port import PaymentGatewayPort
 from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteRequest
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError

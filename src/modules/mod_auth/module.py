@@ -6,6 +6,7 @@ The router factory and the use-case provider live here; `main.py` only mounts
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_auth import MODULE_ID
 from src.modules.mod_auth.adapters.http.session_router import create_session_router
 from src.modules.mod_auth.application.manage_session_use_case import ManageSessionUseCase
 from src.shared.infrastructure.auth.providers import (
@@ -61,3 +62,12 @@ router = build_router(RouterOptions())
 
 def configure(container) -> None:
     """No cross-module capability: auth is the base of the dependency graph."""
+
+
+__all__ = [
+    "MODULE_ID",
+    "build_router",
+    "configure",
+    "provide_manage_session",
+    "router",
+]

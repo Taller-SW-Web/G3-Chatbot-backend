@@ -9,7 +9,7 @@ here imports FastAPI, httpx or SQLAlchemy.
 import uuid
 from typing import Any
 
-from src.application.use_cases.shipping_quote import build_destination, build_quote_lines
+from src.modules.mod_shipping.application.shipping_quote import build_destination, build_quote_lines
 from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteRequest
 from src.shared.domain.module_errors import ModuleRequestError
 

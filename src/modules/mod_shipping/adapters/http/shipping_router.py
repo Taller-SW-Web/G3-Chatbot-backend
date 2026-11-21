@@ -8,7 +8,8 @@ from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Request
 
-from src.application.use_cases.shipping_quote import parse_quote
+from src.modules.mod_shipping import MODULE_ID
+from src.modules.mod_shipping.application.shipping_quote import parse_quote
 from src.shared.application.dto.commerce_contracts_dto import (
     DISPATCH_TO_CHANNEL_ERROR,
     SHIPPING_ERROR_STATUS,
@@ -99,7 +100,7 @@ def _translate_shipping_error(exc: Exception) -> ProblemError:
 def create_shipping_router(
     shipping_provider: Callable[..., ShippingServicePort],
 ) -> APIRouter:
-    router = APIRouter(tags=["envio"])
+    router = APIRouter(tags=[MODULE_ID])
 
     @router.get("/direcciones", response_model=SavedAddressesResponse)
     async def list_saved_addresses(

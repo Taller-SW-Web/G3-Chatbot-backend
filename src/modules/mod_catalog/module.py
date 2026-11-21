@@ -5,6 +5,7 @@ from functools import lru_cache
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_catalog import MODULE_ID
 from src.modules.mod_catalog.adapters.fake_products import FakeCatalogPort, FakeInventoryPort
 from src.modules.mod_catalog.adapters.http.catalog_router import create_catalog_router
 from src.modules.mod_catalog.adapters.inventory_client import (
@@ -110,3 +111,16 @@ def _products_token_provider(base_url, client_id, client_secret):
     if not client_secret.strip():
         return _MissingProductsCredential()
     return SecurityServiceTokenProvider(base_url, client_id, client_secret)
+
+
+__all__ = [
+    "MODULE_ID",
+    "build_router",
+    "configure",
+    "provide_catalog_service",
+    "provide_inventory_client",
+    "provide_product_catalog",
+    "provide_product_inventory",
+    "provide_products_client",
+    "router",
+]

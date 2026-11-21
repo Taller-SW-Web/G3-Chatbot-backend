@@ -10,7 +10,7 @@ import httpx
 import pytest
 import respx
 
-from src.adapters.outbound.http_clients.despacho_api_adapter import DespachoClient
+from src.modules.mod_shipping.adapters.despacho_client import DespachoClient
 from src.shared.domain.module_errors import ModuleRequestError
 from src.shared.infrastructure.http.base_client import ModuleUnavailableError
 
