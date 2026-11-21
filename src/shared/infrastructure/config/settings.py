@@ -142,6 +142,8 @@ class Settings:
     # In-process outbox worker (SPEC-15): polled from the FastAPI lifespan.
     outbox_worker_enabled: bool = True
     outbox_poll_interval_seconds: float = 5.0
+    # SPEC-14 `ExpirarCheckouts`: sweep period for overdue checkouts (runs with the worker).
+    checkout_expiry_interval_seconds: float = 60.0
     # SPEC-04: the checkout demands a locally verified phone. Production defaults
     # to true; development/fake keeps it off so the E2E flow does not need an OTP.
     require_phone_verification: bool = False
@@ -357,6 +359,9 @@ def _build_settings() -> Settings:
         ),
         outbox_worker_enabled=os.getenv("OUTBOX_WORKER_ENABLED", "true").strip().lower() != "false",
         outbox_poll_interval_seconds=_number("OUTBOX_POLL_INTERVAL_SECONDS", "5", float, minimum=0.5),
+        checkout_expiry_interval_seconds=_number(
+            "CHECKOUT_EXPIRY_INTERVAL_SECONDS", "60", float, minimum=5
+        ),
         require_phone_verification=(
             require_phone_verification
             if require_phone_verification is not None

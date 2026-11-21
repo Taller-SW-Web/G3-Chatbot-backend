@@ -63,3 +63,18 @@ async def test_for_update_lookup_returns_the_row(postgres_session):
     checkout = await _checkout(postgres_session)
     adapter = CheckoutPostgresAdapter(postgres_session)
     assert (await adapter.obtener_por_id(checkout.id, for_update=True)).id == checkout.id
+
+
+async def test_expiry_sweep_query_returns_only_overdue_pending_checkouts(postgres_session):
+    overdue = await _checkout(postgres_session)
+    overdue.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    fresh = await _checkout(postgres_session)
+    paid = await _checkout(postgres_session)
+    paid.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    paid.status = "PAYMENT_APPROVED"
+    await postgres_session.flush()
+
+    adapter = CheckoutPostgresAdapter(postgres_session)
+    due = await adapter.listar_vencidos_para_expirar(datetime.now(timezone.utc), 10)
+    assert [row.id for row in due] == [overdue.id]
+    assert fresh.id not in {row.id for row in due}

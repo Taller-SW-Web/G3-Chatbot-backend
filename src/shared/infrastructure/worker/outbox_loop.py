@@ -81,18 +81,38 @@ async def run_attachment_cleanup(
         await asyncio.sleep(interval_seconds)
 
 
+async def run_checkout_expiry(
+    session_factory: SessionFactory,
+    expirer_factory: Callable[[Any], Any],
+    interval_seconds: float,
+) -> None:
+    """Periodic `ExpirarCheckouts` sweep (SPEC-14): expires overdue checkouts, never dies."""
+    while True:
+        try:
+            async with session_factory() as session:
+                expired = await expirer_factory(session).expire_due_checkouts()
+                if expired:
+                    logger.info("Checkout expiry sweep expired %d checkout(s)", expired)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Checkout expiry iteration failed: %s", describe_error(exc))
+        await asyncio.sleep(interval_seconds)
+
+
 @asynccontextmanager
 async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan: starts the loop when OUTBOX_WORKER_ENABLED and cancels it on shutdown."""
     from src.shared.infrastructure.config.settings import get_settings
     from src.shared.infrastructure.db import connection
-    from src.shared.infrastructure.di.capabilities import ATTACHMENT_CLEANUP
+    from src.shared.infrastructure.di.capabilities import ATTACHMENT_CLEANUP, CHECKOUT_EXPIRY
     from src.shared.infrastructure.di.container import provide_outbox_processor
     from src.shared.infrastructure.di.registry import registry
 
     settings = get_settings()
     task: asyncio.Task | None = None
     cleanup_task: asyncio.Task | None = None
+    expiry_task: asyncio.Task | None = None
     if settings.outbox_worker_enabled:
         connection.get_engine()
         task = asyncio.create_task(
@@ -118,10 +138,27 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
             "Attachment cleanup started (every %.0fs)",
             settings.attachment_cleanup_interval_seconds,
         )
+    if settings.outbox_worker_enabled and registry.is_registered(CHECKOUT_EXPIRY):
+        connection.get_engine()
+        expiry_task = asyncio.create_task(
+            run_checkout_expiry(
+                lambda: connection.open_session(),
+                registry.provider(CHECKOUT_EXPIRY),
+                settings.checkout_expiry_interval_seconds,
+            ),
+            name="checkout-expiry",
+        )
+        logger.info(
+            "Checkout expiry sweeper started (every %.0fs)", settings.checkout_expiry_interval_seconds
+        )
     try:
         yield
     finally:
-        for name, pending in (("outbox-worker", task), ("attachment-cleanup", cleanup_task)):
+        for name, pending in (
+            ("outbox-worker", task),
+            ("attachment-cleanup", cleanup_task),
+            ("checkout-expiry", expiry_task),
+        ):
             if pending is not None:
                 pending.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

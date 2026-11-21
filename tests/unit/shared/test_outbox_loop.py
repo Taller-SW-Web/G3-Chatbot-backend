@@ -122,3 +122,34 @@ async def test_lifespan_does_nothing_when_disabled(monkeypatch):
     monkeypatch.setattr(settings, "get_settings", lambda: settings.Settings(outbox_worker_enabled=False))
     async with outbox_worker_lifespan(FastAPI()):
         pass
+
+
+class Expirer:
+    def __init__(self, behaviors):
+        self.behaviors = list(behaviors)
+        self.calls = 0
+
+    async def expire_due_checkouts(self):
+        self.calls += 1
+        behavior = self.behaviors.pop(0) if self.behaviors else 0
+        if isinstance(behavior, Exception):
+            raise behavior
+        return behavior
+
+
+@pytest.mark.asyncio
+async def test_checkout_expiry_loop_survives_failures_and_keeps_sweeping(caplog):
+    expirer = Expirer([RuntimeError("boom"), 2, 0])
+    with caplog.at_level(logging.INFO):
+        task = asyncio.create_task(
+            outbox_loop.run_checkout_expiry(fake_session, lambda _s: expirer, 0.01)
+        )
+        for _ in range(200):
+            if expirer.calls >= 3:
+                break
+            await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert expirer.calls >= 3
+    assert "expired 2 checkout" in caplog.text

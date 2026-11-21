@@ -83,6 +83,18 @@ class CheckoutPostgresAdapter:
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 
+    async def listar_vencidos_para_expirar(self, ahora: datetime, limite: int) -> list[Checkout]:
+        """PENDING_PAYMENT rows past `expires_at`, locked with SKIP LOCKED (safe across replicas)."""
+        stmt = (
+            select(Checkout)
+            .where(Checkout.status == "PENDING_PAYMENT", Checkout.expires_at < ahora)
+            .order_by(Checkout.expires_at)
+            .limit(limite)
+            .with_for_update(skip_locked=True)
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
     async def marcar_estado(self, id: uuid.UUID, status: str) -> Checkout | None:
         row = await self.obtener_por_id(id)
         if row is None:

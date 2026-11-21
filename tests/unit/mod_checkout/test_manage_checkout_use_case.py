@@ -1355,3 +1355,76 @@ async def test_same_key_won_under_the_lock_is_replayed_not_reprocessed(use_case,
     attempt = await use_case.process_payment(_payment_input(checkout_id, cust_id))
     assert attempt is winner
     mock_checkouts.marcar_estado.assert_not_called()
+
+
+def _expired_checkout(order_id="ord-1"):
+    return Checkout(
+        id=uuid.uuid4(), cart_id=uuid.uuid4(), customer_id=uuid.uuid4(), status="PENDING_PAYMENT",
+        summary={"orderId": order_id}, total=100.0, payment_attempts=0,
+        expires_at=datetime.now(timezone.utc) - timedelta(minutes=1), idempotency_key="k-exp",
+    )
+
+
+def _wire_expiry(use_case, row):
+    use_case.orders = MagicMock()
+    use_case.orders.obtener_por_checkout_id = AsyncMock(return_value=SimpleNamespace(order_id=row.summary["orderId"]))
+    use_case.orders.actualizar_estado = AsyncMock()
+    use_case.outbox = MagicMock()
+    use_case.outbox.guardar = AsyncMock()
+
+
+def _assert_fully_expired(use_case, mock_checkouts, row):
+    mock_checkouts.marcar_estado.assert_called_with(row.id, CheckoutStatus.EXPIRED.value)
+    use_case.carts.cambiar_estado.assert_called_with(row.cart_id, "ACTIVE")
+    use_case.orders.actualizar_estado.assert_called_with("ord-1", "CANCELLED")
+    task = use_case.outbox.guardar.call_args.args[0]
+    assert task.type == "REQUEST_CANCELLATION"
+    assert task.payload["order_id"] == "ord-1"
+
+
+@pytest.mark.asyncio
+async def test_get_checkout_lazy_expiry_enqueues_the_ventas_cancellation(use_case, mock_checkouts):
+    row = _expired_checkout()
+    _wire_expiry(use_case, row)
+    mock_checkouts.obtener_por_id.return_value = row
+    result = await use_case.get_checkout(row.id, row.customer_id)
+    assert result.status == "EXPIRED"
+    _assert_fully_expired(use_case, mock_checkouts, row)
+
+
+@pytest.mark.asyncio
+async def test_sweeper_expires_due_checkouts_with_all_effects(use_case, mock_checkouts):
+    row = _expired_checkout()
+    _wire_expiry(use_case, row)
+    mock_checkouts.listar_vencidos_para_expirar = AsyncMock(return_value=[row])
+    assert await use_case.expire_due_checkouts() == 1
+    _assert_fully_expired(use_case, mock_checkouts, row)
+    use_case.uow.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sweeper_does_nothing_when_nothing_is_due(use_case, mock_checkouts):
+    mock_checkouts.listar_vencidos_para_expirar = AsyncMock(return_value=[])
+    assert await use_case.expire_due_checkouts() == 0
+    use_case.uow.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_expire_checkout_is_idempotent_once_expired(use_case, mock_checkouts):
+    row = _expired_checkout()
+    row.status = "EXPIRED"
+    _wire_expiry(use_case, row)
+    mock_checkouts.obtener_por_id.return_value = row
+    assert await use_case.expire_checkout(row.id) is False
+    use_case.outbox.guardar.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_payment_on_overdue_checkout_expires_it_through_the_same_routine(use_case, mock_checkouts):
+    row = _expired_checkout()
+    _wire_expiry(use_case, row)
+    mock_checkouts.obtener_por_id.return_value = row
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.process_payment(_payment_input(row.id, row.customer_id))
+    assert exc_info.value.code == "CHECKOUT_EXPIRADO"
+    _assert_fully_expired(use_case, mock_checkouts, row)
