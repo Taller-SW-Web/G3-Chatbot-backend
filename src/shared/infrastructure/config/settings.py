@@ -30,6 +30,9 @@ MODULES = ("security", "products", "sales", "dispatch")
 # Modules with an in-process fake or an HTTP adapter wired in the container.
 MODULES_WITH_ADAPTERS = ("security", "products", "sales", "dispatch")
 PRODUCTION_ENVIRONMENTS = ("production", "prod")
+DEV_PHONE_OTP_SECRET = "dev-phone-otp-secret"
+DEV_ATTACHMENT_SECRET = "dev-attachment-secret"
+DEFAULT_SECURITY_ISSUER = "auth-service"
 
 
 def _app_env() -> str:
@@ -88,7 +91,7 @@ class Settings:
     # Module base URLs (ADR-0017): mock or real, switched by config without code changes.
     security_base_url: str = "http://localhost:4010"
     # `iss` claim the Seguridad access tokens must carry (real service: its full /auth URL).
-    security_expected_issuer: str = "auth-service"
+    security_expected_issuer: str = DEFAULT_SECURITY_ISSUER
     products_base_url: str = "http://localhost:4011"
     sales_base_url: str = "http://localhost:4012"
     # G5 M2 (Postventa): separate Render service from M1 (Ventas).
@@ -145,7 +148,7 @@ class Settings:
     # SPEC-12: optional address save in Seguridad. A failure never blocks checkout.
     checkout_save_address_enabled: bool = True
     # HMAC key for the OTP hashes. Never a real secret in development.
-    phone_otp_secret: str = "dev-phone-otp-secret"
+    phone_otp_secret: str = DEV_PHONE_OTP_SECRET
     phone_otp_ttl_seconds: int = 300
     phone_otp_max_attempts: int = 3
     phone_otp_max_sends: int = 3
@@ -155,7 +158,7 @@ class Settings:
     # SPEC-23: private attachment storage (local adapter until Supabase is wired).
     attachment_storage_path: str = "var/attachments"
     attachment_public_base_url: str = "http://localhost:8000/api/v1"
-    attachment_signing_secret: str = "dev-attachment-secret"
+    attachment_signing_secret: str = DEV_ATTACHMENT_SECRET
     attachment_signed_url_ttl_seconds: int = 300
     attachment_max_images_per_turn: int = 6
     attachment_cleanup_interval_seconds: float = 3600.0
@@ -196,10 +199,57 @@ class Settings:
     def fake_modules(self) -> tuple[str, ...]:
         return tuple(module for module in MODULES if self.module_mode(module) == "fake")
 
+    @property
+    def is_production(self) -> bool:
+        return self.app_env in PRODUCTION_ENVIRONMENTS
+
+    def unsafe_defaults(self) -> list[str]:
+        """Settings that are only acceptable in development (empty list = production-safe)."""
+        problems: list[str] = []
+        if self.modo_qa:
+            problems.append("MODO_QA=true returns the OTP in the HTTP response")
+        if self.phone_otp_secret in ("", DEV_PHONE_OTP_SECRET):
+            problems.append("PHONE_OTP_SECRET is unset (public dev constant in use)")
+        if self.attachment_signing_secret in ("", DEV_ATTACHMENT_SECRET):
+            problems.append("ATTACHMENT_SIGNING_SECRET is unset (public dev constant in use)")
+        if not self.cookie_secure:
+            problems.append("COOKIE_SECURE=false")
+        if self.module_mode("security") == "http" and self.security_expected_issuer in (
+            "",
+            DEFAULT_SECURITY_ISSUER,
+        ):
+            problems.append("SECURITY_EXPECTED_ISSUER is missing (default placeholder in use)")
+        urls = {
+            "FRONTEND_BASE_URL": self.frontend_base_url,
+            "ATTACHMENT_PUBLIC_BASE_URL": self.attachment_public_base_url,
+            **{f"ALLOWED_ORIGINS[{o}]": o for o in self.allowed_origins},
+        }
+        module_urls = {
+            "security": ("SECURITY_BASE_URL", self.security_base_url),
+            "products": ("PRODUCTS_BASE_URL", self.products_base_url),
+            "sales": ("SALES_BASE_URL", self.sales_base_url),
+            "dispatch": ("DISPATCH_BASE_URL", self.dispatch_base_url),
+        }
+        for module, (name, url) in module_urls.items():
+            if self.module_mode(module) == "http":
+                urls[name] = url
+        if self.module_mode("sales") == "http":
+            urls["POSTVENTA_BASE_URL"] = self.postventa_base_url
+        for name, url in urls.items():
+            if _is_local_url(url):
+                problems.append(f"{name} points to localhost")
+        if self.module_mode("security") == "fake":
+            problems.append("fake Seguridad accepts any credentials")
+        return problems
+
 
 def _origins(name: str, default: str) -> tuple[str, ...]:
     raw = os.getenv(name, default)
     return tuple(origin.strip().rstrip("/").lower() for origin in raw.split(",") if origin.strip())
+
+
+def _is_local_url(url: str) -> bool:
+    return (urlparse(url).hostname or "").lower() in ("localhost", "127.0.0.1", "0.0.0.0", "::1")
 
 
 def _is_onrender_host(url: str) -> bool:
@@ -208,9 +258,42 @@ def _is_onrender_host(url: str) -> bool:
     return host == "onrender.com" or host.endswith(".onrender.com")
 
 
+def warn_unsafe_defaults(settings: Settings, log) -> None:
+    """One startup WARNING listing every development-only setting outside production."""
+    if settings.is_production:
+        return
+    problems = settings.unsafe_defaults()
+    if problems:
+        log.warning(
+            "APP_ENV=%s: development-only settings in use (set APP_ENV=production to enforce): %s",
+            settings.app_env,
+            "; ".join(problems),
+        )
+
+
+def _require_production_safe(settings: Settings) -> None:
+    """Refuse to boot in production with development defaults (the fake Seguridad has its own opt-in)."""
+    if not settings.is_production:
+        return
+    problems = [
+        p for p in settings.unsafe_defaults() if not p.startswith("fake Seguridad")
+    ]
+    if problems:
+        raise ValueError(
+            "Refusing to start with APP_ENV=production and unsafe settings: " + "; ".join(problems)
+        )
+
+
 @lru_cache
 def get_settings() -> Settings:
+    settings = _build_settings()
+    _require_production_safe(settings)
+    return settings
+
+
+def _build_settings() -> Settings:
     app_env = _app_env()
+    production = app_env in PRODUCTION_ENVIRONMENTS
     require_phone_verification = _optional_flag("REQUIRE_PHONE_VERIFICATION")
     save_address_enabled = _optional_flag("CHECKOUT_SAVE_ADDRESS_ENABLED")
     return Settings(
@@ -235,7 +318,7 @@ def get_settings() -> Settings:
         sales_mode=_module_mode_override("sales"),
         dispatch_mode=_module_mode_override("dispatch"),
         security_base_url=os.getenv("SECURITY_BASE_URL", "http://localhost:4010").strip().rstrip("/"),
-        security_expected_issuer=os.getenv("SECURITY_EXPECTED_ISSUER", "auth-service").strip() or "auth-service",
+        security_expected_issuer=os.getenv("SECURITY_EXPECTED_ISSUER", DEFAULT_SECURITY_ISSUER).strip() or DEFAULT_SECURITY_ISSUER,
         security_client_secret=os.getenv("SECURITY_CLIENT_SECRET", "").strip(),
         security_client_id=os.getenv("SECURITY_CLIENT_ID", "modulo-chatbot").strip() or "modulo-chatbot",
         products_base_url=os.getenv("PRODUCTS_BASE_URL", "http://localhost:4011").strip().rstrip("/"),
@@ -282,10 +365,11 @@ def get_settings() -> Settings:
         checkout_save_address_enabled=(
             save_address_enabled if save_address_enabled is not None else True
         ),
+        # Production never falls back to another secret: each key must be set on its own.
         phone_otp_secret=(
             os.getenv("PHONE_OTP_SECRET", "").strip()
-            or os.getenv("SECURITY_CLIENT_SECRET", "").strip()
-            or "dev-phone-otp-secret"
+            or ("" if production else os.getenv("SECURITY_CLIENT_SECRET", "").strip())
+            or DEV_PHONE_OTP_SECRET
         ),
         phone_otp_ttl_seconds=_number("PHONE_OTP_TTL_SECONDS", "300", int, minimum=30),
         phone_otp_max_attempts=_number("PHONE_OTP_MAX_ATTEMPTS", "3", int, minimum=1),
@@ -300,9 +384,9 @@ def get_settings() -> Settings:
         ),
         attachment_signing_secret=(
             os.getenv("ATTACHMENT_SIGNING_SECRET", "").strip()
-            or os.getenv("PHONE_OTP_SECRET", "").strip()
-            or os.getenv("SECURITY_CLIENT_SECRET", "").strip()
-            or "dev-attachment-secret"
+            or ("" if production else os.getenv("PHONE_OTP_SECRET", "").strip())
+            or ("" if production else os.getenv("SECURITY_CLIENT_SECRET", "").strip())
+            or DEV_ATTACHMENT_SECRET
         ),
         attachment_signed_url_ttl_seconds=_number(
             "ATTACHMENT_SIGNED_URL_TTL_SECONDS", "300", int, minimum=30
