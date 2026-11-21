@@ -50,3 +50,7 @@ class PaymentAttemptEntity:
     created_at: datetime
     reason: str | None = None
     transaction_id: str | None = None
+
+
+class PaymentConflictError(Exception):
+    """A concurrent payment already approved this checkout (unique approved attempt)."""

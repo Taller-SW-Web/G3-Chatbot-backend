@@ -86,6 +86,10 @@ def test_env_reads_app_env_and_opt_in(monkeypatch, clean_settings):
     with pytest.raises(ValueError, match="ALLOW_FAKE_SECURITY"):
         get_settings()
     get_settings.cache_clear()
+    # Opt-in parsing only; the other production guards are covered in test_production_settings.py.
+    monkeypatch.setattr(
+        "src.shared.infrastructure.config.settings._require_production_safe", lambda settings: None
+    )
     monkeypatch.setenv("ALLOW_FAKE_SECURITY", "true")
     assert get_settings().allow_fake_security is True
 

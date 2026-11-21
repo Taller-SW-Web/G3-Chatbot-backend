@@ -36,6 +36,7 @@ from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
 from src.shared.infrastructure.di.capabilities import (
     CHECKOUT_DOCUMENT,
+    CHECKOUT_EXPIRY,
     FEEDBACK_NOTIFIER,
     ORDER_CONFIRMATION,
     OUTBOX_PROCESSOR,
@@ -96,6 +97,15 @@ def _notification_service(session: AsyncSession):
 def provide_checkout_service(
     session: AsyncSession = Depends(get_session),
 ) -> ManageCheckoutUseCase:
+    return _build_checkout_service(session)
+
+
+def provide_checkout_expirer(session: AsyncSession) -> ManageCheckoutUseCase:
+    """Expiry sweeper (`ExpirarCheckouts`): the same use case, driven by the worker loop."""
+    return _build_checkout_service(session)
+
+
+def _build_checkout_service(session: AsyncSession) -> ManageCheckoutUseCase:
     settings = get_settings()
     cart_repositories = provide_cart_repositories(session)
     return ManageCheckoutUseCase(
@@ -159,16 +169,19 @@ def configure(container) -> None:
     """Checkout exposes the checkout document and the outbox processor."""
     container.register(CHECKOUT_DOCUMENT, CheckoutPostgresAdapter)
     container.register(OUTBOX_PROCESSOR, provide_outbox_processor)
+    container.register(CHECKOUT_EXPIRY, provide_checkout_expirer)
 
 
 __all__ = [
     "CHECKOUT_DOCUMENT",
+    "CHECKOUT_EXPIRY",
     "MODULE_ID",
     "ORDER_CONFIRMATION",
     "OUTBOX_PROCESSOR",
     "REQUIRED_CAPABILITIES",
     "build_router",
     "configure",
+    "provide_checkout_expirer",
     "provide_checkout_service",
     "provide_checkout_snapshot",
     "provide_confirmation_outbox",

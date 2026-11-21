@@ -188,6 +188,8 @@ async def test_post_checkout_stale_cart_returns_409_with_summary(test_app, mock_
     ("CARRITO_VACIO", 409),
     ("SIN_COBERTURA", 422),
     ("MODULO_NO_DISPONIBLE", 503),
+    ("STOCK_INSUFICIENTE", 409),
+    ("ERROR_VENTAS", 503),
 ])
 async def test_post_checkout_contract_errors_use_problem_json(test_app, mock_service, code, status):
     mock_service.create_checkout.side_effect = CheckoutError(code, "Invalid checkout")
@@ -314,3 +316,19 @@ async def test_process_payment_expired_410(test_app, mock_service):
         assert res.status_code == 410
         data = res.json()
         assert data["code"] == "CHECKOUT_EXPIRADO"
+
+
+@pytest.mark.asyncio
+async def test_process_payment_response_derives_resultado_from_attempt(test_app, mock_service):
+    chk_id = uuid.uuid4()
+    mock_service.process_payment.return_value = PaymentAttempt(
+        id=uuid.uuid4(), checkout_id=chk_id, idempotency_key="k", result="REJECTED",
+        brand="VISA", last4="1111", amount=10.0,
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_app), base_url="http://test") as client:
+        res = await client.post(
+            f"/api/v1/checkout/{chk_id}/pago",
+            headers={"Idempotency-Key": "k"},
+            json={"numeroTarjeta": "4111", "titular": "A B", "vencimiento": "12/28", "cvv": "123"},
+        )
+    assert res.json()["resultado"] == "RECHAZADO"

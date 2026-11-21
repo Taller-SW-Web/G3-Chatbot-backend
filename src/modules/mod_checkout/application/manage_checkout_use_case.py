@@ -14,6 +14,7 @@ from src.modules.mod_checkout.adapters.payment_simulator_adapter import CardVali
 from src.modules.mod_checkout.domain.checkout import CheckoutStatus, NewCheckout
 from src.modules.mod_checkout.domain.payment_attempt import (
     NewPaymentAttempt,
+    PaymentConflictError,
     PaymentRejectReason,
     PaymentResult,
 )
@@ -577,18 +578,78 @@ class ManageCheckoutUseCase:
         if not row or row.customer_id != customer_id:
             raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
 
-        now = datetime.now(timezone.utc)
-        if row.status == CheckoutStatus.PENDING_PAYMENT.value and now > row.expires_at:
-            await self.checkouts.marcar_estado(row.id, CheckoutStatus.EXPIRED.value)
-            await _safe_call(self.carts, "cambiar_estado", row.cart_id, "ACTIVE")
-            ord_row = await _safe_call(self.orders, "obtener_por_checkout_id", row.id)
-            if ord_row and getattr(ord_row, "order_id", None):
-                await _safe_call(self.orders, "actualizar_estado", ord_row.order_id, "CANCELLED")
-            if self.uow:
-                await _safe_call(self.uow, "commit")
-            row.status = CheckoutStatus.EXPIRED.value
+        if row.status == CheckoutStatus.PENDING_PAYMENT.value and datetime.now(timezone.utc) > row.expires_at:
+            if await self.expire_checkout(row.id):
+                row.status = CheckoutStatus.EXPIRED.value
 
         return row
+
+    async def _apply_expiry(self, row: Any) -> None:
+        """Single expiry routine (caller holds the row lock and commits).
+
+        Marks the checkout EXPIRED, releases the cart, cancels the local order and always
+        enqueues the Ventas cancellation so the stock reservation is not leaked.
+        """
+        await self.checkouts.marcar_estado(row.id, CheckoutStatus.EXPIRED.value)
+        await _safe_call(self.carts, "cambiar_estado", row.cart_id, "ACTIVE")
+        ord_row = await _safe_call(self.orders, "obtener_por_checkout_id", row.id)
+        order_id = getattr(ord_row, "order_id", None) if ord_row else None
+        if not order_id and isinstance(row.summary, dict):
+            order_id = row.summary.get("orderId")
+        if not order_id:
+            return
+        if ord_row:
+            await _safe_call(self.orders, "actualizar_estado", order_id, "CANCELLED")
+        if self.outbox:
+            await _safe_call(
+                self.outbox,
+                "guardar",
+                NewOutboxTask(
+                    type="REQUEST_CANCELLATION",
+                    payload={
+                        "order_id": order_id,
+                        "motivo": "PAGO_NO_COMPLETADO",
+                        "comentario": "Checkout expirado por tiempo límite",
+                    },
+                ),
+            )
+
+    async def expire_checkout(self, checkout_id: uuid.UUID) -> bool:
+        """Expire one checkout under its row lock; False when it is no longer due."""
+        row = await self.checkouts.obtener_por_id(checkout_id, for_update=True)
+        if (
+            row is None
+            or row.status != CheckoutStatus.PENDING_PAYMENT.value
+            or datetime.now(timezone.utc) <= row.expires_at
+        ):
+            return False
+        await self._apply_expiry(row)
+        if self.uow:
+            await _safe_call(self.uow, "commit")
+        return True
+
+    async def expire_due_checkouts(self, limit: int = 50) -> int:
+        """Sweeper entry point (SPEC-14 `ExpirarCheckouts`): expires due rows, skipping locked ones."""
+        due = await self.checkouts.listar_vencidos_para_expirar(datetime.now(timezone.utc), limit)
+        for row in due:
+            await self._apply_expiry(row)
+        if due and self.uow:
+            await _safe_call(self.uow, "commit")
+        return len(due)
+
+    async def _replay_existing_attempt(self, existing_attempt: Any, input_data: ProcessPaymentInput) -> Any | None:
+        """Outcome of an already-processed Idempotency-Key, or None when the key is new."""
+        if not isinstance(getattr(existing_attempt, "checkout_id", None), uuid.UUID):
+            return None
+        existing_checkout = await self.checkouts.obtener_por_id(existing_attempt.checkout_id)
+        if not existing_checkout or existing_checkout.customer_id != input_data.customer_id:
+            raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
+        if existing_attempt.checkout_id != input_data.checkout_id:
+            raise CheckoutError("CONFLICTO", "Idempotency-Key ya usada en otro checkout")
+        if getattr(existing_attempt, "result", None) != PaymentResult.APPROVED.value:
+            # Replay of a declined/errored attempt must report the original outcome, never success.
+            raise self._replayed_failure(existing_attempt, existing_checkout)
+        return existing_attempt
 
     async def process_payment(self, input_data: ProcessPaymentInput) -> Any:
         if not input_data.idempotency_key:
@@ -596,38 +657,27 @@ class ManageCheckoutUseCase:
 
         # 1. Idempotencia real: buscar por clave antes de ejecutar
         existing_attempt = await _safe_call(self.payment_attempts, "obtener_por_idempotency_key", input_data.idempotency_key)
-        if isinstance(getattr(existing_attempt, "checkout_id", None), uuid.UUID):
-            existing_checkout = await self.checkouts.obtener_por_id(existing_attempt.checkout_id)
-            if not existing_checkout or existing_checkout.customer_id != input_data.customer_id:
-                raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
-            if existing_attempt.checkout_id != input_data.checkout_id:
-                raise CheckoutError("CONFLICTO", "Idempotency-Key ya usada en otro checkout")
-            return existing_attempt
+        replay = await self._replay_existing_attempt(existing_attempt, input_data)
+        if replay is not None:
+            return replay
 
-        row = await self.checkouts.obtener_por_id(input_data.checkout_id)
+        # Row lock for the rest of the transaction: concurrent payments of one checkout serialize here.
+        row = await self.checkouts.obtener_por_id(input_data.checkout_id, for_update=True)
         if not row or row.customer_id != input_data.customer_id:
             raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
+
+        # A request with the same key may have won the lock first: re-check under the lock.
+        existing_attempt = await _safe_call(self.payment_attempts, "obtener_por_idempotency_key", input_data.idempotency_key)
+        replay = await self._replay_existing_attempt(existing_attempt, input_data)
+        if replay is not None:
+            return replay
 
         now = datetime.now(timezone.utc)
         if row.status == CheckoutStatus.EXPIRED.value or (
             row.status == CheckoutStatus.PENDING_PAYMENT.value and now > row.expires_at
         ):
             if row.status != CheckoutStatus.EXPIRED.value:
-                await self.checkouts.marcar_estado(row.id, CheckoutStatus.EXPIRED.value)
-                await _safe_call(self.carts, "cambiar_estado", row.cart_id, "ACTIVE")
-                ord_row = await _safe_call(self.orders, "obtener_por_checkout_id", row.id)
-                if ord_row and getattr(ord_row, "order_id", None):
-                    await _safe_call(self.orders, "actualizar_estado", ord_row.order_id, "CANCELLED")
-                    if self.outbox:
-                        outbox_entry = NewOutboxTask(
-                            type="REQUEST_CANCELLATION",
-                            payload={
-                                "order_id": ord_row.order_id,
-                                "motivo": "PAGO_NO_COMPLETADO",
-                                "comentario": "Checkout expirado por tiempo límite",
-                            },
-                        )
-                        await _safe_call(self.outbox, "guardar", outbox_entry)
+                await self._apply_expiry(row)
                 if self.uow:
                     await _safe_call(self.uow, "commit")
             raise CheckoutError("CHECKOUT_EXPIRADO", "El checkout venció hace más de 15 minutos")
@@ -696,7 +746,10 @@ class ManageCheckoutUseCase:
                 amount=row.total,
                 transaction_id=payment_res.transaction_id,
             )
-            saved_attempt = await self.payment_attempts.guardar(attempt)
+            try:
+                saved_attempt = await self.payment_attempts.guardar(attempt)
+            except PaymentConflictError as exc:
+                raise CheckoutError("CONFLICTO", "El checkout ya tiene un pago aprobado") from exc
 
             # Encolar notificación a Ventas en outbox (SPEC-15 Req. 2)
             if order_id and self.outbox:
@@ -738,8 +791,15 @@ class ManageCheckoutUseCase:
             return saved_attempt
 
         # 5. Caso rechazado o error
-        await self.checkouts.incrementar_intentos(row.id)
-        current_attempts = (row.payment_attempts or 0) + 1
+        updated = await self.checkouts.incrementar_intentos(row.id)
+        if updated is None:
+            raise CheckoutError(
+                "PAGO_RECHAZADO",
+                "Se agotaron los intentos de pago permitidos",
+                {"motivo": "INTENTOS_AGOTADOS", "intentosRestantes": 0},
+            )
+        counted = getattr(updated, "payment_attempts", None)
+        current_attempts = counted if isinstance(counted, int) else (row.payment_attempts or 0) + 1
         remaining = max(0, 3 - current_attempts)
 
         if current_attempts >= 3:
@@ -772,22 +832,31 @@ class ManageCheckoutUseCase:
         if self.uow:
             await _safe_call(self.uow, "commit")
 
+        raise self._failure_error(payment_res.result, payment_res.reason, remaining)
+
+    @staticmethod
+    def _failure_error(result: str | None, reason: str | None, remaining: int) -> CheckoutError:
         motivo_map = {
             PaymentRejectReason.INSUFFICIENT_FUNDS.value: "FONDOS_INSUFICIENTES",
             PaymentRejectReason.DECLINED_BY_ISSUER.value: "RECHAZADO_POR_EMISOR",
             PaymentRejectReason.PROCESSING_ERROR.value: "ERROR_PROCESAMIENTO",
         }
-        motivo_es = motivo_map.get(payment_res.reason or "", payment_res.reason or "RECHAZADO")
+        motivo_es = motivo_map.get(reason or "", reason or "RECHAZADO")
 
-        if payment_res.result == PaymentResult.ERROR.value:
-            raise CheckoutError(
+        if result == PaymentResult.ERROR.value:
+            return CheckoutError(
                 "ERROR_PROCESAMIENTO",
                 "Ocurrió un error temporal al procesar el pago. Intente de nuevo.",
                 {"motivo": motivo_es, "intentosRestantes": remaining},
             )
 
-        raise CheckoutError(
+        return CheckoutError(
             "PAGO_RECHAZADO",
             "Tu tarjeta fue rechazada. Puedes intentar con otra tarjeta.",
             {"motivo": motivo_es, "intentosRestantes": remaining},
         )
+
+    @classmethod
+    def _replayed_failure(cls, attempt: Any, checkout: Any) -> CheckoutError:
+        remaining = max(0, 3 - (getattr(checkout, "payment_attempts", 0) or 0))
+        return cls._failure_error(getattr(attempt, "result", None), getattr(attempt, "reason", None), remaining)

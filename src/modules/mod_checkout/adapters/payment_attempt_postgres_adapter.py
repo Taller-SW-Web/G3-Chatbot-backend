@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.mod_checkout.domain.payment_attempt import NewPaymentAttempt
+from src.modules.mod_checkout.domain.payment_attempt import NewPaymentAttempt, PaymentConflictError
 from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
 
 
@@ -32,11 +32,13 @@ class PaymentAttemptPostgresAdapter:
         self.session.add(row)
         try:
             await self.session.flush()
-        except IntegrityError:
+        except IntegrityError as exc:
             await self.session.rollback()
             existing = await self.obtener_por_idempotency_key(row.idempotency_key)
             if existing is not None:
                 return existing
+            if "uq_payment_attempt_one_approved" in str(exc.orig):
+                raise PaymentConflictError("Checkout already has an approved payment") from exc
             raise
         return row
 

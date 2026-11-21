@@ -47,6 +47,10 @@ def test_production_public_requires_explicit_allowance(environment, allowed):
 @pytest.mark.parametrize("value,allowed", [(None, False), ("false", False), ("0", False),
                                         ("true", True), (" TRUE ", True), ("yes", True), ("1", True)])
 def test_public_allowance_environment_parsing(monkeypatch, value, allowed):
+    # This test covers flag parsing only; the production-safety guard has its own tests.
+    monkeypatch.setattr(
+        "src.shared.infrastructure.config.settings._require_production_safe", lambda settings: None
+    )
     monkeypatch.setenv("APP_ENV", " Production ")
     monkeypatch.setenv("SECURITY_MODE", "http")
     monkeypatch.setenv("PRODUCTS_AUTH_MODE", " PUBLIC ")

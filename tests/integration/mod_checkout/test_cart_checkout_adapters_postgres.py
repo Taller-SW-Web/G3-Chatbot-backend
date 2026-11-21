@@ -209,10 +209,8 @@ async def test_checkout_consultas_estado_e_intentos(postgres_session):
     for esperado in (1, 2, 3):
         assert (await adapter.incrementar_intentos(checkout.id)).payment_attempts == esperado
 
-    # CHECK payment_attempts BETWEEN 0 AND 3: el cuarto intento lo rechaza la BD.
-    # Deja la sesión en error, así que va al final del test.
-    with pytest.raises(IntegrityError):
-        await adapter.incrementar_intentos(checkout.id)
+    # El tope de 3 se aplica en el UPDATE atomico: el cuarto intento no incrementa y devuelve None.
+    assert await adapter.incrementar_intentos(checkout.id) is None
 
 
 async def test_latest_document_usa_el_snapshot_del_ultimo_contacto(postgres_session):

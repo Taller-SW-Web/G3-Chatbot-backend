@@ -4927,6 +4927,7 @@
     },
     "/health": {
       "get": {
+        "description": "Liveness: deliberately does not touch the database.",
         "operationId": "health_health_get",
         "responses": {
           "200": {
@@ -4943,6 +4944,26 @@
           }
         },
         "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "description": "Readiness: 200 only when the database answers `SELECT 1`, 503 otherwise.",
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready",
         "tags": [
           "health"
         ]

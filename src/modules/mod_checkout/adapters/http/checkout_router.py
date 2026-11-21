@@ -41,6 +41,9 @@ class ProcessPaymentRequest(BaseModel):
     cvv: str
 
 
+_RESULT_LABELS = {"APPROVED": "APROBADO", "REJECTED": "RECHAZADO", "ERROR": "ERROR"}
+
+
 def _translate_error(err: CheckoutError) -> ProblemError:
     status_map = {
         "REQUIERE_SESION": 401,
@@ -58,6 +61,11 @@ def _translate_error(err: CheckoutError) -> ProblemError:
         "SIN_COBERTURA": 422,
         "MODULO_NO_DISPONIBLE": 503,
         "CONFLICTO": 409,
+        # Contract 2.5: Ventas stock second barrier is 409. ERROR_VENTAS is not defined
+        # in the contract; 503 follows the other upstream failures.
+        "STOCK_INSUFICIENTE": 409,
+        "PRODUCTO_NO_DISPONIBLE": 409,
+        "ERROR_VENTAS": 503,
     }
     http_status = status_map.get(err.code, 500)
     title_map = {
@@ -211,7 +219,7 @@ def create_checkout_router(
                 "id": str(attempt.id),
                 "checkoutId": str(attempt.checkout_id),
                 "orderId": order_id,
-                "resultado": "APROBADO",
+                "resultado": _RESULT_LABELS.get(attempt.result, attempt.result),
                 "marca": attempt.brand,
                 "ultimos4": attempt.last4,
                 "monto": float(attempt.amount),

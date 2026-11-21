@@ -14,11 +14,13 @@ OUTBOX_PROCESSOR = "outbox_processor"
 ACTION_SCOPE = "action_scope"
 ATTACHMENT_CLEANUP = "attachment_cleanup"
 FEEDBACK_NOTIFIER = "feedback_notifier"
+CHECKOUT_EXPIRY = "checkout_expiry"
 
 __all__ = [
     "ACTION_SCOPE",
     "ATTACHMENT_CLEANUP",
     "CHECKOUT_DOCUMENT",
+    "CHECKOUT_EXPIRY",
     "CONVERSATION_CONTEXT",
     "DISPATCH_PORT",
     "FEEDBACK_NOTIFIER",

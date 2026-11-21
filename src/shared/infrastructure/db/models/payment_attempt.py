@@ -72,4 +72,11 @@ class PaymentAttempt(Base):
         # Intentos de un checkout. Cubre la FK.
         Index("ix_payment_attempt_checkout_id", "checkout_id"),
         Index("uq_payment_attempt_idempotency_key", "idempotency_key", unique=True),
+        # Un solo intento aprobado por checkout, incluso bajo pagos concurrentes.
+        Index(
+            "uq_payment_attempt_one_approved",
+            "checkout_id",
+            unique=True,
+            postgresql_where=text("result = 'APPROVED'"),
+        ),
     )

@@ -8,12 +8,14 @@ del checkout, el intento de pago y la tarea outbox comparten transaccion
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.mod_checkout.domain.checkout import NewCheckout
 from src.shared.infrastructure.db.models.checkout import Checkout
+
+MAX_PAYMENT_ATTEMPTS = 3
 
 
 class CheckoutPostgresAdapter:
@@ -48,8 +50,12 @@ class CheckoutPostgresAdapter:
             return existing
         return row
 
-    async def obtener_por_id(self, id: uuid.UUID) -> Checkout | None:
+    async def obtener_por_id(self, id: uuid.UUID, *, for_update: bool = False) -> Checkout | None:
+        """`for_update` takes a row lock (SELECT ... FOR UPDATE) until the unit of work ends."""
         stmt = select(Checkout).where(Checkout.id == id)
+        if for_update:
+            # populate_existing: a waiter must see what the lock holder committed.
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 
@@ -77,6 +83,18 @@ class CheckoutPostgresAdapter:
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 
+    async def listar_vencidos_para_expirar(self, ahora: datetime, limite: int) -> list[Checkout]:
+        """PENDING_PAYMENT rows past `expires_at`, locked with SKIP LOCKED (safe across replicas)."""
+        stmt = (
+            select(Checkout)
+            .where(Checkout.status == "PENDING_PAYMENT", Checkout.expires_at < ahora)
+            .order_by(Checkout.expires_at)
+            .limit(limite)
+            .with_for_update(skip_locked=True)
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
     async def marcar_estado(self, id: uuid.UUID, status: str) -> Checkout | None:
         row = await self.obtener_por_id(id)
         if row is None:
@@ -87,14 +105,22 @@ class CheckoutPostgresAdapter:
         return row
 
     async def incrementar_intentos(self, id: uuid.UUID) -> Checkout | None:
-        # El CHECK (payment_attempts BETWEEN 0 AND 3) topea en BD.
-        row = await self.obtener_por_id(id)
-        if row is None:
+        """Atomic `payment_attempts + 1`, capped at 3; None when the cap was already reached."""
+        res = await self.session.execute(
+            update(Checkout)
+            .where(Checkout.id == id, Checkout.payment_attempts < MAX_PAYMENT_ATTEMPTS)
+            .values(payment_attempts=Checkout.payment_attempts + 1, updated_at=datetime.now(timezone.utc))
+            .returning(Checkout.id)
+            .execution_options(synchronize_session=False)
+        )
+        if res.scalar_one_or_none() is None:
             return None
-        row.payment_attempts = (row.payment_attempts or 0) + 1
-        row.updated_at = datetime.now(timezone.utc)
-        await self.session.flush()
-        return row
+        return await self.obtener_por_id_fresco(id)
+
+    async def obtener_por_id_fresco(self, id: uuid.UUID) -> Checkout | None:
+        stmt = select(Checkout).where(Checkout.id == id).execution_options(populate_existing=True)
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
 
     async def latest_document(self, customer_id: uuid.UUID) -> dict[str, str] | None:
         """`summary.contacto` of the most recent checkout of the customer (SPEC-03 profile).
