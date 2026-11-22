@@ -30,6 +30,7 @@ class ReturnsServicePort(Protocol):
         content_type: str,
         content: bytes,
         conversation_id: UUID | None = None,
+        customer_id: UUID | None = None,
     ) -> dict[str, Any]:
         ...
 
@@ -92,6 +93,7 @@ def create_returns_router(service_provider: Callable[..., ReturnsServicePort]) -
                 content_type=content_type,
                 content=content,
                 conversation_id=conversacionId,
+                customer_id=caller.customer,
             )
             return EvidenceResponse.model_validate(raw)
         except Exception as exc:

@@ -3,7 +3,7 @@
 The chatbot exposes its own `camelCase` API and translates to the G5 enums
 documented in `ventas.yaml` 1.10.0 / `postventa.yaml` 1.6.0.
 """
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -59,17 +59,22 @@ RETURN_REASON_TO_G5: dict[str, str] = {
     "OTRO": "OTRO",
 }
 
-CLAIM_REASON_TO_G5: dict[str, str] = {
-    "PRODUCTO_DEFECTUOSO": "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
-    "PRODUCTO_EQUIVOCADO": "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
-    "PEDIDO_INCOMPLETO": "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
-    "INCUMPLIMIENTO_PLAZO_ENTREGA": "INCUMPLIMIENTO_PLAZO_ENTREGA",
-    "NO_RECIBIDO": "INCUMPLIMIENTO_PLAZO_ENTREGA",
-    "COBRO_INCORRECTO": "COBRO_INDEBIDO_O_NO_RECONOCIDO",
-    "ATENCION": "ATENCION_INADECUADA",
-    # G5 does not expose OTRO; their recommended closest value is ATENCION_INADECUADA.
-    "OTRO": "ATENCION_INADECUADA",
-}
+CLAIM_REASONS: frozenset[str] = frozenset(
+    {
+        "INCUMPLIMIENTO_PLAZO_ENTREGA",
+        "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
+        "COBRO_INDEBIDO_O_NO_RECONOCIDO",
+        "ATENCION_INADECUADA",
+        "INCUMPLIMIENTO_GARANTIA",
+    }
+)
+ClaimReason = Literal[
+    "INCUMPLIMIENTO_PLAZO_ENTREGA",
+    "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
+    "COBRO_INDEBIDO_O_NO_RECONOCIDO",
+    "ATENCION_INADECUADA",
+    "INCUMPLIMIENTO_GARANTIA",
+]
 
 RETURN_TYPES = {"CAMBIO", "DEVOLUCION_DINERO"}
 CLAIM_TYPES = {"RECLAMO", "QUEJA"}
@@ -82,8 +87,11 @@ def to_g5_return_reason(value: str) -> str:
 
 
 def to_g5_claim_reason(value: str) -> str:
+    """Only the five G5 values are accepted; legacy aliases are rejected (not translated)."""
     normalized = (value or "").strip().upper()
-    return CLAIM_REASON_TO_G5.get(normalized, normalized)
+    if normalized not in CLAIM_REASONS:
+        raise ValueError("Motivo de reclamo inválido")
+    return normalized
 
 
 def to_g5_return_type(value: str) -> str:
@@ -145,6 +153,24 @@ class CreateReturnRequest(BaseModel):
         return to_g5_return_reason(value)
 
 
+class ReturnItemResponseDTO(BaseModel):
+    """G5 item echoed back: lenient, so extra G5 fields never turn a created return into a 503."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    productoId: str
+    cantidad: int
+
+
+class ReturnEvidenceResponseDTO(BaseModel):
+    """G5 evidence echoed back: no request-side limits (url length) and extra fields ignored."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    tipo: str
+    url: str
+
+
 class ReturnSummaryDTO(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -175,9 +201,9 @@ class ReturnDetailResponse(BaseModel):
     estado: str
     motivo: str
     descripcion: str | None = None
-    items: list[ReturnItemDTO] = Field(default_factory=list)
+    items: list[ReturnItemResponseDTO] = Field(default_factory=list)
     resolucion: dict[str, Any] | None = None
-    evidencias: list[ReturnEvidenceDTO] = Field(default_factory=list)
+    evidencias: list[ReturnEvidenceResponseDTO] = Field(default_factory=list)
     fechaRegistro: str
     historial: list[dict[str, Any]] = Field(default_factory=list)
     recepciones: list[dict[str, Any]] = Field(default_factory=list)
@@ -197,7 +223,7 @@ class CreateClaimRequest(BaseModel):
 
     pedidoId: str | None = Field(default=None, min_length=1)
     tipo: str = Field(..., min_length=1)
-    motivo: str = Field(..., min_length=1)
+    motivo: ClaimReason
     detalle: str = Field(..., min_length=20, max_length=1000)
     consumidor: ClaimConsumerDTO
     solucionEsperada: str | None = Field(default=None, max_length=500)
@@ -212,10 +238,10 @@ class CreateClaimRequest(BaseModel):
             raise ValueError("Tipo de reclamo inválido")
         return normalized
 
-    @field_validator("motivo")
+    @field_validator("motivo", mode="before")
     @classmethod
-    def _normalize_reason(cls, value: str) -> str:
-        return to_g5_claim_reason(value)
+    def _normalize_reason(cls, value: Any) -> str:
+        return to_g5_claim_reason(str(value or ""))
 
 
 class ClaimSummaryDTO(BaseModel):
@@ -266,7 +292,7 @@ class ClaimDetailResponse(BaseModel):
 class CreateCsatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    puntuacion: int = Field(..., ge=1, le=5)
+    puntuacion: Literal[1, 3, 5]
     comentario: str | None = Field(default=None, max_length=1000)
 
 

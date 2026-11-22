@@ -51,7 +51,7 @@ def claim_payload(order_id, **extra):
     return {
         "pedidoId": order_id,
         "tipo": "RECLAMO",
-        "motivo": "PRODUCTO_DEFECTUOSO",
+        "motivo": "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
         "detalle": "La suela se despegó al primer uso.",
         "consumidor": {
             "nombreCompleto": "Ana",
@@ -85,7 +85,7 @@ def test_open_claim_with_same_order_and_reason_is_409_with_the_existing_code():
         )
         await svc.create_claim(
             customer_id=CUSTOMER, holder_token=HOLDER,
-            payload=claim_payload(order["pedidoId"], motivo="PRODUCTO_EQUIVOCADO"),
+            payload=claim_payload(order["pedidoId"], motivo="PRODUCTO_DEFECTUOSO_O_INCORRECTO"),
             idempotency_key="claim-dup-2",
         )
         await svc.create_claim(

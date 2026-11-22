@@ -16,6 +16,7 @@ from src.modules.mod_postventa.application.postventa_service import PostventaSer
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
 from src.shared.infrastructure.http.router_options import RouterOptions
+from src.shared.infrastructure.persistence.conversation_postgres_adapter import ConversationPostgresAdapter
 from src.shared.infrastructure.persistence.order_ref_postgres_adapter import OrderRefPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
@@ -44,6 +45,7 @@ def provide_postventa_service(session: AsyncSession = Depends(get_session)):
         return_refs=None if fake else ReturnRefPostgresAdapter(session),
         evidence=None if fake else EvidencePostgresAdapter(session),
         order_refs=None if fake else OrderRefPostgresAdapter(session),
+        conversations=None if fake else ConversationPostgresAdapter(session),
         uow=SqlAlchemyUnitOfWork(session),
     )
 
