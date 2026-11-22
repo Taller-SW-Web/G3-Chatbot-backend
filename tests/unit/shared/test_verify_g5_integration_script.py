@@ -177,8 +177,10 @@ def test_dry_run_is_default_and_prints_both_services(tmp_path, monkeypatch, caps
 
     out = capsys.readouterr().out
     assert code == 0
-    assert "https://m1.test" in out
-    assert "https://m2.test" in out
+    # Exact-line comparison: a substring test on a URL literal trips CodeQL's
+    # py/incomplete-url-substring-sanitization even in tests.
+    assert any(line == "M1 (pedidos): https://m1.test" for line in out.splitlines())
+    assert any(line == "M2 (postventa): https://m2.test" for line in out.splitlines())
     assert SUBJECT in out
     assert "Cuenta por defecto: 2" in out
     assert "PED-2026-90201" in out
