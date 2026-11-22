@@ -46,6 +46,8 @@ class OrdersServicePort(Protocol):
         *,
         holder_token: str,
         estado: str | None = None,
+        desde: str | None = None,
+        hasta: str | None = None,
         page: int = 1,
         page_size: int = 10,
     ) -> dict[str, Any]:
@@ -139,6 +141,8 @@ def create_orders_router(
     async def list_orders(
         request: Request,
         estado: str | None = Query(default=None),
+        desde: str | None = Query(default=None),
+        hasta: str | None = Query(default=None),
         page: int = Query(default=1, ge=1),
         pageSize: int = Query(default=10, ge=1, le=50),
         caller: CallerIdentity = Depends(require_customer),
@@ -150,6 +154,8 @@ def create_orders_router(
                 caller.customer_id,
                 holder_token=holder_token,
                 estado=estado,
+                desde=desde,
+                hasta=hasta,
                 page=page,
                 page_size=pageSize,
             )

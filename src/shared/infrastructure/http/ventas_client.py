@@ -134,6 +134,8 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
         holder_token: str,
         *,
         estado: str | None = None,
+        desde: str | None = None,
+        hasta: str | None = None,
         page: int = 1,
         page_size: int = 10,
         correlation_id: str | None = None,
@@ -143,6 +145,10 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
         params: dict[str, Any] = {"page": page, "pageSize": page_size}
         if estado:
             params["estado"] = estado
+        if desde:
+            params["desde"] = desde
+        if hasta:
+            params["hasta"] = hasta
 
         response = await self._request(
             "GET",

@@ -583,6 +583,8 @@ class _FakeOrdersService:
         *,
         holder_token: str,
         estado: str | None = None,
+        desde: str | None = None,
+        hasta: str | None = None,
         page: int = 1,
         page_size: int = 10,
     ) -> dict[str, Any]:

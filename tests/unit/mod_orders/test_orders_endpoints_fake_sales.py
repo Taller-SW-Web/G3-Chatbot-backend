@@ -101,3 +101,28 @@ def test_malformed_sales_payload_is_a_controlled_503_not_a_500() -> None:
         response = client.get(path, headers=HEADERS)
         assert response.status_code == 503, path
         assert response.json()["code"] == "SERVICIO_NO_DISPONIBLE"
+
+
+def test_list_orders_forwards_estado_desde_and_hasta() -> None:
+    class RecordingSales(FakeSalesPort):
+        def __init__(self) -> None:
+            super().__init__()
+            self.received: dict[str, Any] = {}
+
+        async def list_customer_orders(self, holder_token: str, **kwargs: Any) -> dict[str, Any]:
+            self.received = {"holder_token": holder_token, **kwargs}
+            return {"items": [], "total": 0, "page": kwargs.get("page", 1), "pageSize": kwargs.get("page_size", 10)}
+
+    sales = RecordingSales()
+    response = _client(sales).get(
+        "/api/v1/pedidos?estado=ENTREGADO&desde=2026-01-01&hasta=2026-12-31&page=2&pageSize=5",
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200, response.text
+    assert sales.received["estado"] == "ENTREGADO"
+    assert sales.received["desde"] == "2026-01-01"
+    assert sales.received["hasta"] == "2026-12-31"
+    assert sales.received["page"] == 2
+    assert sales.received["page_size"] == 5
+    assert sales.received["holder_token"] == HEADERS["Authorization"].removeprefix("Bearer ")

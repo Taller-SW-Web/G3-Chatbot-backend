@@ -48,6 +48,8 @@ class SalesOrderPort(Protocol):
         holder_token: str,
         *,
         estado: str | None = None,
+        desde: str | None = None,
+        hasta: str | None = None,
         page: int = 1,
         page_size: int = 10,
         correlation_id: str | None = None,
