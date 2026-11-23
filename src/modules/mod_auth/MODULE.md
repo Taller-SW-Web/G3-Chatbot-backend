@@ -1,6 +1,6 @@
 # `mod-auth` — Autenticación y cuenta
 
-- **Owner:** @Ankarmin
+- **Owner:** @Taller-SW-Web/chatbot
 - **Backend:** paquete `mod_auth`, `basePath` `/sesion`
 - **Frontend:** carpeta `mod-auth`, rutas `[/cuenta]`, `[/verificar-correo]`
 - **Depende de:** nadie. El contrato de Seguridad (puertos, cliente HTTP, JWKS y

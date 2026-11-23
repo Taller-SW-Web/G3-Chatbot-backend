@@ -1,6 +1,6 @@
 # `mod-catalog` — Catálogo
 
-- **Owner:** @SOoOnny
+- **Owner:** @Taller-SW-Web/chatbot
 - **Backend:** paquete `mod_catalog`, `basePath` `/catalogo`
 - **Frontend:** carpeta `mod-catalog`, rutas `[/]` (tarjetas y bloques de catálogo)
 - **Depende de:** nadie en el backend. Su contrato con Productos (G6) es HTTP,
