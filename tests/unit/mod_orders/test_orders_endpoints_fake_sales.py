@@ -126,3 +126,37 @@ def test_list_orders_forwards_estado_desde_and_hasta() -> None:
     assert sales.received["page"] == 2
     assert sales.received["page_size"] == 5
     assert sales.received["holder_token"] == HEADERS["Authorization"].removeprefix("Bearer ")
+
+
+class _CountingSales(FakeSalesPort):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    async def list_customer_orders(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        self.calls += 1
+        return {"items": [], "total": 0, "page": 1, "pageSize": 10}
+
+
+def test_invalid_desde_is_400_validacion_without_calling_sales() -> None:
+    sales = _CountingSales()
+    response = _client(sales).get("/api/v1/pedidos?desde=2026-13-40", headers=HEADERS)
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["code"] == "VALIDACION"
+    assert any(error["campo"] == "desde" for error in body["errores"])
+    assert sales.calls == 0
+
+
+def test_reversed_date_range_is_400_validacion_without_calling_sales() -> None:
+    sales = _CountingSales()
+    response = _client(sales).get(
+        "/api/v1/pedidos?desde=2026-12-31&hasta=2026-01-01", headers=HEADERS
+    )
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["code"] == "VALIDACION"
+    assert any(error["campo"] == "desde" for error in body["errores"])
+    assert sales.calls == 0
