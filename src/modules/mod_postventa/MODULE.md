@@ -1,6 +1,6 @@
 # `mod-postventa` — Postventa
 
-- **Owner:** @MathiasTL
+- **Owner:** @Taller-SW-Web/chatbot
 - **Backend:** paquete `mod_postventa`, `basePath` `/devoluciones`, `/reclamos`, `/evidencias`, `/pedidos/{id}/csat`
 - **Frontend:** carpeta `mod-postventa`, rutas `[/devolucion]`, `[/reclamo]`
 - **Depende de:** `mod-orders` (solo por `public.py`)

@@ -1,61 +1,61 @@
 {
   "version": 1,
   "updated": "2026-11-23",
-  "ownerDefault": "@Ankarmin",
+  "ownerDefault": "@Taller-SW-Web/chatbot",
   "modules": [
     {
       "id": "mod-auth",
       "name": "Autenticación y cuenta",
-      "owner": "@Ankarmin",
+      "owner": "@Taller-SW-Web/chatbot",
       "dependsOn": [],
       "specs": ["inicio-sesion", "registro-cliente", "validacion-celular", "verificacion-correo"]
     },
     {
       "id": "mod-catalog",
       "name": "Catálogo",
-      "owner": "@SOoOnny",
+      "owner": "@Taller-SW-Web/chatbot",
       "dependsOn": [],
       "specs": ["busqueda-filtrado", "ofertas-promociones", "tarjetas-detalle-producto", "recomendacion"]
     },
     {
       "id": "mod-cart",
       "name": "Carrito",
-      "owner": "@SOoOnny",
+      "owner": "@Taller-SW-Web/chatbot",
       "dependsOn": ["mod-catalog"],
       "specs": ["gestion-carrito", "cupones", "validacion-stock"]
     },
     {
       "id": "mod-shipping",
       "name": "Envío",
-      "owner": "@SOoOnny",
+      "owner": "@Taller-SW-Web/chatbot",
       "dependsOn": ["mod-cart"],
       "specs": ["direccion-cotizacion-envio"]
     },
     {
       "id": "mod-checkout",
       "name": "Checkout y pago",
-      "owner": "@MathiasTL",
+      "owner": "@Taller-SW-Web/chatbot",
       "dependsOn": ["mod-cart", "mod-shipping"],
       "specs": ["checkout-pago", "grabacion-pedido"]
     },
     {
       "id": "mod-orders",
       "name": "Pedidos y seguimiento",
-      "owner": "@MathiasTL",
+      "owner": "@Taller-SW-Web/chatbot",
       "dependsOn": ["mod-checkout"],
       "specs": ["consulta-estado-pedido", "seguimiento-despacho", "notificacion-confirmacion", "grabacion-pedido", "retroalimentacion-cliente"]
     },
     {
       "id": "mod-postventa",
       "name": "Postventa",
-      "owner": "@MathiasTL",
+      "owner": "@Taller-SW-Web/chatbot",
       "dependsOn": ["mod-orders"],
       "specs": ["solicitud-devolucion-cambio", "consulta-devolucion-reembolso", "creacion-reclamo", "consulta-reclamo", "retroalimentacion-cliente"]
     },
     {
       "id": "mod-chat",
       "name": "Chat",
-      "owner": "@Ankarmin",
+      "owner": "@Taller-SW-Web/chatbot",
       "dependsOn": [
         "mod-auth",
         "mod-catalog",
