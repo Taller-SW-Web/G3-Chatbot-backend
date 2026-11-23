@@ -1,49 +1,56 @@
 {
   "version": 1,
-  "updated": "2026-11-21",
+  "updated": "2026-11-23",
   "ownerDefault": "@Ankarmin",
   "modules": [
     {
       "id": "mod-auth",
       "name": "Autenticación y cuenta",
       "owner": "@Ankarmin",
-      "dependsOn": []
+      "dependsOn": [],
+      "specs": ["inicio-sesion", "registro-cliente", "validacion-celular", "verificacion-correo"]
     },
     {
       "id": "mod-catalog",
       "name": "Catálogo",
       "owner": "@SOoOnny",
-      "dependsOn": []
+      "dependsOn": [],
+      "specs": ["busqueda-filtrado", "ofertas-promociones", "tarjetas-detalle-producto", "recomendacion"]
     },
     {
       "id": "mod-cart",
       "name": "Carrito",
       "owner": "@SOoOnny",
-      "dependsOn": ["mod-catalog"]
+      "dependsOn": ["mod-catalog"],
+      "specs": ["gestion-carrito", "cupones", "validacion-stock"]
     },
     {
       "id": "mod-shipping",
       "name": "Envío",
       "owner": "@SOoOnny",
-      "dependsOn": ["mod-cart"]
+      "dependsOn": ["mod-cart"],
+      "specs": ["direccion-cotizacion-envio"]
     },
     {
       "id": "mod-checkout",
       "name": "Checkout y pago",
       "owner": "@MathiasTL",
-      "dependsOn": ["mod-cart", "mod-shipping"]
+      "dependsOn": ["mod-cart", "mod-shipping"],
+      "specs": ["checkout-pago", "grabacion-pedido"]
     },
     {
       "id": "mod-orders",
       "name": "Pedidos y seguimiento",
       "owner": "@MathiasTL",
-      "dependsOn": ["mod-checkout"]
+      "dependsOn": ["mod-checkout"],
+      "specs": ["consulta-estado-pedido", "seguimiento-despacho", "notificacion-confirmacion", "grabacion-pedido", "retroalimentacion-cliente"]
     },
     {
       "id": "mod-postventa",
       "name": "Postventa",
       "owner": "@MathiasTL",
-      "dependsOn": ["mod-orders"]
+      "dependsOn": ["mod-orders"],
+      "specs": ["solicitud-devolucion-cambio", "consulta-devolucion-reembolso", "creacion-reclamo", "consulta-reclamo", "retroalimentacion-cliente"]
     },
     {
       "id": "mod-chat",
@@ -57,7 +64,8 @@
         "mod-checkout",
         "mod-orders",
         "mod-postventa"
-      ]
+      ],
+      "specs": ["motor-conversacion", "adjuntos-imagenes-chat", "retroalimentacion-cliente"]
     }
   ]
 }
