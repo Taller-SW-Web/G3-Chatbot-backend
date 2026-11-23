@@ -1,6 +1,6 @@
 # `mod-shipping` — Envío
 
-- **Owner:** @SOoOnny
+- **Owner:** @Taller-SW-Web/chatbot
 - **Backend:** paquete `mod_shipping`, `basePath` `/direcciones` y `/envio`
 - **Frontend:** carpeta `mod-shipping`, bloque de envío en `[/checkout]`
 - **Depende de:** `mod-cart` (solo por `public.py`). Consigue las líneas del

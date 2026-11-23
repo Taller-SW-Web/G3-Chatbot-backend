@@ -1,6 +1,6 @@
 # `mod-cart` — Carrito
 
-- **Owner:** @SOoOnny
+- **Owner:** @Taller-SW-Web/chatbot
 - **Backend:** paquete `mod_cart`, `basePath` `/carrito`
 - **Frontend:** carpeta `mod-cart`, ruta `[/carrito]`
 - **Depende de:** `mod-catalog` (solo por `public.py`)
