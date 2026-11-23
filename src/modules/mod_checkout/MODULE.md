@@ -1,6 +1,6 @@
 # `mod-checkout` — Checkout y pago
 
-- **Owner:** @MathiasTL
+- **Owner:** @Taller-SW-Web/chatbot
 - **Backend:** paquete `mod_checkout`, `basePath` `/checkout`
 - **Frontend:** carpeta `mod-checkout`, rutas `[/checkout]`, `[/exito]`
 - **Depende de:** `mod-cart` y `mod-shipping` (solo por `public.py`)

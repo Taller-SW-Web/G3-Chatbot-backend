@@ -1,6 +1,6 @@
 # `mod-chat` — Chat
 
-- **Owner:** @Ankarmin
+- **Owner:** @Taller-SW-Web/chatbot
 - **Backend:** paquete `mod_chat`, `basePath` `/chat/conversaciones`
 - **Frontend:** carpeta `mod-chat`, rutas `[/chat/[id]]`, `[/sugerencias]`
 - **Depende de:** todos los módulos, solo por su `public.py`
