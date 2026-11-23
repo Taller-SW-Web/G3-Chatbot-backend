@@ -1,6 +1,6 @@
 # `mod-xx` — Nombre del módulo
 
-- **Owner:** @usuario
+- **Owner:** @Taller-SW-Web/chatbot
 - **Backend:** paquete `mod_xx`, `basePath` `/ruta`
 - **Frontend:** carpeta `mod-xx`, rutas `[/ruta]`
 - **Depende de:** `mod-yy` (solo por `public.py` / `public.ts`)

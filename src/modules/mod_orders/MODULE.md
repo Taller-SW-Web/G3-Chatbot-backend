@@ -1,6 +1,6 @@
 # `mod-orders` — Pedidos y seguimiento
 
-- **Owner:** @MathiasTL
+- **Owner:** @Taller-SW-Web/chatbot
 - **Backend:** paquete `mod_orders`, `basePath` `/pedidos`
 - **Frontend:** carpeta `mod-orders`, rutas `[/pedidos]`, `[/pedidos/[tab]]`, `[/seguimiento]`
 - **Depende de:** `mod-checkout` (solo por `public.py`)
