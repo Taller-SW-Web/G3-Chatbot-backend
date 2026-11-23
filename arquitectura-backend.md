@@ -88,14 +88,14 @@ Cada módulo expone:
 
 | id | Owner | `basePath` | Depende de | Responsabilidad |
 |---|---|---|---|---|
-| `mod-auth` | @Ankarmin | `/sesion` | nadie | registro, login, MFA, refresh, logout, perfil, verificación de correo. |
-| `mod-catalog` | @SOoOnny | `/catalogo` | nadie | búsqueda, detalle, disponibilidad, promociones y reglas puras de producto. |
-| `mod-cart` | @SOoOnny | `/carrito` | `mod-catalog` | carrito anónimo/cliente, ítems, cupón, stock y totales. |
-| `mod-shipping` | @SOoOnny | `/envio`, `/direcciones` | `mod-cart` | cotización G2 y direcciones guardadas G1. |
-| `mod-checkout` | @MathiasTL | `/checkout` | `mod-cart`, `mod-shipping` | checkout, pago simulado, snapshot y outbox transaccional. |
-| `mod-orders` | @MathiasTL | `/pedidos` | `mod-checkout` | listado/detalle, seguimiento G2 y confirmación por correo. |
-| `mod-postventa` | @MathiasTL | `/devoluciones`, `/reclamos`, `/evidencias` | `mod-orders` | devoluciones, reclamos, evidencias y CSAT contra G5. |
-| `mod-chat` | @Ankarmin | `/chat/conversaciones` | todos | conversaciones, SSE, bucle LLM-tool y acciones directas. |
+| `mod-auth` | @Taller-SW-Web/chatbot | `/sesion` | nadie | registro, login, MFA, refresh, logout, perfil, verificación de correo. |
+| `mod-catalog` | @Taller-SW-Web/chatbot | `/catalogo` | nadie | búsqueda, detalle, disponibilidad, promociones y reglas puras de producto. |
+| `mod-cart` | @Taller-SW-Web/chatbot | `/carrito` | `mod-catalog` | carrito anónimo/cliente, ítems, cupón, stock y totales. |
+| `mod-shipping` | @Taller-SW-Web/chatbot | `/envio`, `/direcciones` | `mod-cart` | cotización G2 y direcciones guardadas G1. |
+| `mod-checkout` | @Taller-SW-Web/chatbot | `/checkout` | `mod-cart`, `mod-shipping` | checkout, pago simulado, snapshot y outbox transaccional. |
+| `mod-orders` | @Taller-SW-Web/chatbot | `/pedidos` | `mod-checkout` | listado/detalle, seguimiento G2 y confirmación por correo. |
+| `mod-postventa` | @Taller-SW-Web/chatbot | `/devoluciones`, `/reclamos`, `/evidencias` | `mod-orders` | devoluciones, reclamos, evidencias y CSAT contra G5. |
+| `mod-chat` | @Taller-SW-Web/chatbot | `/chat/conversaciones` | todos | conversaciones, SSE, bucle LLM-tool y acciones directas. |
 
 `mod-auth` es la base: el contrato de Seguridad (puertos, cliente HTTP, JWKS y
 service token) vive en `src/shared/infrastructure/auth` para que cualquier
