@@ -92,3 +92,6 @@ memoria de conversación y la auditoría TOOL sin importar la persistencia de ch
 - No importar `domain/`, `application/` ni `adapters/` de otro módulo.
 - No tocar `shared/` sin label `cross-modulo`.
 - Un PR de este módulo no modifica archivos de otro `mod-*`.
+
+<!-- prueba temporal del gate de specs: se elimina al cerrar el PR de prueba -->
+
