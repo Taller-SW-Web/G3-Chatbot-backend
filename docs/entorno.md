@@ -59,7 +59,7 @@ La plantilla trae dos bloques; se elige uno comentando el otro.
 | Perfil | Para qué | Valores |
 |---|---|---|
 | **Local fake** (por defecto) | Desarrollar sin depender de otros equipos | `MODULES_MODE=fake` y `*_MODE=fake` |
-| **Real** | Probar contra G7, G6 y G2 desplegados | bloque "Perfil REAL" de la plantilla |
+| **Real** | Probar contra G7, G6, G2 y G5 desplegados | bloque "Perfil REAL" de la plantilla |
 
 Para homologar Productos con su contrato real (acuerdo A17), sigue
 [`g6-homologacion.md`](./g6-homologacion.md): exige `PRODUCTS_AUTH_MODE=service`,
@@ -72,18 +72,34 @@ SECURITY_BASE_URL=https://g7-auth-service.onrender.com/api/v1
 SECURITY_EXPECTED_ISSUER=https://g7-auth-service.onrender.com/api/v1/auth
 PRODUCTS_BASE_URL=https://api-gateway.calmgrass-aec0b33c.chilecentral.azurecontainerapps.io/api/v1
 DISPATCH_BASE_URL=https://taller-api-gateway.onrender.com/api/v1
+SALES_MODE=http
+SALES_BASE_URL=https://g5-servicio-ventas.onrender.com
+POSTVENTA_BASE_URL=https://g5-ventas-postventas-backend.onrender.com
 PRODUCTS_AUTH_MODE=public
 ALLOW_PUBLIC_PRODUCTS=true
 SECURITY_TIMEOUT_SECONDS=30
 PRODUCTS_TIMEOUT_SECONDS=10
+SALES_TIMEOUT_SECONDS=180
+POSTVENTA_TIMEOUT_SECONDS=180
 DISPATCH_TIMEOUT_SECONDS=15
 ```
 
+**G5 ya está desplegado para el chatbot.** M1 (pedidos) usa el token del cliente
+en las lecturas (`GET /pedidos/me`, detalle) y el token de servicio de
+`modulo-chatbot` (emitido por G7) para crear, anular y notificar pagos. M2
+(postventa) usa el token del cliente en todas sus operaciones (CSAT,
+devoluciones y reclamos). El gateway público
+`https://g5-api-gateway.onrender.com` queda detrás de Cloudflare y no se
+recomienda para llamadas server-to-server; por eso el perfil real apunta a los
+servicios M1/M2.
+
 Dos detalles que cuestan tiempo si se pasan por alto:
 
-- **`SALES_MODE=fake` explícito**. Si se omite, hereda `MODULES_MODE=http` y apunta a
-  `localhost:4012`, que no existe: los flujos de pedidos fallan con error de red.
-  Ventas (G5) todavía no está desplegado para el chatbot.
+- **`SALES_MODE=fake` explícito solo en local**. Si se omite, hereda
+  `MODULES_MODE=http` y apunta a `localhost:4012`, que no existe. En local se
+  mantiene `SALES_MODE=fake` para no depender de Render; en el perfil real se
+  usa `SALES_MODE=http` con `SALES_BASE_URL` y `POSTVENTA_BASE_URL` (M1/M2), no
+  el gateway. Ventas (G5) ya está desplegado para el chatbot.
 - **`COOKIE_SECURE=false` en local**. El backend local sirve por HTTP y no queremos
   que el entorno dependa de que el navegador trate `localhost` como contexto seguro.
   En cualquier despliegue HTTPS va en `true`.
@@ -91,6 +107,28 @@ Dos detalles que cuestan tiempo si se pasan por alto:
 Para el perfil real solo hace falta un secreto: `SECURITY_CLIENT_SECRET`
 (token de servicio de G7). `LLM_API_KEY` es independiente del perfil y solo se
 necesita para probar el chat con el modelo real.
+
+### Despliegue en Railway (G5)
+
+Si el backend desplegado queda con `MODULES_MODE=fake` o `SALES_MODE=fake`, el
+chatbot responde listas vacías y `404` para pedidos reales (lo observamos en
+`g3-chatbot-backend.up.railway.app`), aunque el chat y el frontend funcionen con
+los adaptadores en memoria. Para el despliegue:
+
+```
+MODULES_MODE=http
+SALES_MODE=http
+SALES_BASE_URL=https://g5-servicio-ventas.onrender.com
+POSTVENTA_BASE_URL=https://g5-ventas-postventas-backend.onrender.com
+SALES_TIMEOUT_SECONDS=180
+POSTVENTA_TIMEOUT_SECONDS=180
+```
+
+No uses `https://g5-api-gateway.onrender.com` para server-to-server: queda
+detrás de Cloudflare. Después de desplegar, prueba `GET /api/v1/pedidos` con un
+token de cliente y confirma que devuelve pedidos reales; si ves `items: []` con
+`200` y `404` en todos los detalles, revisa primero el modo (`fake` vs `http`),
+no la disponibilidad de G5.
 
 
 ## Cómo se comparten los secretos

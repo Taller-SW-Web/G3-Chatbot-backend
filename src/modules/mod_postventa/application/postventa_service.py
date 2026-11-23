@@ -22,7 +22,9 @@ from src.modules.mod_postventa.domain.references import (
     NewReturnReference,
 )
 from src.modules.mod_postventa.ports.postventa_port import PostventaPort
+from src.shared.application.ports.conversation_repository_port import ConversationRepositoryPort
 from src.shared.application.ports.order_repository_port import SalesOrderPort
+from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.module_errors import ModuleRequestError
 
 
@@ -35,6 +37,7 @@ class PostventaService:
         return_refs: Any | None = None,
         evidence: Any | None = None,
         order_refs: Any | None = None,
+        conversations: ConversationRepositoryPort | None = None,
         uow: Any | None = None,
     ) -> None:
         self._postventa = postventa
@@ -43,6 +46,7 @@ class PostventaService:
         self._return_refs = return_refs
         self._evidence = evidence
         self._order_refs = order_refs
+        self._conversations = conversations
         self._uow = uow
 
     async def upload_evidence(
@@ -53,8 +57,22 @@ class PostventaService:
         content_type: str,
         content: bytes,
         conversation_id: uuid.UUID | None = None,
+        customer_id: uuid.UUID | None = None,
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
+        # Ownership first: never upload to G5 for a foreign or missing conversation.
+        if conversation_id is not None and self._conversations is not None:
+            owned = (
+                await self._conversations.find_owned(
+                    conversation_id, CallerIdentity(customer_id=customer_id)
+                )
+                if customer_id is not None
+                else None
+            )
+            if owned is None:
+                raise PostventaError(
+                    "RECURSO_NO_ENCONTRADO", "No encontré esa conversación en tu cuenta."
+                )
         result = await self._postventa.upload_evidence(
             file_name=file_name,
             content_type=content_type,
@@ -71,6 +89,7 @@ class PostventaService:
                 size_bytes=int(result.get("tamanioBytes") or len(content)),
             )
             await self._evidence.guardar(row)
+            await self._commit()
         return result
 
     async def create_return(
@@ -191,7 +210,12 @@ class PostventaService:
                 ) from exc
 
         normalized = dict(payload)
-        normalized["motivo"] = to_g5_claim_reason(str(normalized.get("motivo") or ""))
+        try:
+            normalized["motivo"] = to_g5_claim_reason(str(normalized.get("motivo") or ""))
+        except ValueError as exc:
+            raise PostventaError(
+                "VALIDACION", "El motivo del reclamo no es uno de los cinco valores de G5."
+            ) from exc
         # G5 requires the channel and uses it for the Libro de Reclamaciones.
         normalized["canal"] = "CHATBOT"
         # G5 has no `solucionEsperada` field: the UI appends it to `detalle`.
@@ -259,6 +283,10 @@ class PostventaService:
         payload: dict[str, Any],
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
+        if payload.get("puntuacion") not in (1, 3, 5):
+            raise PostventaError(
+                "VALIDACION", "La puntuación del CSAT debe ser 1, 3 o 5."
+            )
         try:
             order = await self._sales.get_customer_order(
                 order_id, holder_token, correlation_id=correlation_id
