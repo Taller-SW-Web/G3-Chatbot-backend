@@ -50,6 +50,8 @@ class OrdersService:
         *,
         holder_token: str,
         estado: str | None = None,
+        desde: str | None = None,
+        hasta: str | None = None,
         page: int = 1,
         page_size: int = 10,
     ):
@@ -57,6 +59,8 @@ class OrdersService:
             raw = await self._sales.list_customer_orders(
                 holder_token,
                 estado=estado,
+                desde=desde,
+                hasta=hasta,
                 page=page,
                 page_size=page_size,
             )

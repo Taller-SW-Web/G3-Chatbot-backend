@@ -4,6 +4,7 @@ Enforces customer authentication (`401 REQUIERE_SESION`), hides foreign orders
 behind `404 RECURSO_NO_ENCONTRADO` (`SPEC-17` Req. 1), and applies the
 `SPEC-18` privacy whitelist on tracking responses.
 """
+from datetime import date
 from typing import Any, Callable, Protocol
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -46,6 +47,8 @@ class OrdersServicePort(Protocol):
         *,
         holder_token: str,
         estado: str | None = None,
+        desde: str | None = None,
+        hasta: str | None = None,
         page: int = 1,
         page_size: int = 10,
     ) -> dict[str, Any]:
@@ -139,17 +142,36 @@ def create_orders_router(
     async def list_orders(
         request: Request,
         estado: str | None = Query(default=None),
+        desde: date | None = Query(default=None),
+        hasta: date | None = Query(default=None),
         page: int = Query(default=1, ge=1),
         pageSize: int = Query(default=10, ge=1, le=50),
         caller: CallerIdentity = Depends(require_customer),
         service: OrdersServicePort = Depends(orders_provider),
     ) -> OrderListResponse:
+        if desde is not None and hasta is not None and desde > hasta:
+            raise ProblemError(
+                status=400,
+                code="VALIDACION",
+                title="Invalid request",
+                detail="El rango de fechas es inválido.",
+                extra={
+                    "errores": [
+                        {
+                            "campo": "desde",
+                            "mensaje": "`desde` no puede ser posterior a `hasta`.",
+                        }
+                    ]
+                },
+            )
         holder_token = get_bearer_token(request)
         try:
             raw = await service.list_orders(
                 caller.customer_id,
                 holder_token=holder_token,
                 estado=estado,
+                desde=desde.isoformat() if desde is not None else None,
+                hasta=hasta.isoformat() if hasta is not None else None,
                 page=page,
                 page_size=pageSize,
             )
