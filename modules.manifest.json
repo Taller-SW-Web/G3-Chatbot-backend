@@ -43,7 +43,7 @@
       "name": "Pedidos y seguimiento",
       "owner": "@MathiasTL",
       "dependsOn": ["mod-checkout"],
-      "specs": ["consulta-estado-pedido", "seguimiento-despacho", "notificacion-confirmacion", "grabacion-pedido"]
+      "specs": ["consulta-estado-pedido", "seguimiento-despacho", "notificacion-confirmacion", "grabacion-pedido", "retroalimentacion-cliente"]
     },
     {
       "id": "mod-postventa",
