@@ -13,3 +13,6 @@ coverage.xml
 coverage-integration.xml
 coverage-combined.xml
 htmlcov/
+
+# Resultados locales de k6 (H5-P2); en CI se publican como artefacto.
+tests/performance/k6/results/

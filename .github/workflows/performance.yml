@@ -1,0 +1,109 @@
+name: Performance (k6)
+
+# H5-P3: pruebas de carga manuales con k6 contra el stack de CI, nunca contra
+# producción ni CloudAMQP (G3-Chatbot-specs/odd/tasks/hito-5.md, restricciones).
+# El backend corre con todos los módulos en fake y LLM_PROVIDER=fake; los SLO
+# están en G3-Chatbot-specs/docs/slo-performance.md y son thresholds de k6.
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Ventana sostenida por escenario (formato k6, p. ej. 2m)"
+        required: false
+        default: "2m"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: .
+  K6_IMAGE: grafana/k6:2.4.0
+
+jobs:
+  k6:
+    name: k6 (catálogo, chat y checkout)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chatbot_perf
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Prepare environment (fake modules and scripted LLM)
+        # La plantilla ya trae todos los módulos en fake; solo se cambian la base
+        # de datos y el LLM. No hace falta ningún secreto.
+        run: |
+          sed -e 's#^DATABASE_URL=.*#DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/chatbot_perf#' \
+              -e 's#^LLM_PROVIDER=.*#LLM_PROVIDER=fake#' \
+              .env.template > .env
+          alembic upgrade head
+      - name: Start backend
+        run: |
+          nohup uvicorn src.infrastructure.main:app --host 127.0.0.1 --port 8000 --env-file .env \
+            > uvicorn.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health && exit 0
+            sleep 2
+          done
+          cat uvicorn.log
+          exit 1
+      - name: Run k6 scenarios
+        # Los tres escenarios corren aunque uno falle, para que el reporte esté
+        # completo; el paso siguiente decide el resultado del job.
+        run: |
+          mkdir -p tests/performance/k6/results
+          status=0
+          for scenario in catalogo chat checkout; do
+            docker run --rm --network host --user "$(id -u):$(id -g)" \
+              -v "$PWD/tests/performance/k6:/scripts" -w /scripts \
+              -e BASE_URL=http://127.0.0.1:8000 \
+              -e DURATION="${{ inputs.duration }}" \
+              -e RESULTS_DIR=/scripts/results \
+              "$K6_IMAGE" run --quiet "$scenario.js" || status=1
+          done
+          echo "status=$status" >> "$GITHUB_ENV"
+      - name: Publish report
+        if: always()
+        run: |
+          {
+            echo "# Pruebas de carga frente a los SLO"
+            echo
+            echo "SLO: [docs/slo-performance.md](https://github.com/Taller-SW-Web/G3-Chatbot-specs/blob/main/docs/slo-performance.md) · ventana: ${{ inputs.duration }} · commit: ${GITHUB_SHA::7}"
+            echo
+            cat tests/performance/k6/results/*-report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload k6 results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: k6-results
+          path: |
+            tests/performance/k6/results/
+            uvicorn.log
+          if-no-files-found: error
+      - name: Fail if a SLO was missed
+        if: always()
+        run: test "${status:-1}" = "0"
