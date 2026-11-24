@@ -29,6 +29,7 @@ from src.modules.mod_chat.adapters.openai_nlp_adapter import OpenAILLMProvider
 from src.modules.mod_chat.adapters.pillow_image_processor import PillowImageProcessor
 from src.modules.mod_chat.adapters.reaction_postgres_adapter import ReactionPostgresAdapter
 from src.modules.mod_chat.adapters.registry_tool_adapter import RegistryToolAdapter
+from src.modules.mod_chat.adapters.scripted_llm_provider import ScriptedLLMProvider
 from src.modules.mod_chat.application.attachment_service import AttachmentService
 from src.modules.mod_chat.application.dispatch_direct_action_use_case import (
     DispatchDirectActionUseCase,
@@ -161,9 +162,14 @@ def provide_llm_provider(settings: Settings | None = None) -> LLMProvider:
             vision_enabled=settings.llm_vision_enabled,
             reasoning_effort=settings.llm_reasoning_effort,
         )
+    if settings.llm_provider == "fake":
+        # Load tests only (H5-P2): a scripted model must never answer real customers.
+        if settings.is_production:
+            raise ValueError("LLM_PROVIDER=fake is not allowed when APP_ENV is production")
+        return ScriptedLLMProvider()
     if settings.llm_provider == "claude":
         raise NotImplementedError("LLM_PROVIDER=claude is not implemented yet")
-    raise ValueError(f"Unknown LLM_PROVIDER {settings.llm_provider!r} (supported: openai)")
+    raise ValueError(f"Unknown LLM_PROVIDER {settings.llm_provider!r} (supported: openai, fake)")
 
 
 def provide_tool_executor(session: AsyncSession) -> ToolExecutorPort:

@@ -94,7 +94,9 @@ memoria de conversación y la auditoría TOOL sin importar la persistencia de ch
 ## Dependencias externas
 
 - **LLM** (`LLM_PROVIDER=openai`) vía `ports/llm_provider_port.py`; sin API key
-  el turno degrada (`DegradedMode`) en lugar de fallar.
+  el turno degrada (`DegradedMode`) en lugar de fallar. `LLM_PROVIDER=fake`
+  (`ScriptedLLMProvider`) responde con un guion fijo sin red, solo para las
+  pruebas de carga (H5-P2); se rechaza con `APP_ENV=production`.
 - Herramientas de catálogo, carrito, pedidos y postventa, construidas sobre los
   casos de uso públicos de cada módulo.
 - Memoria de conversación y mensajes: adaptadores compartidos de `src/shared`;
