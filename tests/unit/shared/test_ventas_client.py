@@ -144,6 +144,33 @@ def test_ventas_error_normalizes_codigo_to_code():
 
 
 @respx.mock
+def test_ventas_429_preserves_retry_after():
+    respx.post(f"{BASE_URL}/api/v1/pedidos").mock(
+        return_value=httpx.Response(
+            429,
+            json={"codigo": "DEMASIADAS_SOLICITUDES"},
+            headers={"Retry-After": "42"},
+        )
+    )
+
+    client = VentasClient(
+        base_url=BASE_URL,
+        timeout_seconds=5.0,
+        service_token_provider=StubTokenProvider(),
+    )
+
+    async def run():
+        await client.create_order({}, idempotency_key="k-429")
+
+    with pytest.raises(ModuleRequestError) as exc_info:
+        anyio.run(run)
+
+    assert exc_info.value.status == 429
+    assert exc_info.value.code == "DEMASIADAS_SOLICITUDES"
+    assert exc_info.value.retry_after == "42"
+
+
+@respx.mock
 def test_ventas_500_raises_unavailable():
     respx.post(f"{BASE_URL}/api/v1/pedidos").mock(
         return_value=httpx.Response(500, text="Internal Error")
