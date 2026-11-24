@@ -48,7 +48,11 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
             body = response.json() if response.content else {}
         except ValueError as exc:
             if 400 <= response.status_code < 500:
-                raise ModuleRequestError(self.module, response.status_code, f"HTTP_{response.status_code}") from exc
+                error = ModuleRequestError(
+                    self.module, response.status_code, f"HTTP_{response.status_code}"
+                )
+                error.retry_after = response.headers.get("Retry-After")
+                raise error from exc
             raise ModuleUnavailableError(self.module, f"invalid JSON: {exc}") from exc
 
         if isinstance(body, dict):
@@ -61,7 +65,9 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
             code = "ERROR_VENTAS"
             if isinstance(body, dict):
                 code = str(body.get("code") or body.get("codigo") or f"HTTP_{response.status_code}")
-            raise ModuleRequestError(self.module, response.status_code, code)
+            error = ModuleRequestError(self.module, response.status_code, code)
+            error.retry_after = response.headers.get("Retry-After")
+            raise error
 
         raise ModuleUnavailableError(self.module, f"HTTP {response.status_code}")
 

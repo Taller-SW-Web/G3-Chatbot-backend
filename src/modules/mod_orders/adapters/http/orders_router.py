@@ -86,6 +86,18 @@ class OrdersServicePort(Protocol):
 def _translate_order_error(exc: Exception) -> ProblemError:
     if isinstance(exc, ProblemError):
         return exc
+    if isinstance(exc, ModuleRequestError) and exc.status == 429:
+        # G5 applies its own rate limit. Forward the upstream Retry-After when
+        # present; otherwise the observed window is one minute. Never expose it
+        # as a 503: the service is up, the caller must wait.
+        retry_after = (exc.retry_after or "60").strip()
+        return ProblemError(
+            status=429,
+            code="DEMASIADAS_SOLICITUDES",
+            title="Too many requests",
+            detail="Demasiadas consultas de pedidos. Espera un momento y vuelve a intentar.",
+            headers=[("Retry-After", retry_after)],
+        )
     if isinstance(exc, OrderError):
         code = exc.code
         detail = exc.detail

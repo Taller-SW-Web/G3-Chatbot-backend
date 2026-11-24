@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from src.modules.mod_orders.adapters.http.orders_router import create_orders_router
 from src.modules.mod_orders.application.orders_service import OrdersService
 from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.module_errors import ModuleRequestError
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
 from src.shared.infrastructure.http.problem import register_problem_handlers
@@ -101,6 +102,38 @@ def test_malformed_sales_payload_is_a_controlled_503_not_a_500() -> None:
         response = client.get(path, headers=HEADERS)
         assert response.status_code == 503, path
         assert response.json()["code"] == "SERVICIO_NO_DISPONIBLE"
+
+
+def test_sales_429_is_a_429_with_retry_after() -> None:
+    class RateLimitedSales(FakeSalesPort):
+        async def list_customer_orders(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            error = ModuleRequestError("sales", 429, "HTTP_429")
+            error.retry_after = "42"
+            raise error
+
+        async def get_customer_order(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            error = ModuleRequestError("sales", 429, "HTTP_429")
+            error.retry_after = "42"
+            raise error
+
+    client = _client(RateLimitedSales())
+    for path in ("/api/v1/pedidos", "/api/v1/pedidos/PED-1"):
+        response = client.get(path, headers=HEADERS)
+        assert response.status_code == 429, path
+        assert response.json()["code"] == "DEMASIADAS_SOLICITUDES"
+        assert response.headers["Retry-After"] == "42"
+
+
+def test_sales_429_without_retry_after_uses_60_seconds() -> None:
+    class RateLimitedSales(FakeSalesPort):
+        async def list_customer_orders(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise ModuleRequestError("sales", 429, "HTTP_429")
+
+    response = _client(RateLimitedSales()).get("/api/v1/pedidos", headers=HEADERS)
+
+    assert response.status_code == 429
+    assert response.json()["code"] == "DEMASIADAS_SOLICITUDES"
+    assert response.headers["Retry-After"] == "60"
 
 
 def test_list_orders_forwards_estado_desde_and_hasta() -> None:
