@@ -80,6 +80,8 @@ memoria de conversación y la auditoría TOOL sin importar la persistencia de ch
 - `confirmar_reclamo` y `confirmar_devolucion` son acciones **solo UI**
   (`solo_ui=True`): el dispatcher las ejecuta con `confirmacion_ui=True` tras el
   botón "Enviar reclamo"/"Enviar solicitud", pero nunca se ofrecen al LLM.
+  El submit envía `payload.confirmado: true`; `DispatchDirectActionUseCase` lo
+  consume y lo retira antes de validar los argumentos.
 - `iniciar_checkout`, `cerrar_sesion`, `nueva_conversacion` y
   `buscar_conversaciones` devuelven acciones de cliente (`IR_A_CHECKOUT`,
   `CERRAR_SESION`, `NUEVO_CHAT`, `BUSCAR_CHATS`); no crean checkout, no tocan
