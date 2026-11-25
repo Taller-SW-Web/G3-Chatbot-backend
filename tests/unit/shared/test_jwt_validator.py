@@ -46,9 +46,12 @@ def _token(
     iss: str = "auth-service",
     sub: str = "cust-001",
     exp_delta: int = 900,
+    iat_delta: int | None = None,
 ) -> str:
     claims = {"iss": iss, "tipo": tipo, "sub": sub, "roles": list(roles),
               "exp": int(time.time()) + exp_delta}
+    if iat_delta is not None:
+        claims["iat"] = int(time.time()) + iat_delta
     return jwt.encode(claims, private_pem, algorithm="RS256", headers={"kid": kid})
 
 
@@ -106,12 +109,33 @@ async def test_configured_issuer_is_accepted_and_default_is_rejected():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_accepts_small_future_iat_from_g7_clock_skew():
+    """G7 emitted `iat` ~20 s ahead; the 60 s leeway keeps a valid token usable."""
+    private_pem, jwks = _keypair()
+    respx.get(JWKS_URL).mock(return_value=httpx.Response(200, json=jwks))
+    validator = JwksTokenValidator(BASE_URL)
+    claims = await validator.validate_customer(_token(private_pem, iat_delta=20))
+    assert claims["sub"] == "cust-001"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_rejects_iat_beyond_the_clock_skew_leeway():
+    private_pem, jwks = _keypair()
+    respx.get(JWKS_URL).mock(return_value=httpx.Response(200, json=jwks))
+    validator = JwksTokenValidator(BASE_URL)
+    with pytest.raises(InvalidTokenError):
+        await validator.validate_customer(_token(private_pem, iat_delta=120))
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_expired_token_is_rejected():
     private_pem, jwks = _keypair()
     respx.get(JWKS_URL).mock(return_value=httpx.Response(200, json=jwks))
     validator = JwksTokenValidator(BASE_URL)
     with pytest.raises(InvalidTokenError):
-        await validator.validate_customer(_token(private_pem, exp_delta=-10))
+        await validator.validate_customer(_token(private_pem, exp_delta=-120))
 
 
 @respx.mock

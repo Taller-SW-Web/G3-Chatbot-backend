@@ -104,6 +104,17 @@ Dos detalles que cuestan tiempo si se pasan por alto:
   que el entorno dependa de que el navegador trate `localhost` como contexto seguro.
   En cualquier despliegue HTTPS va en `true`.
 
+### Reloj y tokens de G7
+
+El validador local de tokens aplica un **leeway de 60 s** (`JWT_LEEWAY_SECONDS` en
+`src/shared/infrastructure/auth/jwks_token_validator.py`). G7 puede emitir `iat`
+unos segundos adelantado respecto al reloj del BFF; sin ese margen, PyJWT rechaza
+el token como “aún no válido” (`ImmatureSignatureError`) y el login termina en
+`401 TOKEN_INVALIDO`. El margen también cubre un `exp` vencido por menos de 60 s.
+
+Si el desfase supera los 60 s, el problema es de reloj: sincroniza NTP en G7 y en
+el host del backend; no aumentes el leeway sin revisar el riesgo.
+
 Para el perfil real solo hace falta un secreto: `SECURITY_CLIENT_SECRET`
 (token de servicio de G7). `LLM_API_KEY` es independiente del perfil y solo se
 necesita para probar el chat con el modelo real.
