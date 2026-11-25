@@ -64,6 +64,22 @@ se pudo confirmar, responde `409 CARRITO_DESACTUALIZADO` con
 `lineas[{sku, nombre, cantidad, motivo, mensaje}]`; nada se degrada en silencio.
 `STOCK_BAJO` e `INDETERMINADO` no bloquean (la decisión final sigue en Ventas).
 
+## Totales y promociones (SPEC-14 Req. 2)
+
+Antes de crear el checkout, `create_checkout` exige que `cart.totals_snapshot`
+demuestre una evaluación de promociones exitosa para las líneas actuales. Si
+falta el snapshot, `promociones_ok` no es `true`, el subtotal no coincide o el
+total no cuadra con los descuentos, responde `409 CARRITO_DESACTUALIZADO` con
+`motivo` (`SIN_EVALUACION`, `PROMOCIONES_NO_DISPONIBLES`, `SUBTOTAL_CAMBIADO` o
+`TOTAL_INCONSISTENTE`) y un `summary` recalculado por el servidor. Antes de
+responder, el checkout recalcula el carrito (misma ruta que `GET /carrito`) y
+persiste el snapshot fresco, de modo que el reintento del cliente usa el resumen
+que acaba de ver. **No** se crea checkout ni pedido con un total distinto al del
+carrito.
+
+El descuento nunca se toma del payload del cliente. Detalle en
+[`docs/checkout-consistencia.md`](../../../docs/checkout-consistencia.md).
+
 ## Dirección guardada (SPEC-12)
 
 `POST /checkout` acepta `guardarDireccion: true`. Con el cliente autenticado se

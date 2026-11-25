@@ -47,7 +47,16 @@ def build(require=True, verified=False, phone="+51987654321"):
     checkouts.guardar = AsyncMock(side_effect=lambda row: row)
     carts = MagicMock()
     carts.obtener_por_id = AsyncMock(
-        return_value=SimpleNamespace(id=CART, customer_id=CUSTOMER, totals_snapshot=None)
+        return_value=SimpleNamespace(
+            id=CART,
+            customer_id=CUSTOMER,
+            totals_snapshot={
+                "subtotal": "50.00",
+                "descuentos": [],
+                "total": "50.00",
+                "promociones_ok": True,
+            },
+        )
     )
     carts.cambiar_estado = AsyncMock()
     items = MagicMock()
