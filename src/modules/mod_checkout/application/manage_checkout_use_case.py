@@ -105,6 +105,7 @@ class ManageCheckoutUseCase:
         dispatch: Any | None = None,
         require_phone_verification: bool = False,
         cart_validator: Any | None = None,
+        cart_totals: Any | None = None,
         save_address_enabled: bool = True,
         require_verified_contact: bool = False,
     ):
@@ -123,6 +124,7 @@ class ManageCheckoutUseCase:
         self.dispatch = dispatch
         self.require_phone_verification = require_phone_verification
         self.cart_validator = cart_validator
+        self.cart_totals = cart_totals
         self.save_address_enabled = save_address_enabled
         self.require_verified_contact = require_verified_contact
 
@@ -351,23 +353,13 @@ class ManageCheckoutUseCase:
         costo_envio = float(quote.costoEnvio)
 
         # The discount comes only from the cart snapshot, and only while that
-        # snapshot still prices the current lines; otherwise the client must
-        # confirm the recalculated summary (no order is created).
-        totals_snapshot = cart.totals_snapshot if isinstance(cart.totals_snapshot, dict) else {}
-        descuento = 0.0
-        if totals_snapshot.get("subtotal") is not None:
-            if Decimal(str(totals_snapshot["subtotal"])) != Decimal(str(subtotal)):
-                raise CheckoutError(
-                    "CARRITO_DESACTUALIZADO",
-                    "Tu carrito cambió. Revisa el resumen actualizado antes de continuar.",
-                    {"summary": self._stale_summary(items, subtotal, costo_envio)},
-                )
-            discounts = totals_snapshot.get("descuentos", [])
-            if isinstance(discounts, list):
-                descuento = sum(
-                    float(discount.get("amount", 0)) for discount in discounts if isinstance(discount, dict)
-                )
-        descuento = min(max(descuento, 0.0), subtotal)
+        # snapshot is a complete, successful evaluation of the current lines;
+        # otherwise the client must confirm the recalculated summary (no order
+        # is created). A zero discount and an unavailable engine are different
+        # states: `promociones_ok` tells them apart.
+        descuento = await self._snapshot_discount(
+            cart, items, subtotal, costo_envio
+        )
         total_final = round(subtotal - descuento + costo_envio, 2)
 
         now = datetime.now(timezone.utc)
@@ -636,6 +628,114 @@ class ManageCheckoutUseCase:
             raise CheckoutError(
                 "VALIDACION", "La dirección de envío está incompleta", {"errores": errores}
             ) from exc
+
+    async def _snapshot_discount(
+        self, cart: Any, items: list[Any], subtotal: float, costo_envio: float
+    ) -> float:
+        """Discount from the cart's last evaluation, or 409 when it cannot be trusted.
+
+        A zero discount and an unavailable promotions engine are different
+        states. The checkout only proceeds when the snapshot proves a successful
+        evaluation of the current lines. On a stale snapshot it re-evaluates the
+        cart once (the same path as `GET /carrito`) and persists the summary the
+        customer must confirm, so the next attempt can succeed.
+        """
+        reason, descuento = self._snapshot_state(cart.totals_snapshot, subtotal)
+        if reason is None:
+            return descuento
+
+        summary = self._stale_summary(items, subtotal, costo_envio)
+        if self.cart_totals is not None:
+            try:
+                fresh = await self.cart_totals(cart)
+            except Exception as exc:
+                logger.warning(
+                    "Cart totals refresh failed for cart %s: %s",
+                    getattr(cart, "id", "?"),
+                    exc,
+                )
+            else:
+                if isinstance(fresh, dict) and fresh.get("promociones_ok") is True:
+                    summary = self._summary_from_view(fresh, costo_envio)
+        raise CheckoutError(
+            "CARRITO_DESACTUALIZADO",
+            self._snapshot_message(reason),
+            {"motivo": reason, "summary": summary},
+        )
+
+    @staticmethod
+    def _snapshot_state(snapshot: Any, subtotal: float) -> tuple[str | None, float]:
+        """Return the reason a snapshot is untrustworthy (or None) and its discount."""
+        if not isinstance(snapshot, dict) or snapshot.get("subtotal") is None:
+            return "SIN_EVALUACION", 0.0
+        if snapshot.get("promociones_ok") is not True:
+            return "PROMOCIONES_NO_DISPONIBLES", 0.0
+        try:
+            snapshot_subtotal = Decimal(str(snapshot["subtotal"]))
+        except (ArithmeticError, ValueError):
+            return "SIN_EVALUACION", 0.0
+        if snapshot_subtotal != Decimal(str(subtotal)):
+            return "SUBTOTAL_CAMBIADO", 0.0
+        discounts = snapshot.get("descuentos", [])
+        if not isinstance(discounts, list):
+            return "SIN_EVALUACION", 0.0
+        try:
+            descuento = sum(
+                float(discount.get("amount", 0))
+                for discount in discounts
+                if isinstance(discount, dict)
+            )
+        except (ArithmeticError, TypeError, ValueError):
+            return "SIN_EVALUACION", 0.0
+        descuento = min(max(descuento, 0.0), subtotal)
+        if snapshot.get("total") is not None:
+            try:
+                snapshot_total = Decimal(str(snapshot["total"]))
+            except (ArithmeticError, ValueError):
+                return "TOTAL_INCONSISTENTE", 0.0
+            if snapshot_total != Decimal(str(subtotal)) - Decimal(str(descuento)):
+                return "TOTAL_INCONSISTENTE", 0.0
+        return None, descuento
+
+    @staticmethod
+    def _snapshot_message(reason: str) -> str:
+        if reason == "PROMOCIONES_NO_DISPONIBLES":
+            return (
+                "No pudimos confirmar las promociones de tu carrito. "
+                "Revisa el resumen e intenta de nuevo."
+            )
+        if reason == "TOTAL_INCONSISTENTE":
+            return (
+                "El total de tu carrito cambió. "
+                "Revisa el resumen actualizado antes de continuar."
+            )
+        return "Tu carrito cambió. Revisa el resumen actualizado antes de continuar."
+
+    @staticmethod
+    def _summary_from_view(view: dict[str, Any], costo_envio: float) -> dict[str, Any]:
+        """Summary for the 409 built from the just-recalculated cart view."""
+        lineas = [
+            {
+                "sku": line.get("sku"),
+                "cantidad": line.get("cantidad", 0),
+                "precioUnitario": float(line.get("precio") or 0),
+            }
+            for line in view.get("lineas", [])
+            if isinstance(line, dict) and line.get("disponible", True)
+        ]
+        subtotal = float(view.get("subtotal") or 0)
+        descuento = sum(
+            float(discount.get("monto") or 0)
+            for discount in view.get("descuentos", [])
+            if isinstance(discount, dict)
+        )
+        return {
+            "lineas": lineas,
+            "subtotal": round(subtotal, 2),
+            "descuento": round(descuento, 2),
+            "costoEnvio": round(costo_envio, 2),
+            "total": round(subtotal - descuento + costo_envio, 2),
+        }
 
     @staticmethod
     def _stale_summary(items: list[Any], subtotal: float, costo_envio: float) -> dict[str, Any]:

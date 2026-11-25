@@ -108,6 +108,7 @@ def provide_checkout_expirer(session: AsyncSession) -> ManageCheckoutUseCase:
 def _build_checkout_service(session: AsyncSession) -> ManageCheckoutUseCase:
     settings = get_settings()
     cart_repositories = provide_cart_repositories(session)
+    cart_service = provide_cart_service(session)
     return ManageCheckoutUseCase(
         checkouts=CheckoutPostgresAdapter(session),
         payment_attempts=PaymentAttemptPostgresAdapter(session),
@@ -124,7 +125,8 @@ def _build_checkout_service(session: AsyncSession) -> ManageCheckoutUseCase:
         dispatch=provide_despacho_client(settings),
         require_phone_verification=settings.require_phone_verification,
         require_verified_contact=settings.require_verified_contact,
-        cart_validator=provide_cart_service(session).validate_cart,
+        cart_validator=cart_service.validate_cart,
+        cart_totals=cart_service.recalculate_totals,
         save_address_enabled=settings.checkout_save_address_enabled,
     )
 
