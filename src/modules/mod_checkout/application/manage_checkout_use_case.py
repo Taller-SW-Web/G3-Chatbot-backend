@@ -37,6 +37,10 @@ DOCUMENT_PATTERNS = {
     "CE": re.compile(r"[a-zA-Z0-9]{8,12}"),
     "PASAPORTE": re.compile(r"[a-zA-Z0-9]{6,12}"),
 }
+VERIFIED_CONTACT_MESSAGE = (
+    "No pudimos confirmar el correo de tu cuenta. "
+    "Revisa tus datos en Mi cuenta o inténtalo de nuevo."
+)
 
 
 async def _safe_call(obj: Any, method_name: str, *args: Any, **kwargs: Any) -> Any:
@@ -102,6 +106,7 @@ class ManageCheckoutUseCase:
         require_phone_verification: bool = False,
         cart_validator: Any | None = None,
         save_address_enabled: bool = True,
+        require_verified_contact: bool = False,
     ):
         self.checkouts = checkouts
         self.payment_attempts = payment_attempts
@@ -119,6 +124,7 @@ class ManageCheckoutUseCase:
         self.require_phone_verification = require_phone_verification
         self.cart_validator = cart_validator
         self.save_address_enabled = save_address_enabled
+        self.require_verified_contact = require_verified_contact
 
     @staticmethod
     def _is_reusable(
@@ -181,6 +187,64 @@ class ManageCheckoutUseCase:
                 {"celularEnmascarado": mask_phone(phone)},
             )
 
+    async def _ensure_verified_contact(self, input_data: CreateCheckoutInput) -> None:
+        """Default guard: the profile e-mail is the verified contact, a locally verified phone the fallback.
+
+        `REQUIRE_PHONE_VERIFICATION` keeps the legacy phone-only mode and wins when both
+        flags are on. The profile e-mail is normalized onto the contact so the summary,
+        the order snapshot and the confirmation e-mail all use the verified address.
+        """
+        if self.require_phone_verification:
+            await self._ensure_phone_verified(input_data)
+            return
+        if not self.require_verified_contact:
+            return
+        if self.security_client is None or not input_data.access_token:
+            raise CheckoutError(
+                "CONTACTO_NO_VERIFICADO",
+                VERIFIED_CONTACT_MESSAGE,
+                {"motivo": "SIN_SESION"},
+            )
+        try:
+            profile = dict(await self.security_client.me(input_data.access_token))
+        except Exception as exc:
+            logger.warning("Seguridad profile unavailable while checking the contact: %s", exc)
+            raise CheckoutError(
+                "CONTACTO_NO_VERIFICADO",
+                VERIFIED_CONTACT_MESSAGE,
+                {"motivo": "SEGURIDAD_NO_DISPONIBLE"},
+            ) from exc
+
+        raw_email = profile.get("correo") or profile.get("email")
+        email = str(raw_email).strip() if raw_email else ""
+        if email:
+            contacto = input_data.contacto if isinstance(input_data.contacto, dict) else {}
+            contacto["email"] = email
+            input_data.contacto = contacto
+            return
+
+        raw_phone = profile.get("celular") or profile.get("telefono")
+        phone = str(raw_phone).strip() if raw_phone else ""
+        if phone:
+            verified = await _safe_call(
+                self.phone_verifications, "existe", input_data.customer_id, phone
+            )
+            if verified:
+                return
+            raise CheckoutError(
+                "CONTACTO_NO_VERIFICADO",
+                VERIFIED_CONTACT_MESSAGE,
+                {
+                    "motivo": "SIN_CONTACTO_VERIFICADO",
+                    "celularEnmascarado": mask_phone(phone),
+                },
+            )
+        raise CheckoutError(
+            "CONTACTO_NO_VERIFICADO",
+            VERIFIED_CONTACT_MESSAGE,
+            {"motivo": "SIN_CONTACTO_VERIFICADO"},
+        )
+
     async def create_checkout(self, input_data: CreateCheckoutInput) -> Any:
         if not input_data.idempotency_key:
             raise CheckoutError("VALIDACION", "Se requiere Idempotency-Key", {"campo": "Idempotency-Key"})
@@ -198,8 +262,8 @@ class ManageCheckoutUseCase:
         if pattern is None or pattern.fullmatch(contacto["numeroDocumento"]) is None:
             raise CheckoutError("DATO_INVALIDO", "El documento no tiene un formato válido", {"campo": "contacto.numeroDocumento"})
 
-        # SPEC-04: the checkout demands the *current* phone verified locally.
-        await self._ensure_phone_verified(input_data)
+        # SPEC-04 legacy flag, or the verified-contact guard (profile e-mail first).
+        await self._ensure_verified_contact(input_data)
 
         # 1. Idempotencia real previa por clave
         existing = await _safe_call(self.checkouts, "obtener_por_idempotency_key", input_data.idempotency_key)

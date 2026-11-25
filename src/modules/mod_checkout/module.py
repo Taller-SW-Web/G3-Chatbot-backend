@@ -123,6 +123,7 @@ def _build_checkout_service(session: AsyncSession) -> ManageCheckoutUseCase:
         outbox=OutboxPostgresAdapter(session),
         dispatch=provide_despacho_client(settings),
         require_phone_verification=settings.require_phone_verification,
+        require_verified_contact=settings.require_verified_contact,
         cart_validator=provide_cart_service(session).validate_cart,
         save_address_enabled=settings.checkout_save_address_enabled,
     )

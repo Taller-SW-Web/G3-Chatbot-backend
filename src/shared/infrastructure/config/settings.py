@@ -147,6 +147,9 @@ class Settings:
     # SPEC-04: the checkout demands a locally verified phone. Production defaults
     # to true; development/fake keeps it off so the E2E flow does not need an OTP.
     require_phone_verification: bool = False
+    # Default checkout guard: the account e-mail (verified at sign-up, G7) is the
+    # verified contact; a locally verified phone is accepted as a fallback.
+    require_verified_contact: bool = False
     # SPEC-12: optional address save in Seguridad. A failure never blocks checkout.
     checkout_save_address_enabled: bool = True
     # HMAC key for the OTP hashes. Never a real secret in development.
@@ -273,6 +276,12 @@ def _is_onrender_host(url: str) -> bool:
 def warn_unsafe_defaults(settings: Settings, log) -> None:
     """One startup WARNING listing every development-only setting outside production."""
     if settings.is_production:
+        if not (settings.require_phone_verification or settings.require_verified_contact):
+            log.warning(
+                "APP_ENV=%s: REQUIRE_PHONE_VERIFICATION and REQUIRE_VERIFIED_CONTACT are both "
+                "false; checkout accepts unverified contacts.",
+                settings.app_env,
+            )
         return
     problems = settings.unsafe_defaults()
     if problems:
@@ -307,6 +316,7 @@ def _build_settings() -> Settings:
     app_env = _app_env()
     production = app_env in PRODUCTION_ENVIRONMENTS
     require_phone_verification = _optional_flag("REQUIRE_PHONE_VERIFICATION")
+    require_verified_contact = _optional_flag("REQUIRE_VERIFIED_CONTACT")
     save_address_enabled = _optional_flag("CHECKOUT_SAVE_ADDRESS_ENABLED")
     return Settings(
         cookie_secure=os.getenv("COOKIE_SECURE", "true").strip().lower() != "false",
@@ -379,6 +389,9 @@ def _build_settings() -> Settings:
         ),
         checkout_save_address_enabled=(
             save_address_enabled if save_address_enabled is not None else True
+        ),
+        require_verified_contact=(
+            require_verified_contact if require_verified_contact is not None else False
         ),
         # Production never falls back to another secret: each key must be set on its own.
         phone_otp_secret=(

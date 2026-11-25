@@ -27,7 +27,14 @@ SAFE_ENV = {
 @pytest.fixture
 def env(monkeypatch):
     get_settings.cache_clear()
-    for key in (*SAFE_ENV, "SECURITY_CLIENT_SECRET", "ALLOW_FAKE_SECURITY", "SECURITY_MODE"):
+    for key in (
+        *SAFE_ENV,
+        "SECURITY_CLIENT_SECRET",
+        "ALLOW_FAKE_SECURITY",
+        "SECURITY_MODE",
+        "REQUIRE_PHONE_VERIFICATION",
+        "REQUIRE_VERIFIED_CONTACT",
+    ):
         monkeypatch.delenv(key, raising=False)
 
     def apply(**overrides):
@@ -103,5 +110,26 @@ def test_non_production_logs_a_single_warning_with_every_unsafe_default(caplog):
 def test_no_warning_in_production_or_when_nothing_is_unsafe(caplog):
     log = logging.getLogger("test.unsafe")
     with caplog.at_level(logging.WARNING, logger="test.unsafe"):
-        warn_unsafe_defaults(Settings(app_env="production"), log)
+        warn_unsafe_defaults(
+            Settings(app_env="production", require_verified_contact=True), log
+        )
     assert caplog.records == []
+
+
+def test_production_warns_when_no_contact_guard_is_enabled(caplog):
+    log = logging.getLogger("test.unsafe")
+    settings = Settings(app_env="production")
+    with caplog.at_level(logging.WARNING, logger="test.unsafe"):
+        warn_unsafe_defaults(settings, log)
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "REQUIRE_PHONE_VERIFICATION" in message
+    assert "REQUIRE_VERIFIED_CONTACT" in message
+
+
+def test_verified_contact_flag_is_read_from_the_environment(env, monkeypatch):
+    env()
+    assert get_settings().require_verified_contact is False
+    monkeypatch.setenv("REQUIRE_VERIFIED_CONTACT", "true")
+    get_settings.cache_clear()
+    assert get_settings().require_verified_contact is True
