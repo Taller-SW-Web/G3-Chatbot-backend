@@ -1014,6 +1014,8 @@ async def test_create_checkout_calls_sales_client_and_records_order_id(
 
     assert chk.summary["orderId"] == "PED-VENTAS-999"
     mock_sales.create_order.assert_awaited_once()
+    snapshot = mock_sales.create_order.call_args[0][0]
+    assert snapshot["cupon"] is None
     saved_order_ref = mock_orders.guardar.call_args[0][0]
     assert saved_order_ref.order_id == "PED-VENTAS-999"
 

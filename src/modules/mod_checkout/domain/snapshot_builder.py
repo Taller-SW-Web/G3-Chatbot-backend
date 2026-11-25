@@ -68,8 +68,9 @@ class SnapshotBuilder:
             })
 
         # Cupon
+        cupon_codigo = str((cupon or {}).get("codigo") or (cupon or {}).get("code") or "").strip()
         cupon_data = {
-            "codigo": str((cupon or {}).get("codigo") or (cupon or {}).get("code") or ""),
+            "codigo": cupon_codigo,
             "descuento": float(_to_decimal((cupon or {}).get("descuento") or (cupon or {}).get("discount") or 0, "descuentoCupon")),
             "aplicado": bool((cupon or {}).get("aplicado", False) if cupon else False),
         }
@@ -120,7 +121,9 @@ class SnapshotBuilder:
             "canal": canal,
             "contacto": contacto_data,
             "items": formatted_items,
-            "cupon": cupon_data,
+            # G5 `Cupon.codigo` is @NotBlank and the block is nullable: omit it entirely
+            # when the cart has no coupon, instead of sending an empty code.
+            "cupon": cupon_data if cupon_codigo else None,
             "envio": envio_data,
             "pago": pago_data,
         }
