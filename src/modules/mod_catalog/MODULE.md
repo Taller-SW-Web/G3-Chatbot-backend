@@ -19,7 +19,7 @@ resuelto por la capacidad `conversation_context`.
 
 | Tipo | Archivo | Qué expone |
 |---|---|---|
-| Backend | `public.py` | `provide_product_catalog`, `provide_product_inventory`, `provide_catalog_service`, `ManageCatalogUseCase`, `SearchArguments`/`ProductArguments` y las reglas de producto que `mod-cart` reutiliza (`VariantResolver`, `normalize_detail`, `sellable_skus`, `price_projection`, `StockValidator`) |
+| Backend | `public.py` | `provide_product_catalog`, `provide_product_inventory`, `provide_catalog_service`, `ManageCatalogUseCase`, `build_tool_registry` y los esquemas de herramientas (`SearchArguments`, `ProductArguments`, `OrderQueryArguments`, `ClaimConfirmArguments`, `ReturnConfirmArguments`), mǭs las reglas de producto que `mod-cart` reutiliza (`VariantResolver`, `normalize_detail`, `sellable_skus`, `price_projection`, `StockValidator`) |
 | Frontend | `public.ts` | Tipos de producto, tarjeta y disponibilidad |
 
 Todo lo demás (`adapters/`, `application/discovery.py`, `application/partial.py`)

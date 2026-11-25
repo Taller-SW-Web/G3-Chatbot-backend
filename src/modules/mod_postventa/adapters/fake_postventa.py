@@ -100,7 +100,7 @@ class FakePostventaPort(PostventaPort):
                     "tipo": r["tipo"],
                     "estado": r["estado"],
                     "motivo": r["motivo"],
-                    "estadoReembolso": None,
+                    "estadoReembolso": r.get("estadoReembolso"),
                     "fechaRegistro": r["fechaRegistro"],
                 }
                 for r in page_rows

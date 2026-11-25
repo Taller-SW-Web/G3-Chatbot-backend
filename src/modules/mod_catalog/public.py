@@ -17,10 +17,12 @@ from src.modules.mod_catalog.application.product_lookup import (
     resolve_variant_sku,
 )
 from src.modules.mod_catalog.application.tools import (
+    ClaimConfirmArguments,
     EmptyArguments,
     OrderQueryArguments,
     ProductArguments,
     RecommendationArguments,
+    ReturnConfirmArguments,
     SearchArguments,
     build_tool_registry,
 )
@@ -47,6 +49,7 @@ from src.modules.mod_catalog.module import (
 
 __all__ = [
     "CatalogError",
+    "ClaimConfirmArguments",
     "EmptyArguments",
     "ManageCatalogUseCase",
     "NameLookup",
@@ -54,6 +57,7 @@ __all__ = [
     "OptionCache",
     "ProductArguments",
     "RecommendationArguments",
+    "ReturnConfirmArguments",
     "SearchArguments",
     "StockValidator",
     "VariantMatch",

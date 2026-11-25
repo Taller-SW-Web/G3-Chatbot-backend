@@ -70,14 +70,23 @@ def test_tool_catalog_requires_session_and_confirmation():
     assert get_tool_contract("iniciar_checkout").requires_session is True
     assert get_tool_contract("buscar_productos").requires_session is False
     assert get_tool_contract("verificar_celular").requires_session is True
-    assert len(TOOL_CONTRACTS) == 18
+    assert get_tool_contract("listar_reclamos").requires_session is True
+    assert get_tool_contract("preparar_devolucion").requires_confirmation is True
+    assert len(TOOL_CONTRACTS) == 29
+    assert len({contract.name for contract in TOOL_CONTRACTS}) == 29
+    assert "listar_pedidos" not in {contract.name for contract in TOOL_CONTRACTS}
+    assert "consultar_pedido" not in {contract.name for contract in TOOL_CONTRACTS}
     with pytest.raises(KeyError):
         get_tool_contract("no_existe")
 
 
 def test_block_types_cover_contract():
     assert BlockType.CARRUSEL_PRODUCTOS.value == "CARRUSEL_PRODUCTOS"
+    assert BlockType.LISTA_RECLAMOS.value == "LISTA_RECLAMOS"
+    assert BlockType.LISTA_DEVOLUCIONES.value == "LISTA_DEVOLUCIONES"
+    assert len(BlockType) == 19
     assert FormKind.LOGIN.value == "LOGIN"
+    assert FormKind.REENVIO_VERIFICACION.value == "REENVIO_VERIFICACION"
     assert QuickActionId.VER_OFERTAS.value == "VER_OFERTAS"
 
 

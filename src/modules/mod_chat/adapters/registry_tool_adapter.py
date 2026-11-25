@@ -51,6 +51,16 @@ class RegistryToolAdapter:
         data = dict(result.data)
         raw_blocks = data.pop(_BLOCKS_KEY, ())  # UI payloads never reach the model
         blocks = tuple(_with_id(b) for b in raw_blocks if isinstance(b, Mapping)) if isinstance(raw_blocks, list) else ()
+        if result.code == "REQUIERE_SESION" and not blocks:
+            # SPEC-03 Req. 3 / SPEC-05 Req. 6: show the login form and keep the
+            # pending action so the UI can resume after authentication.
+            block: dict[str, Any] = {
+                "id": str(uuid.uuid4()), "tipo": "FORMULARIO", "formulario": "LOGIN",
+            }
+            pending = data.get("accionPendiente")
+            if pending:
+                block["datos"] = {"accionPendiente": pending}
+            blocks = (block,)
         return ToolResult(
             code=result.code, data=data, is_error=result.code in _REGISTRY_REJECTIONS, blocks=blocks
         )

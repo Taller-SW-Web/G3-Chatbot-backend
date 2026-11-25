@@ -88,6 +88,121 @@ class OrderQueryArguments(ToolArguments):
     ] | None = None
 
 
+class TrackingArguments(ToolArguments):
+    """SPEC-18: tracking by opaque `pedidoId` or by the customer-spoken `pedidoRef`."""
+
+    pedidoId: Text | None = None
+    pedidoRef: Text | None = None
+
+    @model_validator(mode="after")
+    def validar_referencia(self) -> Self:
+        if sum(value is not None for value in (self.pedidoId, self.pedidoRef)) != 1:
+            raise ValueError("Indica una referencia de pedido")
+        return self
+
+
+class CouponArguments(ToolArguments):
+    """SPEC-13: coupon code plus the explicit UI confirmation to replace another one."""
+
+    codigo: Text
+    confirmarReemplazo: bool = Field(default=False, strict=True)
+
+
+class ConversationSearchArguments(ToolArguments):
+    q: Annotated[str, Field(min_length=1, max_length=100)]
+
+
+class ClaimLookupArguments(ToolArguments):
+    codigoSeguimiento: Text
+
+
+class ReturnLookupArguments(ToolArguments):
+    devolucionId: Text
+
+
+ClaimReason = Literal[
+    "INCUMPLIMIENTO_PLAZO_ENTREGA",
+    "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
+    "COBRO_INDEBIDO_O_NO_RECONOCIDO",
+    "ATENCION_INADECUADA",
+    "INCUMPLIMIENTO_GARANTIA",
+]
+ClaimType = Literal["RECLAMO", "QUEJA"]
+ReturnType = Literal["CAMBIO", "DEVOLUCION_DINERO"]
+ReturnReason = Literal[
+    "TALLA_INCORRECTA",
+    "NO_ERA_LO_QUE_ESPERABA",
+    "PRODUCTO_DEFECTUOSO",
+    "PRODUCTO_EQUIVOCADO_ENVIADO",
+    "YA_NO_LO_QUIERO",
+    "OTRO",
+]
+
+
+class ClaimPrepareArguments(ToolArguments):
+    """SPEC-19: prefill the claim form; nothing is registered until the button is pressed."""
+
+    pedidoRef: Text | None = None
+    tipo: ClaimType | None = None
+    motivo: ClaimReason | None = None
+    descripcion: Annotated[str, Field(max_length=1000)] | None = None
+    pedidoCliente: Text | None = None
+
+
+class ClaimConsumerArguments(ToolArguments):
+    nombreCompleto: Annotated[str, Field(min_length=1, max_length=150)]
+    documento: Annotated[str, Field(min_length=1, max_length=20)]
+    email: Annotated[str, Field(min_length=3, max_length=150)]
+    telefono: Annotated[str, Field(min_length=1, max_length=20)]
+
+
+class ClaimConfirmArguments(ToolArguments):
+    """SPEC-19 Req. 2: the claim form submit (UI action `CONFIRMAR_RECLAMO`)."""
+
+    pedidoId: Text
+    tipo: ClaimType
+    motivo: ClaimReason
+    descripcion: Annotated[str, Field(min_length=20, max_length=1000)]
+    consumidor: ClaimConsumerArguments
+    solucionEsperada: Annotated[str, Field(max_length=500)] | None = None
+    forzar: bool = Field(default=False, strict=True)
+    idempotencyKey: Annotated[str, Field(min_length=8, max_length=120)] | None = None
+
+
+class ReturnPrepareArguments(ToolArguments):
+    """SPEC-21: prefill the return/change form; nothing is registered until the button is pressed."""
+
+    pedidoRef: Text | None = None
+    lineaRef: Text | None = None
+    tipo: ReturnType | None = None
+    motivo: ReturnReason | None = None
+    varianteDeseada: Text | None = None
+    descripcion: Annotated[str, Field(max_length=1000)] | None = None
+
+
+class ReturnItemArguments(ToolArguments):
+    productoId: Text
+    cantidad: Annotated[int, Field(strict=True, ge=1, le=99)]
+
+
+class ReturnEvidenceArguments(ToolArguments):
+    tipo: Literal["IMAGEN", "DOCUMENTO"]
+    url: Annotated[str, Field(min_length=1, max_length=500)]
+
+
+class ReturnConfirmArguments(ToolArguments):
+    """SPEC-21 Req. 4: the return form submit (UI action `CONFIRMAR_DEVOLUCION`)."""
+
+    pedidoId: Text
+    tipo: ReturnType
+    motivo: ReturnReason
+    descripcion: Annotated[str, Field(max_length=1000)] | None = None
+    items: list[ReturnItemArguments] = Field(min_length=1)
+    evidencias: list[ReturnEvidenceArguments] = Field(default_factory=list, max_length=3)
+    forzar: bool = Field(default=False, strict=True)
+    idempotencyKey: Annotated[str, Field(min_length=8, max_length=120)] | None = None
+
+
 class ProductArguments(ToolArguments):
     productoRef: Annotated[int, Field(strict=True, ge=1, le=10)] | None = None
     product_id: Text | None = None
@@ -180,15 +295,84 @@ _TOOLS = (
     ("cambiar_cantidad", "Cambiar cantidad de una línea; cero elimina la línea.", QuantityArguments),
     ("quitar_del_carrito", "Quitar una línea del carrito.", ItemArguments),
     ("vaciar_carrito", "Vaciar el carrito tras confirmación explícita en la UI.", EmptyArguments),
+    ("aplicar_cupon", (
+        "Aplicar un cupón al carrito del cliente con sesión iniciada. Si ya hay otro cupón, "
+        "pide confirmación y vuelve a llamar con `confirmarReemplazo=true`."
+    ), CouponArguments),
+    ("quitar_cupon", "Quitar el cupón del carrito del cliente con sesión iniciada.", EmptyArguments),
+    ("iniciar_checkout", (
+        "Llevar al cliente a la pantalla de checkout; no crea el pedido ni procesa el pago, "
+        "que solo ocurren en esa pantalla. Requiere sesión iniciada."
+    ), EmptyArguments),
     ("consultar_pedidos", (
         "Consultar el estado de los pedidos del cliente con sesión iniciada. Sin argumentos lista "
-        "sus pedidos recientes; con `pedidoId` muestra ese pedido, su estado y su línea de tiempo."
+        "sus pedidos recientes o muestra el único pedido en curso; con `pedidoId` muestra ese "
+        "pedido, su estado y su línea de tiempo."
     ), OrderQueryArguments),
+    ("consultar_seguimiento", (
+        "Consultar el seguimiento del despacho de un pedido del cliente con sesión iniciada. "
+        "Indica `pedidoId` o `pedidoRef` con el número que dio el cliente."
+    ), TrackingArguments),
+    ("preparar_reclamo", (
+        "Preparar el formulario de reclamo o queja de un pedido. No registra nada: el cliente "
+        "lo revisa y confirma con el botón \"Enviar reclamo\". Si falta el pedido, devuelve la "
+        "lista para elegir uno."
+    ), ClaimPrepareArguments),
+    ("listar_reclamos", (
+        "Listar los reclamos del cliente con sesión iniciada, o mostrar el detalle si tiene un "
+        "solo reclamo abierto."
+    ), EmptyArguments),
+    ("consultar_reclamo", (
+        "Consultar el estado y la respuesta de un reclamo propio por `codigoSeguimiento`."
+    ), ClaimLookupArguments),
+    ("preparar_devolucion", (
+        "Preparar el formulario de cambio o devolución de un pedido entregado. No registra "
+        "nada: el cliente lo revisa y confirma con el botón \"Enviar solicitud\"."
+    ), ReturnPrepareArguments),
+    ("listar_devoluciones", (
+        "Listar las solicitudes de cambio y devolución del cliente con sesión iniciada."
+    ), EmptyArguments),
+    ("consultar_devolucion", (
+        "Consultar el estado de una solicitud de cambio o devolución propia por `devolucionId`."
+    ), ReturnLookupArguments),
+    ("solicitar_login", "Mostrar el formulario de inicio de sesión; las credenciales nunca van por el chat.", EmptyArguments),
+    ("reenviar_verificacion", (
+        "Mostrar el formulario para reenviar el correo de verificación de la cuenta."
+    ), EmptyArguments),
+    ("cerrar_sesion", (
+        "Cerrar la sesión del cliente. Devuelve la acción CERRAR_SESION y el frontend ejecuta el "
+        "logout contra el BFF; el backend no toca cookies."
+    ), EmptyArguments),
+    ("nueva_conversacion", (
+        "Ofrecer empezar una conversación nueva. Devuelve la acción NUEVO_CHAT; el frontend crea "
+        "la conversación."
+    ), EmptyArguments),
+    ("buscar_conversaciones", (
+        "Ofrecer buscar en conversaciones anteriores. Devuelve la acción BUSCAR_CHATS con el "
+        "término en `payload.q`; el frontend abre la búsqueda."
+    ), ConversationSearchArguments),
     ("verificar_celular", (
         "Consultar o iniciar la verificación del celular del cliente. Sin argumentos devuelve si el "
         "celular vigente ya está verificado o el formulario OTP_CELULAR para verificarlo."
     ), EmptyArguments),
 )
+
+
+_SESSION_TOOLS = frozenset({
+    "aplicar_cupon",
+    "cerrar_sesion",
+    "consultar_devolucion",
+    "consultar_pedidos",
+    "consultar_reclamo",
+    "consultar_seguimiento",
+    "iniciar_checkout",
+    "listar_devoluciones",
+    "listar_reclamos",
+    "preparar_devolucion",
+    "preparar_reclamo",
+    "quitar_cupon",
+    "verificar_celular",
+})
 
 
 def build_tool_registry(handlers: Mapping[str, ToolHandler] | None = None) -> ToolRegistry:
@@ -216,7 +400,8 @@ def build_tool_registry(handlers: Mapping[str, ToolHandler] | None = None) -> To
             continue
         registry.registrar(ToolDefinition(
             nombre, descripcion, esquema, handlers[nombre],
-            requiere_sesion=nombre in {"consultar_pedidos", "verificar_celular"},
+            requiere_sesion=nombre in _SESSION_TOOLS,
             requiere_confirmacion=nombre == "vaciar_carrito",
+            accion_pendiente_sesion="INICIAR_CHECKOUT" if nombre == "iniciar_checkout" else None,
         ))
     return registry
