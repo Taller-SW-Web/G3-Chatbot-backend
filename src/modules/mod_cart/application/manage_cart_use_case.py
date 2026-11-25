@@ -143,7 +143,16 @@ class ManageCartUseCase:
         cart = await self._open_cart(caller, conversation_id, create=False)
         if cart is None:
             return self._empty_cart_view()
-        return await self._cart_view(cart, conversation_id)
+        # `_cart_view` persists the promotion evaluation and the prices it used.
+        # A read request has no other commit point, so without this commit the
+        # checkout would later read an older snapshot than the one the customer saw.
+        try:
+            result = await self._cart_view(cart, conversation_id)
+            await self._uow.commit()
+        except BaseException:
+            await self._uow.rollback()
+            raise
+        return result
 
     async def apply_coupon(
         self,
@@ -270,6 +279,21 @@ class ManageCartUseCase:
                 "ok": projection.ok and quantity.ok,
             }
         return outcome
+
+    async def recalculate_totals(self, cart) -> dict:
+        """Re-evaluate prices/promotions for checkout recovery (SPEC-14 Req. 2).
+
+        Uses the same view path as `GET /carrito`, so it refreshes the last seen
+        prices and persists the snapshot the customer must confirm. The commit
+        makes that snapshot visible to the next checkout attempt.
+        """
+        try:
+            view = await self._cart_view(cart, None, touch=False)
+            await self._uow.commit()
+        except BaseException:
+            await self._uow.rollback()
+            raise
+        return view["bloques"][0]["datos"]
 
     async def mark_converted(self, cart_id: uuid.UUID) -> None:
         """Hook for the order flow (SPEC-15): a paid cart becomes CONVERTED."""
@@ -477,12 +501,27 @@ class ManageCartUseCase:
         totals = self._totals.calculate(
             priced, evaluation=evaluation, promotion_names=names
         )
+        # `unit_price_ref` is the last price the customer saw (modelo-datos):
+        # refresh it here so the checkout compares against the same prices this
+        # view just showed. `previous_price` above keeps the change notice.
+        for row, priced_line in zip(rows, priced, strict=True):
+            if (
+                priced_line.available
+                and priced_line.unit_price != Decimal(str(row.unit_price_ref))
+            ):
+                await self._items.refresh_price(
+                    row.id, unit_price_ref=float(priced_line.unit_price)
+                )
         await self._carts.set_totals(cart.id, {
             "subtotal": str(totals.subtotal),
             "descuentos": [
                 {"name": d["name"], "amount": str(d["amount"])} for d in totals.discounts
             ],
             "total": str(totals.total),
+            # The checkout must know whether this snapshot could evaluate
+            # promotions: a zero discount is not the same as an unavailable engine.
+            "promociones_ok": promotions_ok,
+            "promotion_reason": evaluation.get("reason") if evaluation else None,
         })
         if touch:
             await self._carts.touch(cart.id)

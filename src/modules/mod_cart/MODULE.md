@@ -43,6 +43,25 @@ el import pasa por esta superficie pública y el checker de fronteras lo verific
   `src/shared/application/ports`, implementado por `mod-chat` y resuelto por la
   capacidad `conversation_context` (el DAG no permite importar chat).
 
+## Totales y promociones (SPEC-11 Req. 3)
+
+`_cart_view` es la única fuente de los totales que ve el cliente. Cada vez que
+se muestra el carrito:
+
+- recalcula precios con G6 y actualiza `cart_item.unit_price_ref` al último
+  precio visto (la línea conserva el aviso de cambio vía `previous_price`);
+- evalúa promociones una sola vez y persiste en `cart.totals_snapshot`
+  `subtotal`, `descuentos`, `total`, `promociones_ok` y `promotion_reason`;
+- `GET /carrito` hace commit de ese snapshot. Sin ese commit, el checkout
+  podría leer un snapshot anterior (caso `PED-2026-00088`).
+
+`promociones_ok: false` significa que G6 no pudo evaluar; **no** es un descuento
+cero. El checkout lo trata como carrito desactualizado y no crea el pedido.
+`recalculate_totals(cart)` expone la misma ruta de recálculo para que
+`mod-checkout` refresque y persista el snapshot antes de responder `409`, sin
+depender de que el cliente vuelva a abrir el carrito.
+Detalle en [`docs/checkout-consistencia.md`](../../../docs/checkout-consistencia.md).
+
 ## Pruebas
 
 - Unitarias: `tests/unit/mod_cart/`
