@@ -16,7 +16,7 @@ propiedad del pedido en Ventas. **No** anula pedidos ni reembolsa.
 
 | Tipo | Archivo | Qué expone |
 |---|---|---|
-| Backend | `public.py` | `PostventaService`, `provide_postventa_service`, `PostventaPort`, los DTO de detalle |
+| Backend | `public.py` | `PostventaService`, `provide_postventa_service`, `PostventaPort`, `PostventaError`, los DTO de detalle y las etiquetas de estado (`map_claim_status_label`, `map_return_status_label`, `OPEN_CLAIM_STATES`) que `mod-chat` usa en los bloques |
 | Frontend | `public.ts` | Tipos de devolución, reclamo y CSAT |
 
 ## Rutas

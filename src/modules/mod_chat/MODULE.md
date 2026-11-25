@@ -72,12 +72,31 @@ memoria de conversación y la auditoría TOOL sin importar la persistencia de ch
 - La notificación interna se encola como `SEND_FEEDBACK_EMAIL` y reutiliza el
   `EmailSender` de SPEC-16; si falla, el outbox reintenta sin perder el registro.
 
+## Catálogo M5 (SPEC-05)
+
+- El `ToolRegistry` publica exactamente las 29 herramientas de
+  `shared/application/tools/tool_contracts.py`; no hay alias de
+  `listar_pedidos`/`consultar_pedido`.
+- `confirmar_reclamo` y `confirmar_devolucion` son acciones **solo UI**
+  (`solo_ui=True`): el dispatcher las ejecuta con `confirmacion_ui=True` tras el
+  botón "Enviar reclamo"/"Enviar solicitud", pero nunca se ofrecen al LLM.
+  El submit envía `payload.confirmado: true`; `DispatchDirectActionUseCase` lo
+  consume y lo retira antes de validar los argumentos.
+- `iniciar_checkout`, `cerrar_sesion`, `nueva_conversacion` y
+  `buscar_conversaciones` devuelven acciones de cliente (`IR_A_CHECKOUT`,
+  `CERRAR_SESION`, `NUEVO_CHAT`, `BUSCAR_CHATS`); no crean checkout, no tocan
+  cookies y no crean conversaciones.
+- `consultar_pedidos` aplica D7: sin `pedidoId` ni `estado`, solo muestra
+  `ESTADO_PEDIDO` si hay exactamente un pedido no finalizado.
+- `consultar_seguimiento` añade `datos.seguimiento` (lista blanca de Despacho)
+  junto a `datos.hitos` de Ventas.
+
 ## Dependencias externas
 
 - **LLM** (`LLM_PROVIDER=openai`) vía `ports/llm_provider_port.py`; sin API key
   el turno degrada (`DegradedMode`) en lugar de fallar.
-- Herramientas de catálogo, carrito y pedidos, construidas sobre los casos de
-  uso públicos de cada módulo.
+- Herramientas de catálogo, carrito, pedidos y postventa, construidas sobre los
+  casos de uso públicos de cada módulo.
 - Memoria de conversación y mensajes: adaptadores compartidos de `src/shared`;
   cart/catalog los consumen solo a través de `ConversationContextPort`.
 

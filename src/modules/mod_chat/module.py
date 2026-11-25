@@ -40,14 +40,20 @@ from src.modules.mod_chat.application.interpret_and_respond_use_case import (
 from src.modules.mod_chat.application.manage_conversation_use_case import (
     ManageConversationUseCase,
 )
+from src.modules.mod_chat.application.tools.account_handlers import build_account_handlers
 from src.modules.mod_chat.application.tools.action_dispatcher import ActionDispatcher
 from src.modules.mod_chat.application.tools.cart_handlers import build_cart_handlers
 from src.modules.mod_chat.application.tools.catalog_handlers import build_catalog_handlers
 from src.modules.mod_chat.application.tools.order_handlers import build_order_handlers
 from src.modules.mod_chat.application.tools.phone_handlers import build_phone_handlers
+from src.modules.mod_chat.application.tools.postventa_handlers import (
+    build_postventa_confirmation_tools,
+    build_postventa_handlers,
+)
 from src.modules.mod_chat.ports.llm_provider_port import LLMProvider
 from src.modules.mod_chat.ports.tool_executor_port import ToolExecutorPort
 from src.modules.mod_orders.public import provide_orders_service
+from src.modules.mod_postventa.public import provide_postventa_service
 from src.shared.application.ports.attachment_storage_port import AttachmentStoragePort
 from src.shared.application.tools.tool_registry import ToolRegistry
 from src.shared.domain.sensitive_data_filter import SensitiveDataFilter
@@ -169,12 +175,21 @@ def provide_tool_registry(session: AsyncSession) -> ToolRegistry:
     """Build the canonical registry for both LLM and direct-UI action paths."""
     catalog = provide_catalog_service(session)
     cart = provide_cart_service(session)
+    orders = provide_orders_service(session)
+    postventa = provide_postventa_service(session)
     handlers: dict[str, Any] = {}
     handlers.update(build_catalog_handlers(catalog))
     handlers.update(build_cart_handlers(cart))
-    handlers.update(build_order_handlers(provide_orders_service(session)))
+    handlers.update(build_order_handlers(orders))
     handlers.update(build_phone_handlers(provide_phone_service(session)))
-    return build_tool_registry(handlers)
+    handlers.update(build_account_handlers())
+    handlers.update(build_postventa_handlers(postventa, orders))
+    registry = build_tool_registry(handlers)
+    # UI-only confirmation actions: registered for the dispatcher but never
+    # exposed to the LLM (`solo_ui=True` removes them from `catalogo()`).
+    for definition in build_postventa_confirmation_tools(postventa):
+        registry.registrar(definition)
+    return registry
 
 
 def provide_action_dispatcher(session: AsyncSession) -> ActionDispatcher:

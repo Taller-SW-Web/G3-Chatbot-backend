@@ -70,10 +70,54 @@ def build_cart_handlers(cart_use_case) -> dict:
     async def vaciar_carrito(args, context: ExecutionContext) -> ToolResult:
         return await _run(cart_use_case.clear, context)
 
+    async def aplicar_cupon(args, context: ExecutionContext) -> ToolResult:
+        caller = caller_from_context(context)
+        conversation_id = conversation_id_from_context(context)
+        if caller is None or conversation_id is None:
+            return ToolResult("RECURSO_NO_ENCONTRADO", {"texto": ""})
+        try:
+            result = await cart_use_case.apply_coupon(
+                caller, conversation_id,
+                codigo=args.codigo,
+                confirmar_reemplazo=args.confirmarReemplazo,
+            )
+        except CartError as exc:
+            data: dict = {"texto": exc.detail}
+            data.update(exc.data)
+            return ToolResult(exc.code, data)
+        except ModuleUnavailableError as exc:
+            return ToolResult("SERVICIO_NO_DISPONIBLE", {"modulo": exc.module})
+        return ToolResult(result["code"], {
+            "texto": result["texto"],
+            "cupon": result.get("cupon"),
+            "bloques": result["bloques"],
+        })
+
+    async def quitar_cupon(args, context: ExecutionContext) -> ToolResult:
+        caller = caller_from_context(context)
+        conversation_id = conversation_id_from_context(context)
+        if caller is None or conversation_id is None:
+            return ToolResult("RECURSO_NO_ENCONTRADO", {"texto": ""})
+        try:
+            result = await cart_use_case.remove_coupon(caller, conversation_id)
+        except CartError as exc:
+            data: dict = {"texto": exc.detail}
+            data.update(exc.data)
+            return ToolResult(exc.code, data)
+        except ModuleUnavailableError as exc:
+            return ToolResult("SERVICIO_NO_DISPONIBLE", {"modulo": exc.module})
+        return ToolResult(result["code"], {
+            "texto": result["texto"],
+            "cupon": result.get("cupon"),
+            "bloques": result["bloques"],
+        })
+
     return {
         "agregar_al_carrito": agregar_al_carrito,
         "ver_carrito": ver_carrito,
         "cambiar_cantidad": cambiar_cantidad,
         "quitar_del_carrito": quitar_del_carrito,
         "vaciar_carrito": vaciar_carrito,
+        "aplicar_cupon": aplicar_cupon,
+        "quitar_cupon": quitar_cupon,
     }

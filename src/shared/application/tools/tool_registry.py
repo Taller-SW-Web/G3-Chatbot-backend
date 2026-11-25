@@ -42,6 +42,11 @@ class ToolDefinition:
     handler: ToolHandler
     requiere_sesion: bool = False
     requiere_confirmacion: bool = False
+    # UI-only actions (CONFIRMAR_RECLAMO/DEVOLUCION) are never offered to the
+    # LLM: `catalogo()` omits them and `ejecutar()` rejects them by name.
+    solo_ui: bool = False
+    # SPEC-03 Req. 3: protected tools may name the action to resume after login.
+    accion_pendiente_sesion: str | None = None
 
 
 # SPEC-05 exige ignorar la identidad propuesta por el LLM, no usarla.
@@ -74,14 +79,22 @@ class ToolRegistry:
                 "requiere_confirmacion": tool.requiere_confirmacion,
             }
             for tool in self._tools.values()
+            if not tool.solo_ui
         ]
+
+    def contiene(self, nombre: str, *, incluir_solo_ui: bool = False) -> bool:
+        """Whether the registry can dispatch `nombre` (UI path may include hidden actions)."""
+        tool = self._tools.get(nombre)
+        return tool is not None and (incluir_solo_ui or not tool.solo_ui)
 
     async def ejecutar(
         self, nombre: str, argumentos: Mapping[str, Any] | str,
         contexto: ExecutionContext,
     ) -> ToolResult:
         """Camino LLM: nunca autoriza acciones que requieran confirmación."""
-        return await self._ejecutar(nombre, argumentos, contexto, confirmada=False)
+        return await self._ejecutar(
+            nombre, argumentos, contexto, confirmada=False, permitir_solo_ui=False,
+        )
 
     async def ejecutar_accion(
         self, nombre: str, argumentos: Mapping[str, Any],
@@ -94,14 +107,15 @@ class ToolRegistry:
         """
         return await self._ejecutar(
             nombre, argumentos, contexto, confirmada=confirmacion_ui is True,
+            permitir_solo_ui=True,
         )
 
     async def _ejecutar(
         self, nombre: str, argumentos: Mapping[str, Any] | str,
-        contexto: ExecutionContext, *, confirmada: bool,
+        contexto: ExecutionContext, *, confirmada: bool, permitir_solo_ui: bool,
     ) -> ToolResult:
         tool = self._tools.get(nombre)
-        if tool is None:
+        if tool is None or (tool.solo_ui and not permitir_solo_ui):
             return ToolResult("HERRAMIENTA_DESCONOCIDA")
         if isinstance(argumentos, str):
             try:
@@ -127,6 +141,10 @@ class ToolRegistry:
             return ToolResult("ARGUMENTOS_INVALIDOS", {"errores": errores})
         pendiente = {"herramienta": nombre, "argumentos": validados.model_dump(mode="json")}
         if tool.requiere_sesion and not contexto.cliente_id:
+            if tool.accion_pendiente_sesion:
+                return ToolResult(
+                    "REQUIERE_SESION", {"accionPendiente": tool.accion_pendiente_sesion},
+                )
             return ToolResult("REQUIERE_SESION", {"accionPendiente": pendiente})
         if tool.requiere_confirmacion and not confirmada:
             return ToolResult("REQUIERE_CONFIRMACION", {"accionPendiente": pendiente})

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+from src.infrastructure.discovery import configure_modules
 from src.modules.mod_catalog.application.tools import build_tool_registry
 from src.modules.mod_chat import module as chat_module
 from src.modules.mod_chat.adapters.registry_tool_adapter import RegistryToolAdapter
@@ -18,6 +19,7 @@ from src.shared.application.tools.tool_registry import (
 from src.shared.application.tools.tool_registry import (
     ToolResult as RegistryResult,
 )
+from src.shared.infrastructure.di.registry import registry as capabilities
 
 CONVERSATION = uuid.uuid4()
 CUSTOMER = uuid.uuid4()
@@ -42,6 +44,7 @@ def test_definitions_map_the_catalog_to_llm_tool_definitions():
 
 
 def test_default_wiring_exposes_registration_plus_commercial_tools():
+    configure_modules(capabilities)
     executor: ToolExecutorPort = provide_tool_executor(object())
     assert [d.name for d in executor.definitions()] == [
         "solicitar_registro",
@@ -56,7 +59,22 @@ def test_default_wiring_exposes_registration_plus_commercial_tools():
         "cambiar_cantidad",
         "quitar_del_carrito",
         "vaciar_carrito",
+        "aplicar_cupon",
+        "quitar_cupon",
+        "iniciar_checkout",
         "consultar_pedidos",
+        "consultar_seguimiento",
+        "preparar_reclamo",
+        "listar_reclamos",
+        "consultar_reclamo",
+        "preparar_devolucion",
+        "listar_devoluciones",
+        "consultar_devolucion",
+        "solicitar_login",
+        "reenviar_verificacion",
+        "cerrar_sesion",
+        "nueva_conversacion",
+        "buscar_conversaciones",
         "verificar_celular",
     ]
 
@@ -85,6 +103,14 @@ async def test_direct_action_dispatcher_uses_session_scoped_commercial_handlers(
     monkeypatch.setattr(chat_module, "build_cart_handlers", lambda service: {
         "ver_carrito": cart_handler,
     })
+    monkeypatch.setattr(chat_module, "provide_orders_service", lambda session: object())
+    monkeypatch.setattr(chat_module, "provide_postventa_service", lambda session: object())
+    monkeypatch.setattr(chat_module, "provide_phone_service", lambda session: object())
+    monkeypatch.setattr(chat_module, "build_order_handlers", lambda service: {})
+    monkeypatch.setattr(chat_module, "build_phone_handlers", lambda service: {})
+    monkeypatch.setattr(chat_module, "build_account_handlers", lambda: {})
+    monkeypatch.setattr(chat_module, "build_postventa_handlers", lambda service, orders: {})
+    monkeypatch.setattr(chat_module, "build_postventa_confirmation_tools", lambda service: ())
 
     dispatcher = chat_module.provide_action_dispatcher(session)
     result = await dispatcher.despachar(

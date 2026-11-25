@@ -20,9 +20,20 @@ QUICK_ACTIONS = {
     "CAMBIAR_CANTIDAD": "cambiar_cantidad",
     "QUITAR_DEL_CARRITO": "quitar_del_carrito",
     "VACIAR_CARRITO": "vaciar_carrito",
+    "APLICAR_CUPON": "aplicar_cupon",
+    "QUITAR_CUPON": "quitar_cupon",
     "CONSULTAR_PEDIDOS": "consultar_pedidos",
     "MIS_PEDIDOS": "consultar_pedidos",
     "VER_PEDIDO": "consultar_pedidos",
+    "CONSULTAR_SEGUIMIENTO": "consultar_seguimiento",
+    "PREPARAR_RECLAMO": "preparar_reclamo",
+    "MIS_RECLAMOS": "listar_reclamos",
+    "CONSULTAR_RECLAMO": "consultar_reclamo",
+    "CONFIRMAR_RECLAMO": "confirmar_reclamo",
+    "PREPARAR_DEVOLUCION": "preparar_devolucion",
+    "MIS_DEVOLUCIONES": "listar_devoluciones",
+    "CONSULTAR_DEVOLUCION": "consultar_devolucion",
+    "CONFIRMAR_DEVOLUCION": "confirmar_devolucion",
 }
 
 
@@ -32,13 +43,13 @@ class ActionDispatcher:
     ) -> None:
         self._registry = registry
         configured = QUICK_ACTIONS if acciones is None else acciones
-        registered = {tool["nombre"] for tool in registry.catalogo()}
-        # Expose only actions that can execute through this exact registry. This
-        # keeps degraded-menu IDs from advertising tools not wired in this app.
+        # Expose only actions that can execute through this exact registry
+        # (including UI-only confirmation actions). This keeps degraded-menu IDs
+        # from advertising tools not wired in this app.
         self._acciones = {
             action_id: tool_name
             for action_id, tool_name in configured.items()
-            if tool_name in registered
+            if registry.contiene(tool_name, incluir_solo_ui=True)
         }
 
     async def despachar(
