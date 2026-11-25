@@ -30,6 +30,10 @@ JWKS_PATH = "/auth/.well-known/jwks.json"
 JWKS_TIMEOUT_SECONDS = 3.0
 JWKS_TTL_SECONDS = 3600.0
 MIN_FORCE_REFRESH_SECONDS = 30.0
+# G7 may emit `iat` a few seconds ahead of the BFF clock (observed: ~20 s). A
+# 60 s leeway absorbs that skew without accepting tokens that are meaningfully
+# expired; it applies to `iat`, `nbf` and `exp` in PyJWT.
+JWT_LEEWAY_SECONDS = 60
 
 
 class UnknownKeyIdError(Exception):
@@ -72,6 +76,7 @@ def decode_with_jwks(token: str, jwks_keys: dict, expected_issuer: str = EXPECTE
             cast(RSAPublicKey, public_key),
             algorithms=["RS256"],
             issuer=expected_issuer,
+            leeway=JWT_LEEWAY_SECONDS,
             options={"require": ["exp", "iss", "sub"]},
         )
     except jwt.ExpiredSignatureError:
