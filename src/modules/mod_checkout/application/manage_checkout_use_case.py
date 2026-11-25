@@ -199,6 +199,8 @@ class ManageCheckoutUseCase:
             return
         if not self.require_verified_contact:
             return
+        # Defensive: the router already requires `require_customer`, so a request
+        # without a token should not reach the guard; never trust an anonymous one.
         if self.security_client is None or not input_data.access_token:
             raise CheckoutError(
                 "CONTACTO_NO_VERIFICADO",
@@ -208,20 +210,32 @@ class ManageCheckoutUseCase:
         try:
             profile = dict(await self.security_client.me(input_data.access_token))
         except Exception as exc:
+            # A 401/403 from Seguridad means the holder token is no longer valid;
+            # anything else (timeout, 5xx, unexpected shape) is an outage.
+            motivo = (
+                "SIN_SESION"
+                if isinstance(exc, ModuleRequestError) and exc.status in (401, 403)
+                else "SEGURIDAD_NO_DISPONIBLE"
+            )
             logger.warning("Seguridad profile unavailable while checking the contact: %s", exc)
             raise CheckoutError(
                 "CONTACTO_NO_VERIFICADO",
                 VERIFIED_CONTACT_MESSAGE,
-                {"motivo": "SEGURIDAD_NO_DISPONIBLE"},
+                {"motivo": motivo},
             ) from exc
 
+        contacto = input_data.contacto if isinstance(input_data.contacto, dict) else {}
         raw_email = profile.get("correo") or profile.get("email")
         email = str(raw_email).strip() if raw_email else ""
         if email:
-            contacto = input_data.contacto if isinstance(input_data.contacto, dict) else {}
             contacto["email"] = email
             input_data.contacto = contacto
             return
+
+        # The snapshot only carries the profile e-mail: drop any client-supplied
+        # address when there is no verified profile address to normalize.
+        contacto.pop("email", None)
+        input_data.contacto = contacto
 
         raw_phone = profile.get("celular") or profile.get("telefono")
         phone = str(raw_phone).strip() if raw_phone else ""

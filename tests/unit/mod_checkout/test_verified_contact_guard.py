@@ -11,6 +11,7 @@ from src.modules.mod_checkout.application.manage_checkout_use_case import (
     CreateCheckoutInput,
     ManageCheckoutUseCase,
 )
+from src.shared.domain.module_errors import ModuleRequestError
 from tests.fakes.fake_commerce import FakeDispatch
 
 CONTACT = {
@@ -160,6 +161,29 @@ async def test_payload_email_is_replaced_by_the_profile_email():
     use_case = build()
     row = await use_case.create_checkout(payload(email="otro@example.com"))
     assert row.summary["contacto"]["email"] == PROFILE_EMAIL
+
+
+@pytest.mark.asyncio
+async def test_payload_email_is_dropped_when_the_profile_has_no_email():
+    use_case = build(profile={"celular": PHONE}, phone_verified=True)
+    row = await use_case.create_checkout(payload(email="otro@example.com"))
+    assert row.customer_id == CUSTOMER
+    assert "email" not in row.summary["contacto"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [401, 403])
+async def test_rejected_g7_token_is_reported_as_sin_sesion(status):
+    use_case = build()
+
+    async def rejected(token):
+        raise ModuleRequestError("security", status, "TOKEN_INVALIDO")
+
+    use_case.security_client = MagicMock(me=rejected)
+    with pytest.raises(CheckoutError) as exc:
+        await use_case.create_checkout(payload())
+    assert exc.value.code == "CONTACTO_NO_VERIFICADO"
+    assert exc.value.extra["motivo"] == "SIN_SESION"
 
 
 @pytest.mark.asyncio
