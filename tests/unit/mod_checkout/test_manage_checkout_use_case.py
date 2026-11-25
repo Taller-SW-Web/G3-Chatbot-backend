@@ -64,7 +64,16 @@ def use_case(mock_checkouts, mock_attempts, payment_gateway):
     cart_id = uuid.uuid4()
     customer_id = uuid.uuid4()
     carts = MagicMock()
-    carts.obtener_por_id = AsyncMock(return_value=SimpleNamespace(id=cart_id, customer_id=customer_id, totals_snapshot=None))
+    carts.obtener_por_id = AsyncMock(return_value=SimpleNamespace(
+        id=cart_id,
+        customer_id=customer_id,
+        totals_snapshot={
+            "subtotal": "100.00",
+            "descuentos": [],
+            "total": "100.00",
+            "promociones_ok": True,
+        },
+    ))
     carts.cambiar_estado = AsyncMock()
     items = MagicMock()
     items.listar_por_cart = AsyncMock(return_value=[SimpleNamespace(sku="SKU-1", name="Polo", quantity=2, unit_price_ref=50, image_url=None)])
@@ -247,6 +256,8 @@ async def test_create_checkout_uses_only_cart_discount_snapshot(use_case):
     cart.totals_snapshot = {
         "subtotal": "100.00",
         "descuentos": [{"name": "PROMO", "amount": "10.00"}],
+        "total": "90.00",
+        "promociones_ok": True,
     }
     checkout = await use_case.create_checkout(CreateCheckoutInput(
         customer_id=cart.customer_id,
@@ -343,6 +354,8 @@ async def test_create_checkout_stale_snapshot_raises_409_with_server_summary(use
     cart.totals_snapshot = {
         "subtotal": "80.00",
         "descuentos": [{"name": "PROMO", "amount": "10.00"}],
+        "total": "70.00",
+        "promociones_ok": True,
     }
     with pytest.raises(CheckoutError) as exc_info:
         await use_case.create_checkout(CreateCheckoutInput(
@@ -353,6 +366,7 @@ async def test_create_checkout_stale_snapshot_raises_409_with_server_summary(use
             direccion=VALID_ADDRESS,
         ))
     assert exc_info.value.code == "CARRITO_DESACTUALIZADO"
+    assert exc_info.value.extra["motivo"] == "SUBTOTAL_CAMBIADO"
     assert exc_info.value.extra["summary"] == {
         "lineas": [{"sku": "SKU-1", "cantidad": 2, "precioUnitario": 50.0}],
         "subtotal": 100.0,
@@ -360,6 +374,173 @@ async def test_create_checkout_stale_snapshot_raises_409_with_server_summary(use
         "costoEnvio": 12.5,
         "total": 112.5,
     }
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_without_cart_evaluation_is_409(use_case, mock_checkouts):
+    """No snapshot means nobody proved the discount: never guess a total."""
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cart.totals_snapshot = None
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="no-evaluation",
+            cart_id=cart.id,
+            contacto=VALID_CONTACT,
+            direccion=VALID_ADDRESS,
+        ))
+    assert exc_info.value.code == "CARRITO_DESACTUALIZADO"
+    assert exc_info.value.extra["motivo"] == "SIN_EVALUACION"
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_with_unavailable_promotions_is_409(use_case, mock_checkouts):
+    """Regression: PED-2026-00088 showed S/ 49.10 off in the cart but paid full price."""
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cart.totals_snapshot = {
+        "subtotal": "100.00",
+        "descuentos": [],
+        "total": "100.00",
+        "promociones_ok": False,
+        "promotion_reason": "SERVICIO_NO_DISPONIBLE",
+    }
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="promotions-down",
+            cart_id=cart.id,
+            contacto=VALID_CONTACT,
+            direccion=VALID_ADDRESS,
+        ))
+    assert exc_info.value.code == "CARRITO_DESACTUALIZADO"
+    assert exc_info.value.extra["motivo"] == "PROMOCIONES_NO_DISPONIBLES"
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_with_legacy_snapshot_without_flag_is_409(
+    use_case, mock_checkouts
+):
+    """Pre-deploy snapshots cannot prove promotion evaluation; re-view and retry."""
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cart.totals_snapshot = {
+        "subtotal": "100.00",
+        "descuentos": [],
+        "total": "100.00",
+    }
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="legacy-snapshot",
+            cart_id=cart.id,
+            contacto=VALID_CONTACT,
+            direccion=VALID_ADDRESS,
+        ))
+    assert exc_info.value.extra["motivo"] == "PROMOCIONES_NO_DISPONIBLES"
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_with_inconsistent_snapshot_total_is_409(
+    use_case, mock_checkouts
+):
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cart.totals_snapshot = {
+        "subtotal": "100.00",
+        "descuentos": [{"name": "PROMO", "amount": "10.00"}],
+        "total": "100.00",
+        "promociones_ok": True,
+    }
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="broken-total",
+            cart_id=cart.id,
+            contacto=VALID_CONTACT,
+            direccion=VALID_ADDRESS,
+        ))
+    assert exc_info.value.extra["motivo"] == "TOTAL_INCONSISTENTE"
+    mock_checkouts.guardar.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_checkout_recalculates_stale_snapshot_and_next_attempt_succeeds(
+    use_case, mock_checkouts
+):
+    """The 409 persists a fresh snapshot, so the UI retry does not loop."""
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cart.totals_snapshot = {
+        "subtotal": "100.00",
+        "descuentos": [],
+        "total": "100.00",
+        "promociones_ok": False,
+    }
+
+    async def cart_totals(_cart):
+        cart.totals_snapshot = {
+            "subtotal": "100.00",
+            "descuentos": [{"name": "PROMO", "amount": "10.00"}],
+            "total": "90.00",
+            "promociones_ok": True,
+        }
+        return {
+            "lineas": [
+                {"sku": "SKU-1", "cantidad": 2, "precio": 50.0, "disponible": True}
+            ],
+            "subtotal": 100.0,
+            "descuentos": [{"nombre": "PROMO", "monto": 10.0}],
+            "total": 90.0,
+            "promociones_ok": True,
+        }
+
+    use_case.cart_totals = cart_totals
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="refresh-1",
+            cart_id=cart.id,
+            contacto=VALID_CONTACT,
+            direccion=VALID_ADDRESS,
+        ))
+    assert exc_info.value.extra["motivo"] == "PROMOCIONES_NO_DISPONIBLES"
+    assert exc_info.value.extra["summary"]["descuento"] == 10.0
+    assert exc_info.value.extra["summary"]["total"] == 102.5
+    mock_checkouts.guardar.assert_not_called()
+
+    checkout = await use_case.create_checkout(CreateCheckoutInput(
+        customer_id=cart.customer_id,
+        idempotency_key="refresh-2",
+        cart_id=cart.id,
+        contacto=VALID_CONTACT,
+        direccion=VALID_ADDRESS,
+    ))
+    assert checkout.total == 102.5
+    assert checkout.summary["descuento"] == 10.0
+
+
+@pytest.mark.asyncio
+async def test_checkout_recovery_failure_keeps_409_and_creates_nothing(
+    use_case, mock_checkouts
+):
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cart.totals_snapshot = None
+
+    async def cart_totals(_cart):
+        raise ModuleUnavailableError("products", "timeout")
+
+    use_case.cart_totals = cart_totals
+    with pytest.raises(CheckoutError) as exc_info:
+        await use_case.create_checkout(CreateCheckoutInput(
+            customer_id=cart.customer_id,
+            idempotency_key="refresh-down",
+            cart_id=cart.id,
+            contacto=VALID_CONTACT,
+            direccion=VALID_ADDRESS,
+        ))
+    assert exc_info.value.extra["motivo"] == "SIN_EVALUACION"
+    assert exc_info.value.extra["summary"]["descuento"] == 0.0
     mock_checkouts.guardar.assert_not_called()
 
 
@@ -755,7 +936,12 @@ async def test_create_checkout_recalculates_items_and_shipping_from_server(
     mock_cart = MagicMock()
     mock_cart.id = cart_id
     mock_cart.customer_id = cust_id
-    mock_cart.totals_snapshot = None
+    mock_cart.totals_snapshot = {
+        "subtotal": "80.00",
+        "descuentos": [],
+        "total": "80.00",
+        "promociones_ok": True,
+    }
 
     mock_carts = MagicMock()
     mock_carts.obtener_abierto_por_cliente = AsyncMock(return_value=mock_cart)
@@ -977,7 +1163,10 @@ async def test_create_checkout_calls_sales_client_and_records_order_id(
     cart_id = uuid.uuid4()
     mock_carts = MagicMock()
     mock_carts.obtener_abierto_por_cliente = AsyncMock(
-        return_value=SimpleNamespace(id=cart_id, totals_snapshot={"subtotal": 100.0, "descuentos": []})
+        return_value=SimpleNamespace(
+            id=cart_id,
+            totals_snapshot={"subtotal": 100.0, "descuentos": [], "promociones_ok": True},
+        )
     )
     mock_carts.cambiar_estado = AsyncMock()
     mock_cart_items = MagicMock()
@@ -1030,7 +1219,10 @@ async def test_create_checkout_handles_stock_insuficiente_409(
     cart_id = uuid.uuid4()
     mock_carts = MagicMock()
     mock_carts.obtener_abierto_por_cliente = AsyncMock(
-        return_value=SimpleNamespace(id=cart_id, totals_snapshot={"subtotal": 50.0, "descuentos": []})
+        return_value=SimpleNamespace(
+            id=cart_id,
+            totals_snapshot={"subtotal": 50.0, "descuentos": [], "promociones_ok": True},
+        )
     )
     mock_carts.cambiar_estado = AsyncMock()
     mock_cart_items = MagicMock()
@@ -1130,7 +1322,10 @@ async def test_create_checkout_maps_snapshot_validation_error_to_409_with_server
     cust_id = uuid.uuid4()
     mock_carts = MagicMock()
     mock_carts.obtener_abierto_por_cliente = AsyncMock(
-        return_value=SimpleNamespace(id=uuid.uuid4(), totals_snapshot={"subtotal": 100.0, "descuentos": []})
+        return_value=SimpleNamespace(
+            id=uuid.uuid4(),
+            totals_snapshot={"subtotal": 100.0, "descuentos": [], "promociones_ok": True},
+        )
     )
     mock_carts.cambiar_estado = AsyncMock()
     mock_cart_items = MagicMock()
@@ -1221,6 +1416,12 @@ async def test_retry_with_changed_address_expires_old_and_creates_new(use_case, 
 async def test_retry_after_adding_item_expires_old_and_creates_new_with_new_subtotal(use_case, mock_checkouts):
     cart, first = await _first_checkout(use_case, mock_checkouts)
     use_case.cart_items.listar_por_cart.return_value = [_item("SKU-1", 2, 50), _item("SKU-2", 1, 20)]
+    cart.totals_snapshot = {
+        "subtotal": "120.00",
+        "descuentos": [],
+        "total": "120.00",
+        "promociones_ok": True,
+    }
     res = await _retry(use_case, cart)
     assert res is not first
     assert res.summary["subtotal"] == 120.0
@@ -1233,6 +1434,12 @@ async def test_retry_after_adding_item_expires_old_and_creates_new_with_new_subt
 async def test_retry_after_price_change_creates_new_checkout(use_case, mock_checkouts):
     cart, first = await _first_checkout(use_case, mock_checkouts)
     use_case.cart_items.listar_por_cart.return_value = [_item("SKU-1", 2, 55)]
+    cart.totals_snapshot = {
+        "subtotal": "110.00",
+        "descuentos": [],
+        "total": "110.00",
+        "promociones_ok": True,
+    }
     res = await _retry(use_case, cart)
     assert res is not first
     assert res.summary["subtotal"] == 110.0
@@ -1262,6 +1469,13 @@ async def test_retry_with_approved_checkout_returns_it_even_if_data_changed(use_
 @pytest.mark.asyncio
 async def test_subtotal_sums_prices_with_decimal_precision(use_case):
     use_case.cart_items.listar_por_cart.return_value = [_item("SKU-1", 1, 329.9), _item("SKU-2", 1, 79.9)]
+    cart = await use_case.carts.obtener_por_id(uuid.uuid4())
+    cart.totals_snapshot = {
+        "subtotal": "409.80",
+        "descuentos": [],
+        "total": "409.80",
+        "promociones_ok": True,
+    }
     _, checkout = await _create(use_case, "decimal-key")
     assert checkout.summary["subtotal"] == 409.8
     assert checkout.summary["lineas"][0]["precio"] == 329.9
