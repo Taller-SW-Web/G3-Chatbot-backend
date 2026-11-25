@@ -88,6 +88,8 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Verify committed OpenAPI is up to date
+        run: python scripts/export_openapi.py --check
       - name: Export OpenAPI schema
         run: python scripts/export_openapi.py --output docs/openapi.json
       - name: Validate OpenAPI schema
