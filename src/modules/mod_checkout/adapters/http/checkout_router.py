@@ -57,6 +57,7 @@ def _translate_error(err: CheckoutError) -> ProblemError:
         "ERROR_PROCESAMIENTO": 503,
         "SERVICIO_NO_DISPONIBLE": 503,
         "CELULAR_NO_VERIFICADO": 403,
+        "CONTACTO_NO_VERIFICADO": 403,
         "CARRITO_DESACTUALIZADO": 409,
         "SIN_COBERTURA": 422,
         "MODULO_NO_DISPONIBLE": 503,
