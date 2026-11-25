@@ -234,6 +234,12 @@ class FakeItems:
             row.unit_price_ref = unit_price_ref
         self._check_flush()
 
+    async def refresh_price(self, item_id, *, unit_price_ref):
+        row = self.rows.get(item_id)
+        if row is not None:
+            row.unit_price_ref = unit_price_ref
+        self._check_flush()
+
     async def eliminar(self, item_id) -> bool:
         return self.rows.pop(item_id, None) is not None
 

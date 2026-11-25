@@ -131,6 +131,11 @@ async def test_lineas_del_carrito_agregan_recalculan_y_borran(postgres_session):
     actualizada = await items.obtener_por_id(linea.id)
     assert (actualizada.quantity, float(actualizada.unit_price_ref)) == (3, 289.0)
 
+    # `refresh_price` updates the last seen price without touching quantity.
+    await items.refresh_price(linea.id, unit_price_ref=295.0)
+    refrescada = await items.obtener_por_id(linea.id)
+    assert (refrescada.quantity, float(refrescada.unit_price_ref)) == (3, 295.0)
+
     assert await items.eliminar(linea.id) is True
     assert await items.eliminar(linea.id) is False
     restantes = await items.listar_por_cart(carrito.id)

@@ -1,5 +1,6 @@
 """Cart use case flows (SPEC-11, SPEC-10). Fakes only: no network, no database."""
 import uuid
+from decimal import Decimal
 
 import pytest
 
@@ -265,3 +266,111 @@ async def test_add_by_ambiguous_name_asks_which_product():
         await cart_uc.add(make_caller(), CONVERSATION_ID, name="Nike", quantity=1)
     assert error.value.code == "PRODUCTO_NO_DISPONIBLE"
     assert "Encontré varios productos parecidos a Nike" in error.value.detail
+
+
+def _priced_catalog(sku, regular):
+    return FakeCatalogPort(prices={
+        sku: {
+            "precio_regular": regular,
+            "precio_oferta": None,
+            "currency": "PEN",
+            "valid_from": "2020-01-01T00:00:00Z",
+            "valid_until": None,
+        },
+    })
+
+
+@pytest.mark.asyncio
+async def test_view_commits_snapshot_and_last_seen_price():
+    """GET /carrito is a write-through view: commit the snapshot it showed."""
+    sku = "NIK-REV7-42-NEG"
+    catalog = _priced_catalog(sku, 10.0)
+    carts, items, uow = FakeCarts(), FakeItems(), FakeUow()
+    cart_uc = ManageCartUseCase(
+        carts, items, catalog, FakeInventoryPort({sku: "DISPONIBLE"}),
+        FakeConversationContext(), uow,
+    )
+    cart = await carts.crear_para_cliente(CUSTOMER_ID)
+    row = await items.agregar(
+        cart_id=cart.id, product_id="prod-1", sku=sku, name="Zapatilla",
+        quantity=1, unit_price_ref=10.0,
+    )
+    catalog._prices[sku]["precio_regular"] = 12.0
+
+    view = await cart_uc.view(make_caller(), None)
+
+    assert row.unit_price_ref == 12.0
+    assert view["bloques"][0]["datos"]["total"] == 12.0
+    snapshot = carts.rows[cart.id].totals_snapshot
+    assert snapshot["promociones_ok"] is True
+    assert Decimal(snapshot["subtotal"]) == Decimal("12")
+    assert uow.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_recalculate_totals_refreshes_snapshot_and_commits():
+    """Checkout recovery uses this path: fresh prices, promotions and snapshot."""
+    sku = "NIK-REV7-42-NEG"
+    catalog = _priced_catalog(sku, 10.0)
+    carts, items, uow = FakeCarts(), FakeItems(), FakeUow()
+    cart_uc = ManageCartUseCase(
+        carts, items, catalog, FakeInventoryPort({sku: "DISPONIBLE"}),
+        FakeConversationContext(), uow,
+    )
+    cart = await carts.crear_para_cliente(CUSTOMER_ID)
+    await items.agregar(
+        cart_id=cart.id, product_id="prod-1", sku=sku, name="Zapatilla",
+        quantity=1, unit_price_ref=10.0,
+    )
+    catalog._prices[sku]["precio_regular"] = 12.0
+
+    datos = await cart_uc.recalculate_totals(cart)
+
+    assert datos["subtotal"] == 12.0
+    assert datos["promociones_ok"] is True
+    snapshot = carts.rows[cart.id].totals_snapshot
+    assert snapshot["promociones_ok"] is True
+    assert Decimal(snapshot["total"]) == Decimal("12")
+    assert uow.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_view_persists_unavailable_promotions_instead_of_zero_discount():
+    """A failed evaluation is not a valid zero-discount snapshot."""
+    sku = "NIK-REV7-42-NEG"
+
+    class BrokenPromotionsCatalog(FakeCatalogPort):
+        async def evaluate_promotions(self, *args, **kwargs):
+            raise TimeoutError("promociones caídas")
+
+    carts, items, uow = FakeCarts(), FakeItems(), FakeUow()
+    cart_uc = ManageCartUseCase(
+        carts,
+        items,
+        BrokenPromotionsCatalog(prices={
+            sku: {
+                "precio_regular": 10.0,
+                "precio_oferta": None,
+                "currency": "PEN",
+                "valid_from": "2020-01-01T00:00:00Z",
+                "valid_until": None,
+            },
+        }),
+        FakeInventoryPort({sku: "DISPONIBLE"}),
+        FakeConversationContext(),
+        uow,
+    )
+    cart = await carts.crear_para_cliente(CUSTOMER_ID)
+    await items.agregar(
+        cart_id=cart.id, product_id="prod-1", sku=sku, name="Zapatilla",
+        quantity=1, unit_price_ref=10.0,
+    )
+
+    view = await cart_uc.view(make_caller(), None)
+
+    datos = view["bloques"][0]["datos"]
+    assert datos["promociones_ok"] is False
+    assert any("checkout queda bloqueado" in aviso for aviso in datos["avisos"])
+    snapshot = carts.rows[cart.id].totals_snapshot
+    assert snapshot["promociones_ok"] is False
+    assert Decimal(snapshot["total"]) == Decimal("10")

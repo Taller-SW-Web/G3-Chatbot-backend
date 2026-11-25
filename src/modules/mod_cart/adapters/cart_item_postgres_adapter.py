@@ -92,6 +92,13 @@ class CartItemPostgresAdapter:
         row.unit_price_ref = unit_price_ref
         await self._flush()
 
+    async def refresh_price(self, item_id: uuid.UUID, *, unit_price_ref: float) -> None:
+        row = await self.obtener_por_id(item_id)
+        if row is None:
+            return
+        row.unit_price_ref = unit_price_ref
+        await self._flush()
+
     async def eliminar(self, id: uuid.UUID) -> bool:
         stmt = delete(CartItem).where(CartItem.id == id)
         res = cast(CursorResult[Any], await self.session.execute(stmt))
