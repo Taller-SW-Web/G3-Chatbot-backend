@@ -139,6 +139,17 @@ def test_explicit_phone_flag_enables_the_legacy_mode(env):
     assert get_settings().require_phone_verification is True
 
 
+def test_legacy_phone_flag_keeps_the_production_warning_quiet(env, caplog):
+    env(REQUIRE_VERIFIED_CONTACT="false", REQUIRE_PHONE_VERIFICATION="true")
+    settings = get_settings()
+    assert settings.require_verified_contact is False
+    assert settings.require_phone_verification is True
+    log = logging.getLogger("test.unsafe")
+    with caplog.at_level(logging.WARNING, logger="test.unsafe"):
+        warn_unsafe_defaults(settings, log)
+    assert caplog.records == []
+
+
 def test_production_warns_when_the_verified_contact_flag_is_disabled(env, caplog):
     env(REQUIRE_VERIFIED_CONTACT="false")
     settings = get_settings()
