@@ -38,14 +38,22 @@ pedidos ni gestiona postventa.
 - **G7 correo** (confirmación) a través de la capacidad `order_confirmation`
   que registra `mod-orders`; el outbox vive en `src/shared`.
 
-## Celular verificado (SPEC-04)
+## Contacto verificado (SPEC-04)
 
-`POST /checkout` exige que el celular vigente de `GET /auth/me` tenga una
-verificación local exacta (`local_phone_verification`). Con
-`REQUIRE_PHONE_VERIFICATION` activo, una falta de verificación responde
-`403 CELULAR_NO_VERIFICADO` con el número enmascarado; si Seguridad no responde,
-el checkout se bloquea con el mismo código y `motivo=SEGURIDAD_NO_DISPONIBLE`.
-En desarrollo/fake el flag está apagado por defecto para no romper los E2E.
+`POST /checkout` exige un contacto verificado. Por defecto el correo del perfil
+de `GET /auth/me` (verificado al crear la cuenta en G7) es el contacto válido y
+se normaliza en `summary.contacto.email`; el `email` del payload se ignora. Un
+celular verificado localmente (`local_phone_verification`) se acepta como
+respaldo cuando el perfil no trae correo. Sin correo en el perfil y sin celular
+verificado responde `403 CONTACTO_NO_VERIFICADO`
+(`motivo=SIN_CONTACTO_VERIFICADO`), con el número enmascarado si hay celular. Si
+Seguridad no responde (`SEGURIDAD_NO_DISPONIBLE`) o rechaza el token
+(`SIN_SESION`), el checkout se bloquea con el mismo código.
+
+`REQUIRE_VERIFIED_CONTACT` (default `true` en producción, `false` en
+desarrollo/fake) activa este guard. El modo legado
+`REQUIRE_PHONE_VERIFICATION=true` (solo celular, `403 CELULAR_NO_VERIFICADO`)
+tiene precedencia cuando ambos están activos.
 
 ## Stock (SPEC-10)
 
