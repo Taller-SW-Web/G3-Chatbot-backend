@@ -49,8 +49,9 @@ Ningún módulo importa `domain/`, `application/` ni `adapters/` de este paquete
   se devuelve en la respuesta para pruebas. Nunca viaja al LLM ni a `message`.
 - La verificación vale solo para el celular exacto de `GET /auth/me`; si el
   cliente lo cambia en Seguridad, se exige verificar de nuevo.
-- `REQUIRE_PHONE_VERIFICATION` (default `true` en producción, `false` en
-  desarrollo/fake) activa el bloqueo `403 CELULAR_NO_VERIFICADO` en checkout.
+- `REQUIRE_PHONE_VERIFICATION` (opt-in, default `false` también en producción)
+  activa el bloqueo legado `403 CELULAR_NO_VERIFICADO` en checkout; el guard de
+  producción es `REQUIRE_VERIFIED_CONTACT`.
 
 ## Dependencias externas
 

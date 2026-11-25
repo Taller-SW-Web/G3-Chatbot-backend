@@ -116,9 +116,35 @@ def test_no_warning_in_production_or_when_nothing_is_unsafe(caplog):
     assert caplog.records == []
 
 
-def test_production_warns_when_no_contact_guard_is_enabled(caplog):
+def test_production_defaults_enable_the_verified_contact_guard(env, caplog):
+    env()
+    settings = get_settings()
+    assert settings.require_verified_contact is True
+    assert settings.require_phone_verification is False
     log = logging.getLogger("test.unsafe")
-    settings = Settings(app_env="production")
+    with caplog.at_level(logging.WARNING, logger="test.unsafe"):
+        warn_unsafe_defaults(settings, log)
+    assert caplog.records == []
+
+
+def test_development_defaults_keep_both_contact_guards_off(env):
+    env(APP_ENV="development")
+    settings = get_settings()
+    assert settings.require_verified_contact is False
+    assert settings.require_phone_verification is False
+
+
+def test_explicit_phone_flag_enables_the_legacy_mode(env):
+    env(REQUIRE_PHONE_VERIFICATION="true")
+    assert get_settings().require_phone_verification is True
+
+
+def test_production_warns_when_the_verified_contact_flag_is_disabled(env, caplog):
+    env(REQUIRE_VERIFIED_CONTACT="false")
+    settings = get_settings()
+    assert settings.require_verified_contact is False
+    assert settings.require_phone_verification is False
+    log = logging.getLogger("test.unsafe")
     with caplog.at_level(logging.WARNING, logger="test.unsafe"):
         warn_unsafe_defaults(settings, log)
     assert len(caplog.records) == 1
@@ -128,7 +154,7 @@ def test_production_warns_when_no_contact_guard_is_enabled(caplog):
 
 
 def test_verified_contact_flag_is_read_from_the_environment(env, monkeypatch):
-    env()
+    env(APP_ENV="development")
     assert get_settings().require_verified_contact is False
     monkeypatch.setenv("REQUIRE_VERIFIED_CONTACT", "true")
     get_settings.cache_clear()

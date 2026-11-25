@@ -144,11 +144,13 @@ class Settings:
     outbox_poll_interval_seconds: float = 5.0
     # SPEC-14 `ExpirarCheckouts`: sweep period for overdue checkouts (runs with the worker).
     checkout_expiry_interval_seconds: float = 60.0
-    # SPEC-04: the checkout demands a locally verified phone. Production defaults
-    # to true; development/fake keeps it off so the E2E flow does not need an OTP.
+    # SPEC-04 legacy mode: the checkout demands a locally verified phone. Opt-in
+    # everywhere (`REQUIRE_PHONE_VERIFICATION=true`); production uses the
+    # verified-contact guard below instead.
     require_phone_verification: bool = False
     # Default checkout guard: the account e-mail (verified at sign-up, G7) is the
     # verified contact; a locally verified phone is accepted as a fallback.
+    # Production defaults to true; development/fake keeps it off.
     require_verified_contact: bool = False
     # SPEC-12: optional address save in Seguridad. A failure never blocks checkout.
     checkout_save_address_enabled: bool = True
@@ -383,15 +385,13 @@ def _build_settings() -> Settings:
             "CHECKOUT_EXPIRY_INTERVAL_SECONDS", "60", float, minimum=5
         ),
         require_phone_verification=(
-            require_phone_verification
-            if require_phone_verification is not None
-            else app_env in PRODUCTION_ENVIRONMENTS
+            require_phone_verification if require_phone_verification is not None else False
         ),
         checkout_save_address_enabled=(
             save_address_enabled if save_address_enabled is not None else True
         ),
         require_verified_contact=(
-            require_verified_contact if require_verified_contact is not None else False
+            require_verified_contact if require_verified_contact is not None else production
         ),
         # Production never falls back to another secret: each key must be set on its own.
         phone_otp_secret=(
