@@ -30,6 +30,33 @@ def test_snapshot_builder_success():
     assert snapshot["contacto"]["clienteId"] == "user-123"
     assert snapshot["items"][0]["sku"] == "SKU-1"
     assert snapshot["pago"]["total"] == 105.0
+    assert snapshot["cupon"]["codigo"] == "PROMO10"
+
+
+def test_snapshot_builder_omits_coupon_when_absent():
+    snapshot = SnapshotBuilder.build_snapshot(
+        cliente_id="user-1",
+        contacto={"nombreCompleto": "Juan"},
+        items=[{"sku": "SKU-1", "cantidad": 1, "precioUnitario": 100.0}],
+        envio={"costo": 10.0},
+        pago={"subtotal": 100.0, "total": 110.0},
+    )
+
+    # G5 rejects `cupon.codigo` when it is blank; without a coupon the block must be null.
+    assert snapshot["cupon"] is None
+
+
+def test_snapshot_builder_omits_blank_coupon_code():
+    snapshot = SnapshotBuilder.build_snapshot(
+        cliente_id="user-1",
+        contacto={"nombreCompleto": "Juan"},
+        items=[{"sku": "SKU-1", "cantidad": 1, "precioUnitario": 100.0}],
+        cupon={"codigo": "   ", "descuento": 0, "aplicado": False},
+        envio={"costo": 10.0},
+        pago={"subtotal": 100.0, "total": 110.0},
+    )
+
+    assert snapshot["cupon"] is None
 
 
 def test_snapshot_builder_filters_unavailable_items():
