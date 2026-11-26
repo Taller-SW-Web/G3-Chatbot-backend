@@ -46,6 +46,58 @@ async def test_loop_survives_a_failed_iteration_and_logs_only_the_error_class(ca
     assert "secret-token-123" not in caplog.text
 
 
+@pytest.mark.asyncio
+async def test_loop_keeps_draining_without_sleeping_while_batches_come_back_full(monkeypatch):
+    # A full batch means more rows are waiting: sleeping between them caps the relay at
+    # one batch per poll interval, which falls behind a burst of payments.
+    full = outbox_loop.OUTBOX_BATCH_SIZE
+    processor = Processor([full, full, 3, 0, 0])
+    sleeps: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def recording_sleep(seconds):
+        sleeps.append(seconds)
+        await real_sleep(0)
+
+    monkeypatch.setattr(outbox_loop.asyncio, "sleep", recording_sleep)
+    task = asyncio.create_task(run_outbox_loop(fake_session, lambda _s: processor, 5.0))
+    for _ in range(200):
+        if processor.calls >= 4:
+            break
+        await real_sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    # The three batches of the burst ran back to back; only then the loop slept.
+    assert processor.calls >= 4
+    assert sleeps[0] == 5.0
+    assert len(sleeps) <= processor.calls - 2
+
+
+@pytest.mark.asyncio
+async def test_one_drain_cycle_is_bounded_so_the_loop_still_yields(monkeypatch):
+    full = outbox_loop.OUTBOX_BATCH_SIZE
+    cycles = outbox_loop.OUTBOX_MAX_BATCHES_PER_CYCLE
+    processor = Processor([full] * (cycles * 3))
+    sleeps: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def recording_sleep(seconds):
+        sleeps.append(seconds)
+        await real_sleep(0)
+
+    monkeypatch.setattr(outbox_loop.asyncio, "sleep", recording_sleep)
+    task = asyncio.create_task(run_outbox_loop(fake_session, lambda _s: processor, 5.0))
+    for _ in range(500):
+        if sleeps:
+            break
+        await real_sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert sleeps and processor.calls == cycles
+
+
 class DriverCheckViolationError(Exception):
     """Stands in for the asyncpg error chained under the SQLAlchemy dialect error."""
 
