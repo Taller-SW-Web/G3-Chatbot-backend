@@ -205,6 +205,55 @@ async def test_post_checkout_contract_errors_use_problem_json(test_app, mock_ser
 
 
 @pytest.mark.asyncio
+async def test_post_checkout_sales_timeout_includes_recoverable_ids(test_app, mock_service):
+    checkout_id = str(uuid.uuid4())
+    mock_service.create_checkout.side_effect = CheckoutError(
+        "MODULO_NO_DISPONIBLE",
+        "No pudimos confirmar tu pedido.",
+        {
+            "modulo": "sales",
+            "motivo": "TIMEOUT_VENTAS",
+            "checkoutId": checkout_id,
+            "orderId": "PED-2026-ABC123",
+            "orderIdProvisional": True,
+            "reintentable": True,
+        },
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_app), base_url="http://test") as client:
+        res = await client.post(
+            "/api/v1/checkout",
+            headers={"Idempotency-Key": "idemp-timeout"},
+            json=FRONTEND_PAYLOAD,
+        )
+    assert res.status_code == 503
+    body = res.json()
+    assert body["code"] == "MODULO_NO_DISPONIBLE"
+    assert body["checkoutId"] == checkout_id
+    assert body["orderId"] == "PED-2026-ABC123"
+    assert body["orderIdProvisional"] is True
+    assert body["reintentable"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_checkout_hides_internal_sales_reconciliation_keys(test_app, mock_service, customer_id):
+    mock_service.get_checkout.return_value = Checkout(
+        id=uuid.uuid4(),
+        cart_id=uuid.uuid4(),
+        customer_id=customer_id,
+        status="PENDING_PAYMENT",
+        summary={"total": 85.0, "_salesPending": True, "_salesSnapshot": {"items": []}},
+        total=85.0,
+        payment_attempts=0,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=12),
+        idempotency_key="idemp-internal",
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_app), base_url="http://test") as client:
+        res = await client.get(f"/api/v1/checkout/{uuid.uuid4()}")
+    assert res.status_code == 200
+    assert res.json()["summary"] == {"total": 85.0}
+
+
+@pytest.mark.asyncio
 async def test_get_checkout_success(test_app, mock_service, customer_id):
     chk_id = uuid.uuid4()
     mock_service.get_checkout.return_value = Checkout(
