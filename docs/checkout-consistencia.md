@@ -4,7 +4,8 @@
 - **Alcance:** `mod-cart`, `mod-checkout`
 - **Specs:** SPEC-11 Req. 3, SPEC-13 Req. 4, SPEC-14 Req. 2
 - **Contrato HTTP:** sin cambios de rutas ni códigos; `409 CARRITO_DESACTUALIZADO`
-  ahora puede incluir `motivo`.
+  ahora puede incluir `motivo`. El `503 MODULO_NO_DISPONIBLE` del checkout puede
+  incluir `checkoutId`, `orderId`, `orderIdProvisional` y `reintentable`.
 
 ## El incidente
 
@@ -64,6 +65,101 @@ El `summary` del error siempre lo calcula el servidor: líneas, subtotal,
 `descuento: 0`, costo de envío cotizado y total. Nunca se confía en importes del
 payload del cliente.
 
+## Timeout de Ventas: checkout y pedido reconciliables (issue #180)
+
+El 2026-11-26 el primer `POST /checkout` superó los 120 s por el cold start de
+G5. El cliente perdió la respuesta, pero Ventas ya había creado
+`PED-2026-00090`: un pedido sin checkout local visible. La corrección tiene dos
+partes.
+
+### 1. Deadline interno
+
+`CHECKOUT_SALES_DEADLINE_SECONDS` (default **30 s**) limita la llamada
+`POST /pedidos` a Ventas. El cliente/proxy del frontend corta a los 120 s
+(incidente 2026-11-26) y el cold start de G5 puede superar ese tiempo; 30 s deja
+margen para stock, envío, promociones y la respuesta del BFF. El valor es
+configurable por entorno; si G5 sigue en cold start, el primer intento responde
+rápido y el reintento encuentra el servicio caliente.
+
+### 2. Checkout persistido antes de llamar a Ventas
+
+`POST /checkout` guarda y **commitea** el checkout en `PENDING_PAYMENT` antes de
+`POST /pedidos`. El `summary` guarda un `orderId` local provisional
+(`PED-<año>-<hex>`) y, en claves internas que no se exponen por HTTP, el
+snapshot exacto enviado a Ventas y la marca de pedido pendiente.
+
+Si la llamada termina a tiempo, el checkout se actualiza con el `pedidoId` real
+y se registra `order_ref` en la misma transacción.
+
+Si G5 no responde dentro del deadline (o falla la conexión/5xx), el BFF responde
+un `503` recuperable; el checkout local ya existe y no se pierde:
+
+```json
+{
+  "status": 503,
+  "code": "MODULO_NO_DISPONIBLE",
+  "title": "Service temporarily unavailable",
+  "modulo": "sales",
+  "motivo": "TIMEOUT_VENTAS",
+  "checkoutId": "a93cfced-e936-416a-94f7-222a2739fe6f",
+  "orderId": "PED-2026-A1B2C3",
+  "orderIdProvisional": true,
+  "reintentable": true,
+  "detail": "No pudimos confirmar tu pedido con Ventas. No se realizó ningún cobro; reintenta con la misma Idempotency-Key o consulta el checkout."
+}
+```
+
+- `checkoutId` permite `GET /checkout/{id}` de inmediato.
+- `orderId` es el id local provisional mientras `orderIdProvisional` sea `true`;
+  no debe mostrarse como pedido confirmado.
+- `motivo` es `TIMEOUT_VENTAS` si venció el deadline y
+  `VENTAS_NO_DISPONIBLE` para otros fallos de transporte/5xx.
+
+### Reintento con la misma `Idempotency-Key`
+
+Un reintento con la misma clave no crea otro checkout ni otro pedido:
+
+1. El BFF encuentra el checkout local por `idempotency_key`.
+2. Reenvía a Ventas el **mismo snapshot persistido** con la misma clave.
+3. Ventas responde con el `pedidoId` que ya había creado (idempotencia de G5).
+4. El BFF actualiza `summary.orderId` al id real, guarda `order_ref` y responde
+   `201` con el checkout reconciliado.
+
+El snapshot persistido evita que un reintento con dirección/contacto distintos
+envíe otro payload bajo la misma clave.
+
+### Pago mientras el pedido está provisional
+
+Mientras `summary` tenga la marca interna de pedido pendiente, `POST
+/checkout/{id}/pago` responde `503 MODULO_NO_DISPONIBLE` con
+`motivo: PEDIDO_EN_PROCESO`, `checkoutId`, `orderId` y `reintentable: true`.
+Nunca se cobra contra un `pedidoId` que todavía no existe en Ventas. El cliente
+debe reintentar primero el checkout con la misma clave.
+
+### Fallos definitivos de Ventas (400/409)
+
+Un `409` o `400` de Ventas significa que **no** se creó el pedido. El BFF retira
+el checkout provisional:
+
+- lo marca `EXPIRED` (deja de ser un checkout vivo y libera el índice único del
+  carrito);
+- devuelve el carrito a `ACTIVE`;
+- conserva el error de contrato: `409 STOCK_INSUFICIENTE` o
+  `400 DATO_INVALIDO`.
+
+El siguiente intento con una clave nueva puede crear un checkout limpio; ningún
+checkout vivo queda bloqueando el carrito.
+
+### Expiración de un pedido provisional
+
+Si el cliente nunca reintenta, el job `ExpirarCheckouts` (o el `GET` que detecta
+la expiración) reconcilia el pedido con la misma clave antes de cancelarlo. La
+anulación `REQUEST_CANCELLATION` usa el `pedidoId` real, nunca el provisional;
+el `summary` del checkout expirado también reemplaza el `orderId` provisional por
+el real y limpia las claves internas. Si Ventas no responde en ese momento, se
+registra un `ERROR` y la expiración propia de G5 (15 min) termina liberando la
+reserva; el checkout local ya está `EXPIRED`.
+
 ## Snapshot persistido
 
 `cart.totals_snapshot` (JSONB) guarda la última vista del carrito:
@@ -102,6 +198,16 @@ Regresiones cubiertas:
 - `test_create_checkout_with_legacy_snapshot_without_flag_is_409`
 - `test_create_checkout_with_inconsistent_snapshot_total_is_409`
 - `test_create_checkout_stale_snapshot_raises_409_with_server_summary`
+- `test_sales_timeout_persists_checkout_and_returns_recoverable_ids`
+- `test_same_key_retry_reconciles_the_order_without_duplicates`
+- `test_new_key_retry_reuses_the_pending_checkout_without_duplicates`
+- `test_replaced_pending_checkout_cancels_its_sales_order`
+- `test_happy_path_keeps_one_sales_call_and_real_order_id`
+- `test_definitive_sales_rejection_retires_checkout_and_frees_cart`
+- `test_payment_is_blocked_while_the_sales_order_is_provisional`
+- `test_expiry_reconciles_the_pending_order_and_cancels_the_real_id`
+- `test_post_checkout_sales_timeout_includes_recoverable_ids`
+- `test_get_checkout_hides_internal_sales_reconciliation_keys`
 
 ## Riesgos y notas
 
