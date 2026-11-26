@@ -3,6 +3,7 @@ import logging
 
 import pytest
 
+from src.infrastructure.main import create_app
 from src.shared.infrastructure.config.settings import Settings, get_settings, warn_unsafe_defaults
 
 SAFE_ENV = {
@@ -16,6 +17,9 @@ SAFE_ENV = {
     "DISPATCH_BASE_URL": "https://dispatch.example.com",
     "FRONTEND_BASE_URL": "https://app.example.com",
     "ATTACHMENT_PUBLIC_BASE_URL": "https://api.example.com/api/v1",
+    "ATTACHMENT_STORAGE": "supabase",
+    "SUPABASE_URL": "https://storage.example.com",
+    "SUPABASE_SERVICE_KEY": "service-key-value",
     "ALLOWED_ORIGINS": "https://app.example.com",
     "COOKIE_SECURE": "true",
     "PHONE_OTP_SECRET": "otp-secret-value",
@@ -34,6 +38,10 @@ def env(monkeypatch):
         "SECURITY_MODE",
         "REQUIRE_PHONE_VERIFICATION",
         "REQUIRE_VERIFIED_CONTACT",
+        "ALLOW_LOCAL_ATTACHMENTS",
+        "ATTACHMENT_STORAGE",
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_KEY",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -70,6 +78,46 @@ def test_production_refuses_unsafe_setting(env, overrides, fragment):
     env(**overrides)
     with pytest.raises(ValueError, match=fragment):
         get_settings()
+
+
+def test_production_refuses_local_attachment_storage(env):
+    env(ATTACHMENT_STORAGE="local")
+    with pytest.raises(ValueError, match="ALLOW_LOCAL_ATTACHMENTS"):
+        get_settings()
+
+
+def test_production_boots_with_local_attachments_only_with_the_exception(env, caplog):
+    env(ATTACHMENT_STORAGE="local", ALLOW_LOCAL_ATTACHMENTS="true")
+    settings = get_settings()
+    assert settings.attachment_storage == "local"
+    assert settings.allow_local_attachments is True
+    log = logging.getLogger("test.unsafe")
+    with caplog.at_level(logging.WARNING, logger="test.unsafe"):
+        warn_unsafe_defaults(settings, log)
+    message = " ".join(record.getMessage() for record in caplog.records)
+    assert "ATTACHMENT_STORAGE=local" in message
+    assert "ALLOW_LOCAL_ATTACHMENTS=true" in message
+
+
+def test_local_attachments_remain_the_development_default(env):
+    env(APP_ENV="development", ATTACHMENT_STORAGE="local")
+    settings = get_settings()
+    assert settings.attachment_storage == "local"
+    assert settings.allow_local_attachments is False
+
+
+def test_startup_refuses_local_attachments_in_production(env):
+    env(ATTACHMENT_STORAGE="local")
+    with pytest.raises(ValueError, match="ALLOW_LOCAL_ATTACHMENTS"):
+        create_app()
+
+
+def test_startup_boots_with_the_local_attachment_exception(env, caplog):
+    env(ATTACHMENT_STORAGE="local", ALLOW_LOCAL_ATTACHMENTS="true")
+    with caplog.at_level(logging.WARNING, logger="src.infrastructure.main"):
+        create_app()
+    message = " ".join(record.getMessage() for record in caplog.records)
+    assert "ATTACHMENT_STORAGE=local accepted by ALLOW_LOCAL_ATTACHMENTS=true" in message
 
 
 def test_production_does_not_fall_back_to_the_client_secret(env, monkeypatch):
@@ -111,7 +159,14 @@ def test_no_warning_in_production_or_when_nothing_is_unsafe(caplog):
     log = logging.getLogger("test.unsafe")
     with caplog.at_level(logging.WARNING, logger="test.unsafe"):
         warn_unsafe_defaults(
-            Settings(app_env="production", require_verified_contact=True), log
+            Settings(
+                app_env="production",
+                require_verified_contact=True,
+                attachment_storage="supabase",
+                supabase_url="https://storage.example.com",
+                supabase_service_key="service-key-value",
+            ),
+            log,
         )
     assert caplog.records == []
 
