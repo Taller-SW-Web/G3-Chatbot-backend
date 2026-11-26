@@ -182,6 +182,12 @@ producción `local` sigue siendo válido sin configurar nada.
 | `production` / `prod` | `supabase` | — | Arranca; exige `SUPABASE_URL` y `SUPABASE_SERVICE_KEY` |
 | `development` (default) | `local` | — | Arranca; default de desarrollo |
 
+> **Estado operativo (2026-11-26):** producción (Railway, `G3-Chatbot-backend`)
+> tiene `ATTACHMENT_STORAGE=local` y `ALLOW_LOCAL_ATTACHMENTS=true` como
+> excepción temporal para no bloquear el arranque mientras se configura el
+> bucket de Supabase. Al activar `ATTACHMENT_STORAGE=supabase` (SPEC-23/#53),
+> retirar `ALLOW_LOCAL_ATTACHMENTS` para que vuelva el fail-closed.
+
 ### Relay del outbox (RabbitMQ)
 
 `OUTBOX_DISPATCH_MODE=direct` es el valor por defecto y el rollback: el worker
