@@ -11,7 +11,7 @@ from src.modules.mod_cart.application.manage_cart_use_case import (
 )
 from src.modules.mod_cart.ports.cart_repository_port import StaleCartError
 from src.shared.domain.caller_identity import CallerIdentity
-from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.domain.request_context import correlation_id_var
 from tests.fakes.fake_commerce import (
     FakeCarts,
@@ -441,3 +441,33 @@ async def test_view_logs_promotion_failures_with_module_status_and_correlation(c
     snapshot = carts.rows[cart.id].totals_snapshot
     assert snapshot["promociones_ok"] is False
     assert snapshot["correlation_id"] == correlation_id
+
+
+@pytest.mark.asyncio
+async def test_add_logs_inventory_failures_with_module_status_and_correlation(caplog):
+    class BrokenInventory(FakeInventoryPort):
+        async def get_availability(self, skus, **kwargs):
+            raise ModuleUnavailableError("products", "timeout")
+
+    cart_uc, conversations = make_cart_use_case()
+    cart_uc._inventory = BrokenInventory()
+    owned(cart_uc, conversations)
+    correlation_id = str(uuid.uuid4())
+    token = correlation_id_var.set(correlation_id)
+    try:
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(CartError) as error:
+                await cart_uc.add(
+                    make_caller(), CONVERSATION_ID,
+                    sku="NIK-REV7-42-NEG", quantity=1,
+                )
+    finally:
+        correlation_id_var.reset(token)
+
+    assert error.value.code == "SERVICIO_NO_DISPONIBLE"
+    record = next(r for r in caplog.records if "inventory check failed" in r.getMessage())
+    message = record.getMessage()
+    assert "module=products" in message
+    assert "status=503" in message
+    assert "code=MODULO_NO_DISPONIBLE" in message
+    assert f"correlation_id={correlation_id}" in message

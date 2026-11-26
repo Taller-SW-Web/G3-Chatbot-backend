@@ -750,14 +750,25 @@ class ManageCartUseCase:
 
     async def _check_can_sell(self, sku: str, total: int) -> str | None:
         """Reject a non-sellable SKU; return the warning to append when it is accepted."""
-        rows = await self._inventory.get_availability([sku])
+        try:
+            rows = await self._inventory.get_availability([sku])
+            verdicts = await self._inventory.verify_quantities(
+                [{"sku": sku, "quantity": total}]
+            )
+        except Exception as exc:
+            module, status, code = failure_summary(exc, default_module="products")
+            logger.warning(
+                "cart inventory check failed module=%s status=%s code=%s correlation_id=%s",
+                module,
+                status,
+                code,
+                correlation_id_var.get(),
+            )
+            raise
         match = next((row for row in rows if row.get("sku") == sku), None)
         projection = self._stock.check_row(match)
         if not projection.ok:
             raise CartError(projection.code, f"sku {sku} is not sellable")
-        verdicts = await self._inventory.verify_quantities(
-            [{"sku": sku, "quantity": total}]
-        )
         verdict = next((row for row in verdicts if row.get("sku") == sku), None)
         quantity = self._stock.check_quantity((verdict or {}).get("result"))
         if not quantity.ok:
