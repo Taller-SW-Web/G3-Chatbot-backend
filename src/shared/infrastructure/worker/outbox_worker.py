@@ -190,7 +190,11 @@ class OutboxProcessor:
         await self.order_ref_repo.actualizar_estado(order_id, "CANCELLED")
 
     async def _relay_to_broker(self, job: Outbox, publisher: OutboxPublisherPort) -> bool:
-        message = OutboxMessage(id=job.id, type=job.type, payload=job.payload, attempt=1)
+        # `attempts` counts completed retries; the broker header is 1-based. A row that
+        # already retried in direct mode must keep its attempt number after the switch.
+        message = OutboxMessage(
+            id=job.id, type=job.type, payload=job.payload, attempt=job.attempts + 1
+        )
         try:
             await publisher.publish(message)
         except BrokerUnavailableError as exc:

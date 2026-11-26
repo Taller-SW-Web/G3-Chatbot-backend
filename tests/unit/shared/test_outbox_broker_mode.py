@@ -79,6 +79,17 @@ async def test_publishes_instead_of_dispatching_and_marks_processed_after_the_co
 
 
 @pytest.mark.asyncio
+async def test_x_attempt_keeps_the_attempts_already_consumed_in_direct_mode(deps):
+    publisher = FakeOutboxPublisher()
+    job = _job(attempts=2)
+
+    assert await _processor(deps, publisher).process_one(job) is True
+
+    (published,) = publisher.published
+    assert published.message.attempt == 3
+
+
+@pytest.mark.asyncio
 async def test_send_email_is_not_delegated_to_the_notification_service_in_broker_mode(deps):
     notification_service = AsyncMock()
     processor = _processor(deps, FakeOutboxPublisher(), notification_service=notification_service)
