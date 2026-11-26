@@ -44,6 +44,13 @@ class ProcessPaymentRequest(BaseModel):
 _RESULT_LABELS = {"APPROVED": "APROBADO", "REJECTED": "RECHAZADO", "ERROR": "ERROR"}
 
 
+def _public_summary(summary: Any) -> dict[str, Any]:
+    """Drop internal reconciliation keys (`_sales*`) from the HTTP summary."""
+    if not isinstance(summary, dict):
+        return {}
+    return {key: value for key, value in summary.items() if not key.startswith("_")}
+
+
 def _translate_error(err: CheckoutError) -> ProblemError:
     status_map = {
         "REQUIERE_SESION": 401,
@@ -142,7 +149,7 @@ def create_checkout_router(
                 "total": float(row.total),
                 "expiresAt": row.expires_at.isoformat(),
                 "intentosRestantes": max(0, 3 - (row.payment_attempts or 0)),
-                "summary": row.summary,
+                "summary": _public_summary(row.summary),
                 "avisoDireccion": (
                     row.summary.get("avisoDireccion") if isinstance(row.summary, dict) else None
                 ),
@@ -167,7 +174,7 @@ def create_checkout_router(
                 "total": float(row.total),
                 "expiresAt": row.expires_at.isoformat(),
                 "intentosRestantes": max(0, 3 - (row.payment_attempts or 0)),
-                "summary": row.summary,
+                "summary": _public_summary(row.summary),
             }
         except CheckoutError as exc:
             raise _translate_error(exc) from exc

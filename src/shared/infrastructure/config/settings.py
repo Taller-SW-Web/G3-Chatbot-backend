@@ -151,6 +151,10 @@ class Settings:
     rabbitmq_prefetch: int = 10
     # SPEC-14 `ExpirarCheckouts`: sweep period for overdue checkouts (runs with the worker).
     checkout_expiry_interval_seconds: float = 60.0
+    # Internal deadline for `POST /checkout` -> Ventas `POST /pedidos`. The frontend/proxy
+    # cuts checkout at ~120 s and Render cold starts can exceed it, so 30 s leaves room
+    # for the rest of the checkout and turns the timeout into a recoverable 503.
+    checkout_sales_deadline_seconds: float = 30.0
     # SPEC-04 legacy mode: the checkout demands a locally verified phone. Opt-in
     # everywhere (`REQUIRE_PHONE_VERIFICATION=true`); production uses the
     # verified-contact guard below instead.
@@ -422,6 +426,9 @@ def _build_settings() -> Settings:
         rabbitmq_prefetch=_number("RABBITMQ_PREFETCH", "10", int, minimum=1),
         checkout_expiry_interval_seconds=_number(
             "CHECKOUT_EXPIRY_INTERVAL_SECONDS", "60", float, minimum=5
+        ),
+        checkout_sales_deadline_seconds=_number(
+            "CHECKOUT_SALES_DEADLINE_SECONDS", "30", float, minimum=1
         ),
         require_phone_verification=(
             require_phone_verification if require_phone_verification is not None else False
