@@ -288,6 +288,8 @@ async def test_replaced_pending_checkout_cancels_its_sales_order():
 
     old_real_id = sales.orders["key-old"]
     assert old.status == CheckoutStatus.EXPIRED.value
+    assert old.summary["orderId"] == old_real_id
+    assert SALES_PENDING_KEY not in old.summary
     assert orders.updated == [(old_real_id, "CANCELLED")]
     assert outbox.tasks[-1].payload["order_id"] == old_real_id
     assert new.id != old.id
@@ -375,6 +377,9 @@ async def test_expiry_reconciles_the_pending_order_and_cancels_the_real_id():
 
     real_id = sales.orders["key-expire"]
     assert checkout.status == CheckoutStatus.EXPIRED.value
+    assert checkout.summary["orderId"] == real_id
+    assert SALES_PENDING_KEY not in checkout.summary
+    assert SALES_SNAPSHOT_KEY not in checkout.summary
     assert sales.calls == ["key-expire", "key-expire"]
     assert len(sales.orders) == 1
     assert orders.updated == [(real_id, "CANCELLED")]

@@ -940,6 +940,15 @@ class ManageCheckoutUseCase:
 
         return row
 
+    @staticmethod
+    def _mark_sales_resolved(row: Any, order_id: str) -> None:
+        """Replace the provisional id and drop the reconciliation payload."""
+        summary = dict(row.summary) if isinstance(row.summary, dict) else {}
+        summary["orderId"] = str(order_id)
+        summary.pop(SALES_PENDING_KEY, None)
+        summary.pop(SALES_SNAPSHOT_KEY, None)
+        row.summary = summary
+
     async def _order_id_for_cancellation(self, row: Any) -> str | None:
         """Real Sales order of a checkout, reconciling a timeout-left provisional one.
 
@@ -950,6 +959,7 @@ class ManageCheckoutUseCase:
         ord_row = await _safe_call(self.orders, "obtener_por_checkout_id", row.id)
         order_id = getattr(ord_row, "order_id", None) if ord_row else None
         if order_id:
+            self._mark_sales_resolved(row, str(order_id))
             return str(order_id)
 
         summary = row.summary if isinstance(row.summary, dict) else {}
@@ -976,6 +986,7 @@ class ManageCheckoutUseCase:
         if not order_id:
             logger.error("Ventas did not return a pedidoId while reconciling checkout %s", row.id)
             return None
+        self._mark_sales_resolved(row, str(order_id))
         if self.orders:
             try:
                 await _safe_call(
