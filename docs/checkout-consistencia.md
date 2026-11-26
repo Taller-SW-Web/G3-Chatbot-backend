@@ -154,10 +154,11 @@ checkout vivo queda bloqueando el carrito.
 
 Si el cliente nunca reintenta, el job `ExpirarCheckouts` (o el `GET` que detecta
 la expiración) reconcilia el pedido con la misma clave antes de cancelarlo. La
-anulación `REQUEST_CANCELLATION` usa el `pedidoId` real, nunca el provisional.
-Si Ventas no responde en ese momento, se registra un `ERROR` y la expiración
-propia de G5 (15 min) termina liberando la reserva; el checkout local ya está
-`EXPIRED`.
+anulación `REQUEST_CANCELLATION` usa el `pedidoId` real, nunca el provisional;
+el `summary` del checkout expirado también reemplaza el `orderId` provisional por
+el real y limpia las claves internas. Si Ventas no responde en ese momento, se
+registra un `ERROR` y la expiración propia de G5 (15 min) termina liberando la
+reserva; el checkout local ya está `EXPIRED`.
 
 ## Snapshot persistido
 
