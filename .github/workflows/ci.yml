@@ -5,6 +5,7 @@ on:
     branches: [development]
   pull_request:
     branches: [development]
+  workflow_dispatch:
 
 # Least privilege: the workflow only reads the repository.
 permissions:
@@ -230,6 +231,109 @@ jobs:
       - name: Build image (equivalente al build del frontend)
         run: docker build --tag g3-chatbot-backend:ci .
 
+  # H5-C2: DAST pasivo con OWASP ZAP contra el stack levantado en CI con módulos
+  # fake y LLM_PROVIDER=fake (sin datos reales ni secretos). Falla solo ante
+  # alertas High (`riskcode == 3`) sin excepción en `.zap/rules.tsv` y
+  # `docs/seguridad/zap-exceptions.md`.
+  dast:
+    name: DAST (OWASP ZAP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chatbot_dast
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Prepare environment (fake modules and scripted LLM)
+        run: |
+          sed -e 's#^DATABASE_URL=.*#DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/chatbot_dast#' \
+              -e 's#^LLM_PROVIDER=.*#LLM_PROVIDER=fake#' \
+              .env.template > .env
+          alembic upgrade head
+      - name: Start backend
+        run: |
+          nohup uvicorn src.infrastructure.main:app --host 127.0.0.1 --port 8000 --env-file .env \
+            > uvicorn.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health && exit 0
+            sleep 2
+          done
+          cat uvicorn.log
+          exit 1
+      - name: Run OWASP ZAP baseline & OpenAPI passive scan
+        run: |
+          mkdir -p zap-reports
+          chmod 777 zap-reports
+          docker run --rm --network host \
+            -v "$PWD/zap-reports:/zap/wrk:rw" \
+            -v "$PWD/.zap:/zap/config:ro" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-api-scan.py \
+              -t http://127.0.0.1:8000/openapi.json \
+              -f openapi \
+              -S \
+              -c /zap/config/rules.tsv \
+              -r zap-api-report.html \
+              -J zap-api-report.json \
+              -w zap-api-report.md || true
+          docker run --rm --network host \
+            -v "$PWD/zap-reports:/zap/wrk:rw" \
+            -v "$PWD/.zap:/zap/config:ro" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+              -t http://127.0.0.1:8000/health \
+              -c /zap/config/rules.tsv \
+              -r zap-health-report.html \
+              -J zap-health-report.json \
+              -w zap-health-report.md || true
+      - name: Evaluate ZAP reports (fail on High findings)
+        id: zap_gate
+        run: |
+          set +e
+          python scripts/check_zap_report.py \
+            --report zap-reports/zap-api-report.json \
+            --report zap-reports/zap-health-report.json \
+            --rules .zap/rules.tsv \
+            --summary-output zap-reports/summary.md
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+      - name: Publish ZAP summary
+        if: always()
+        run: |
+          if [ -f zap-reports/summary.md ]; then
+            cat zap-reports/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload ZAP DAST reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dast-zap-report
+          path: |
+            zap-reports/
+            uvicorn.log
+          if-no-files-found: error
+      - name: Enforce High-severity gate
+        if: always()
+        run: test "${{ steps.zap_gate.outputs.exit_code }}" = "0"
+
   # Revisa las dependencias que el PR agrega/cambia contra el Dependency Graph.
   # El job corre siempre (aunque en `push` no revisa nada) para no romper el
   # chequeo de `skipped` del gate.
@@ -322,7 +426,7 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [lint, types, unit-tests, openapi, integration-tests, modules, specs, security, dependency-review, docker, sonar]
+    needs: [lint, types, unit-tests, openapi, integration-tests, modules, specs, security, dependency-review, docker, dast, sonar]
     if: always()
     steps:
       - name: Require every job to succeed
