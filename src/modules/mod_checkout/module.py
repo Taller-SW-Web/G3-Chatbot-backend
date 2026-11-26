@@ -40,6 +40,7 @@ from src.shared.infrastructure.di.capabilities import (
     FEEDBACK_NOTIFIER,
     ORDER_CONFIRMATION,
     OUTBOX_PROCESSOR,
+    OUTBOX_PUBLISHER,
 )
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
@@ -144,6 +145,8 @@ def provide_outbox_processor(session: AsyncSession) -> OutboxProcessor:
         feedback_notifier=(
             registry.resolve(FEEDBACK_NOTIFIER) if registry.is_registered(FEEDBACK_NOTIFIER) else None
         ),
+        # Broker mode relays to RabbitMQ; the lifespan owns the connection (ADR-0030).
+        publisher=registry.resolve(OUTBOX_PUBLISHER) if settings.outbox_dispatch_mode == "broker" else None,
     )
 
 

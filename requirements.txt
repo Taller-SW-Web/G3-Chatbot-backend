@@ -12,6 +12,7 @@ alembic>=1.13,<2.0
 psycopg2-binary>=2.9.13,<3.0  # Alembic runs sync (env.py); async paths use asyncpg.
 asyncpg>=0.32.0,<1.0
 httpx>=0.28.1,<1.0
+aio-pika>=10.2.3,<11.0  # RabbitMQ relay for the outbox (ADR-0030).
 Jinja2>=3.1,<4.0  # Order confirmation e-mail templates (SPEC-16).
 PyJWT>=2.15.1,<3.0
 cryptography>=50.0.2,<51  # RS256 signing/verification for the JWKS validator.

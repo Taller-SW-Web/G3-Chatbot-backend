@@ -153,3 +153,101 @@ async def test_checkout_expiry_loop_survives_failures_and_keeps_sweeping(caplog)
             await task
     assert expirer.calls >= 3
     assert "expired 2 checkout" in caplog.text
+
+
+class _SpyPublisher:
+    instances: list["_SpyPublisher"] = []
+
+    def __init__(self, url):
+        self.url = url
+        self.events: list[str] = []
+        _SpyPublisher.instances.append(self)
+
+    async def start(self):
+        self.events.append("start")
+
+    async def close(self):
+        self.events.append("close")
+
+
+def _patch_lifespan(monkeypatch, settings_obj, loop_events):
+    from src.shared.infrastructure.broker import rabbitmq_outbox_publisher
+    from src.shared.infrastructure.config import settings
+    from src.shared.infrastructure.db import connection
+
+    async def fake_loop(session_factory, processor_factory, interval):
+        loop_events.append("loop")
+        await asyncio.sleep(3600)
+
+    _SpyPublisher.instances = []
+    monkeypatch.setattr(outbox_loop, "run_outbox_loop", fake_loop)
+    monkeypatch.setattr(connection, "get_engine", lambda: None)
+    monkeypatch.setattr(rabbitmq_outbox_publisher, "RabbitMqOutboxPublisher", _SpyPublisher)
+    monkeypatch.setattr(settings, "get_settings", lambda: settings_obj)
+
+
+@pytest.mark.asyncio
+async def test_lifespan_in_broker_mode_opens_registers_and_closes_the_publisher(monkeypatch):
+    from src.shared.infrastructure.config.settings import Settings
+    from src.shared.infrastructure.di.capabilities import OUTBOX_PUBLISHER
+    from src.shared.infrastructure.di.registry import registry
+
+    events: list[str] = []
+    cfg = Settings(outbox_dispatch_mode="broker", rabbitmq_url="amqps://u:pw@broker.example.com/v")
+    _patch_lifespan(monkeypatch, cfg, events)
+    monkeypatch.setattr(registry, "_providers", dict(registry._providers))
+
+    async with outbox_worker_lifespan(FastAPI()):
+        (publisher,) = _SpyPublisher.instances
+        assert publisher.url == cfg.rabbitmq_url
+        assert publisher.events == ["start"]
+        assert registry.resolve(OUTBOX_PUBLISHER) is publisher
+    assert publisher.events == ["start", "close"]
+
+
+@pytest.mark.asyncio
+async def test_lifespan_in_direct_mode_never_builds_a_publisher(monkeypatch):
+    from src.shared.infrastructure.config.settings import Settings
+
+    _patch_lifespan(monkeypatch, Settings(outbox_dispatch_mode="direct"), [])
+    async with outbox_worker_lifespan(FastAPI()):
+        pass
+    assert _SpyPublisher.instances == []
+
+
+@pytest.mark.asyncio
+async def test_lifespan_with_the_worker_disabled_does_not_connect_even_in_broker_mode(monkeypatch):
+    from src.shared.infrastructure.config.settings import Settings
+
+    cfg = Settings(outbox_worker_enabled=False, outbox_dispatch_mode="broker", rabbitmq_url="amqp://h/v")
+    _patch_lifespan(monkeypatch, cfg, [])
+    async with outbox_worker_lifespan(FastAPI()):
+        pass
+    assert _SpyPublisher.instances == []
+
+
+def test_processor_provider_injects_the_publisher_only_in_broker_mode(monkeypatch):
+    from src.modules.mod_checkout import module
+    from src.shared.infrastructure.config.settings import Settings
+    from src.shared.infrastructure.di.capabilities import OUTBOX_PUBLISHER
+    from src.shared.infrastructure.di.registry import CapabilityNotRegistered, registry
+
+    monkeypatch.setattr(registry, "_providers", dict(registry._providers))
+    monkeypatch.setattr(module, "provide_sales_port", lambda settings: object())
+    monkeypatch.setattr(module, "_notification_service", lambda session: None)
+    monkeypatch.setattr(module, "SqlAlchemyUnitOfWork", lambda session: None)
+    monkeypatch.setattr(module, "OutboxPostgresAdapter", lambda session: None)
+    monkeypatch.setattr(module, "OrderRefPostgresAdapter", lambda session: None)
+
+    monkeypatch.setattr(module, "get_settings", lambda: Settings())
+    assert module.provide_outbox_processor(object()).publisher is None
+
+    broker = Settings(outbox_dispatch_mode="broker", rabbitmq_url="amqp://h/v")
+    monkeypatch.setattr(module, "get_settings", lambda: broker)
+    registry._providers.pop(OUTBOX_PUBLISHER, None)
+    with pytest.raises(CapabilityNotRegistered):
+        module.provide_outbox_processor(object())
+
+    sentinel = object()
+    registry.register(OUTBOX_PUBLISHER, lambda: sentinel)
+    assert module.provide_outbox_processor(object()).publisher is sentinel

@@ -1,6 +1,6 @@
 """Settings read from environment variables (see .env.template). DATABASE_URL lives in db/connection.py."""
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from urllib.parse import urlparse
 
@@ -25,6 +25,8 @@ def _number(name: str, default: str, cast, *, minimum: float):
     return value
 
 
+OUTBOX_DISPATCH_MODES = ("direct", "broker")
+RABBITMQ_URL_SCHEMES = ("amqp", "amqps")
 MODULE_MODES = ("fake", "http")
 MODULES = ("security", "products", "sales", "dispatch")
 # Modules with an in-process fake or an HTTP adapter wired in the container.
@@ -142,6 +144,11 @@ class Settings:
     # In-process outbox worker (SPEC-15): polled from the FastAPI lifespan.
     outbox_worker_enabled: bool = True
     outbox_poll_interval_seconds: float = 5.0
+    # ADR-0030: `direct` dispatches in process (default and rollback); `broker` relays each
+    # outbox row to RabbitMQ. The URL carries credentials: never logged (`repr=False`).
+    outbox_dispatch_mode: str = "direct"
+    rabbitmq_url: str = field(default="", repr=False)
+    rabbitmq_prefetch: int = 10
     # SPEC-14 `ExpirarCheckouts`: sweep period for overdue checkouts (runs with the worker).
     checkout_expiry_interval_seconds: float = 60.0
     # SPEC-04 legacy mode: the checkout demands a locally verified phone. Opt-in
@@ -181,6 +188,15 @@ class Settings:
     attachment_thumbnail_side: int = 320
 
     def __post_init__(self) -> None:
+        if self.outbox_dispatch_mode not in OUTBOX_DISPATCH_MODES:
+            raise ValueError(f"OUTBOX_DISPATCH_MODE must be one of {', '.join(OUTBOX_DISPATCH_MODES)}")
+        if self.outbox_dispatch_mode == "broker":
+            if not self.rabbitmq_url:
+                raise ValueError("OUTBOX_DISPATCH_MODE=broker requires RABBITMQ_URL")
+            if urlparse(self.rabbitmq_url).scheme not in RABBITMQ_URL_SCHEMES:
+                raise ValueError("RABBITMQ_URL must use the amqp:// or amqps:// scheme")
+        if self.rabbitmq_prefetch < 1:
+            raise ValueError("RABBITMQ_PREFETCH must be >= 1")
         if self.attachment_storage not in ("local", "supabase"):
             raise ValueError("ATTACHMENT_STORAGE must be one of local, supabase")
         if self.attachment_storage == "supabase" and not (self.supabase_url and self.supabase_service_key):
@@ -381,6 +397,9 @@ def _build_settings() -> Settings:
         ),
         outbox_worker_enabled=os.getenv("OUTBOX_WORKER_ENABLED", "true").strip().lower() != "false",
         outbox_poll_interval_seconds=_number("OUTBOX_POLL_INTERVAL_SECONDS", "5", float, minimum=0.5),
+        outbox_dispatch_mode=_choice("OUTBOX_DISPATCH_MODE", "direct", OUTBOX_DISPATCH_MODES),
+        rabbitmq_url=os.getenv("RABBITMQ_URL", "").strip(),
+        rabbitmq_prefetch=_number("RABBITMQ_PREFETCH", "10", int, minimum=1),
         checkout_expiry_interval_seconds=_number(
             "CHECKOUT_EXPIRY_INTERVAL_SECONDS", "60", float, minimum=5
         ),

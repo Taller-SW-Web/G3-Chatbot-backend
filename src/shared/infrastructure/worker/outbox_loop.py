@@ -105,14 +105,29 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan: starts the loop when OUTBOX_WORKER_ENABLED and cancels it on shutdown."""
     from src.shared.infrastructure.config.settings import get_settings
     from src.shared.infrastructure.db import connection
-    from src.shared.infrastructure.di.capabilities import ATTACHMENT_CLEANUP, CHECKOUT_EXPIRY
+    from src.shared.infrastructure.di.capabilities import (
+        ATTACHMENT_CLEANUP,
+        CHECKOUT_EXPIRY,
+        OUTBOX_PUBLISHER,
+    )
     from src.shared.infrastructure.di.container import provide_outbox_processor
     from src.shared.infrastructure.di.registry import registry
 
     settings = get_settings()
     task: asyncio.Task | None = None
+    publisher = None
     cleanup_task: asyncio.Task | None = None
     expiry_task: asyncio.Task | None = None
+    if settings.outbox_worker_enabled and settings.outbox_dispatch_mode == "broker":
+        # One long-lived connection for the whole process (ADR-0030); the URL is never logged.
+        from src.shared.infrastructure.broker.rabbitmq_outbox_publisher import (
+            RabbitMqOutboxPublisher,
+        )
+
+        publisher = RabbitMqOutboxPublisher(settings.rabbitmq_url)
+        await publisher.start()
+        registry.register(OUTBOX_PUBLISHER, lambda: publisher)
+        logger.info("Outbox dispatch mode: broker")
     if settings.outbox_worker_enabled:
         connection.get_engine()
         task = asyncio.create_task(
@@ -164,3 +179,6 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
                 with contextlib.suppress(asyncio.CancelledError):
                     await pending
                 logger.info("%s stopped", name)
+        if publisher is not None:
+            await publisher.close()
+            logger.info("RabbitMQ relay connection closed")
