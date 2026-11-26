@@ -121,27 +121,23 @@ async def test_relayed_sales_tasks_leave_the_outbox_row_to_the_relay(job_type):
 
 
 @pytest.mark.asyncio
-async def test_a_redelivered_payment_for_an_already_notified_order_has_no_effects():
+async def test_a_relayed_payment_reaches_ventas_although_checkout_already_marked_the_order_paid():
+    # Checkout marks the order PAID_NOTIFIED when it enqueues the task, so the local
+    # status says nothing about Ventas; Ventas deduplicates by `transaccionId` (ADR-0012).
     handler, _, order_ref, sales = _handler(local_status="PAID_NOTIFIED")
-    await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", PAYMENT, relayed=True)
-    sales.notify_payment.assert_not_awaited()
-    order_ref.actualizar_estado.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_a_first_delivery_of_a_payment_calls_ventas_once():
-    handler, _, order_ref, sales = _handler(local_status="PAYMENT_PENDING_NOTIFICATION")
     await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", PAYMENT, relayed=True)
     sales.notify_payment.assert_awaited_once()
     order_ref.actualizar_estado.assert_awaited_once_with("PED-1", "PAID_NOTIFIED")
+    order_ref.obtener_por_order_id.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_a_redelivered_cancellation_for_a_cancelled_order_has_no_effects():
+async def test_a_relayed_cancellation_reaches_ventas_although_checkout_already_marked_it_cancelled():
     handler, _, order_ref, sales = _handler(local_status="CANCELLED")
     await handler.dispatch(JOB_ID, "REQUEST_CANCELLATION", {"order_id": "PED-2"}, relayed=True)
-    sales.cancel_order.assert_not_awaited()
-    order_ref.actualizar_estado.assert_not_awaited()
+    sales.cancel_order.assert_awaited_once()
+    order_ref.actualizar_estado.assert_awaited_once_with("PED-2", "CANCELLED")
+    order_ref.obtener_por_order_id.assert_not_awaited()
 
 
 @pytest.mark.asyncio

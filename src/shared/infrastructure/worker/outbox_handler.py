@@ -9,8 +9,9 @@ The two callers differ in who owns the outbox row:
 - direct (`relayed=False`): the handler closes the row itself (`marcar_procesado`, or the
   notification service for SEND_EMAIL), exactly as the processor always did.
 - relayed (`relayed=True`, consumer): the relay already marked the row PROCESSED when the
-  broker confirmed it, so the handler never touches the row. It also skips effects that a
-  redelivery would repeat (idempotency guards below) and reports e-mail outcomes by raising.
+  broker confirmed it, so the handler never touches the row. Redeliveries are made safe by
+  the receivers (Ventas `transaccionId`, unique notification rows) and e-mail outcomes are
+  reported by raising.
 
 Failures are raised, never swallowed: the caller decides between retry, FAILED and DLQ.
 """
@@ -91,18 +92,13 @@ class OutboxTaskHandler:
         except KeyError:
             raise NonRetryableTaskError("payload has no order_id") from None
 
-    async def _already_in_state(self, order_id: str, expected: str, relayed: bool) -> bool:
-        """Redelivery guard (consumer only): the local order already reflects this task."""
-        if not relayed:
-            return False
-        row = await self.order_ref_repo.obtener_por_order_id(order_id)
-        return row is not None and row.local_status == expected
+    # No local-status redelivery guard: checkout sets PAID_NOTIFIED / CANCELLED when it
+    # enqueues the task, so `order_ref.local_status` never tells whether Ventas got the call.
+    # Redeliveries rely on Ventas: payments deduplicate by `transaccionId` (ADR-0012) and a
+    # repeated cancellation answers 409, which ADR-0030 classifies as non-retryable.
 
     async def _notify_sales_payment(self, payload: dict[str, Any], relayed: bool) -> None:
         order_id = self._order_id(payload)
-        if await self._already_in_state(order_id, PAID_NOTIFIED, relayed):
-            logger.info("Payment of order %s already notified; redelivery skipped", order_id)
-            return
         payment_data = payload.get("payment_data", {})
         correlation_id = payload.get("correlation_id")
 
@@ -116,10 +112,6 @@ class OutboxTaskHandler:
 
     async def _request_cancellation(self, payload: dict[str, Any], relayed: bool) -> None:
         order_id = self._order_id(payload)
-        if await self._already_in_state(order_id, CANCELLED, relayed):
-            # Ventas answers 409 to a repeated cancellation, which would end in FAILED.
-            logger.info("Order %s already cancelled; redelivery skipped", order_id)
-            return
         motivo = payload.get("motivo", "PAGO_NO_COMPLETADO")
         comentario = payload.get("comentario", "Tiempo límite de espera agotado; cancelado por el canal")
         correlation_id = payload.get("correlation_id")

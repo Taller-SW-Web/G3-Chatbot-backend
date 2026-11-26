@@ -285,8 +285,8 @@ async def test_a_payment_and_a_confirmation_email_flow_from_the_outbox_through_t
 ):
     session = postgres_session
     await _paid_order(session)
+    # As in checkout: the order is already PAID_NOTIFIED when the payment task is enqueued.
     await _service(session, FakeEmailSender()).enqueue_confirmation(ORDER_ID)  # needs PAID_NOTIFIED
-    await OrderRefPostgresAdapter(session).actualizar_estado(ORDER_ID, "PAYMENT_PENDING_NOTIFICATION")
     payment = await _enqueue(
         session,
         "NOTIFY_SALES_PAYMENT",
@@ -309,12 +309,16 @@ async def test_a_payment_and_a_confirmation_email_flow_from_the_outbox_through_t
         assert order.local_status == "PAID_NOTIFIED"
         assert len(email_sender.sent) == 1
 
-        # Redelivery of both messages (at-least-once): no second effect, no retry, no DLQ.
+        # Redelivery of both messages (at-least-once): Ventas gets the same `transaccionId`
+        # again (it deduplicates, ADR-0012), the e-mail is not sent twice, no retry, no DLQ.
         for row in await _all_rows(session):
             await relay.publish(OutboxMessage(id=row.id, type=row.type, payload=row.payload))
         await eventually(lambda: consumer.stats.consumed == 4)
 
-        sales.notify_payment.assert_awaited_once()
+        assert sales.notify_payment.await_count == 2
+        assert all(
+            call.args[1]["transaccionId"] == "TX-IT-1" for call in sales.notify_payment.await_args_list
+        )
         assert len(email_sender.sent) == 1
         assert consumer.stats.retried == 0 and consumer.stats.dead_lettered == 0
 
