@@ -1,0 +1,157 @@
+"""Per-type dispatch of an outbox task, shared by the direct worker and the consumer (ADR-0030).
+
+`OutboxProcessor` (direct mode) and the RabbitMQ consumer run the very same effects:
+- NOTIFY_SALES_PAYMENT / REQUEST_CANCELLATION: call Ventas, then update `order_ref`.
+- SEND_EMAIL: order confirmation through the notification service.
+- SEND_FEEDBACK_EMAIL: internal feedback e-mail.
+
+The two callers differ in who owns the outbox row:
+- direct (`relayed=False`): the handler closes the row itself (`marcar_procesado`, or the
+  notification service for SEND_EMAIL), exactly as the processor always did.
+- relayed (`relayed=True`, consumer): the relay already marked the row PROCESSED when the
+  broker confirmed it, so the handler never touches the row. It also skips effects that a
+  redelivery would repeat (idempotency guards below) and reports e-mail outcomes by raising.
+
+Failures are raised, never swallowed: the caller decides between retry, FAILED and DLQ.
+"""
+import logging
+import uuid
+from typing import Any
+
+from src.shared.application.ports.notification_repository_port import EmailTask
+from src.shared.application.ports.order_repository_port import SalesOrderPort
+from src.shared.infrastructure.persistence.order_ref_postgres_adapter import OrderRefPostgresAdapter
+from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
+
+logger = logging.getLogger(__name__)
+
+PAID_NOTIFIED = "PAID_NOTIFIED"
+CANCELLED = "CANCELLED"
+
+
+class HandlerUnavailableError(Exception):
+    """A collaborator the task needs is not wired; retryable once it is."""
+
+
+class NonRetryableTaskError(Exception):
+    """The task can never succeed (bad payload, unknown type, e-mail closed as FAILED)."""
+
+
+class EmailSendRetryError(Exception):
+    """The notification service scheduled an e-mail retry; the consumer retries via its queues."""
+
+
+class OutboxTaskHandler:
+    def __init__(
+        self,
+        outbox_repo: OutboxPostgresAdapter,
+        order_ref_repo: OrderRefPostgresAdapter,
+        sales_client: SalesOrderPort,
+        notification_service: Any | None = None,
+        feedback_notifier: Any | None = None,
+    ):
+        self.outbox_repo = outbox_repo
+        self.order_ref_repo = order_ref_repo
+        self.sales_client = sales_client
+        self.notification_service = notification_service
+        self.feedback_notifier = feedback_notifier
+
+    async def dispatch(
+        self, job_id: uuid.UUID, job_type: str, payload: dict[str, Any], *, relayed: bool = False
+    ) -> None:
+        """Runs the effects of one task. Raises on failure; see the module docstring."""
+        if job_type == "NOTIFY_SALES_PAYMENT":
+            await self._notify_sales_payment(payload, relayed)
+            await self._close_row(job_id, relayed)
+        elif job_type == "REQUEST_CANCELLATION":
+            await self._request_cancellation(payload, relayed)
+            await self._close_row(job_id, relayed)
+        elif job_type == "SEND_EMAIL":
+            await self._send_email(job_id, payload, relayed)
+        elif job_type == "SEND_FEEDBACK_EMAIL":
+            if self.feedback_notifier is None:
+                logger.error("SEND_FEEDBACK_EMAIL without a notifier; keeping the job PENDING")
+                raise HandlerUnavailableError("feedback notifier unavailable")
+            await self.feedback_notifier.send(payload)
+            await self._close_row(job_id, relayed)
+        elif relayed:
+            raise NonRetryableTaskError(f"unknown outbox type {job_type!r}")
+        else:
+            logger.warning("Unknown outbox type %s, marking processed", job_type)
+            await self.outbox_repo.marcar_procesado(job_id)
+
+    async def _close_row(self, job_id: uuid.UUID, relayed: bool) -> None:
+        if not relayed:
+            await self.outbox_repo.marcar_procesado(job_id)
+
+    @staticmethod
+    def _order_id(payload: dict[str, Any]) -> str:
+        try:
+            return str(payload["order_id"])
+        except KeyError:
+            raise NonRetryableTaskError("payload has no order_id") from None
+
+    async def _already_in_state(self, order_id: str, expected: str, relayed: bool) -> bool:
+        """Redelivery guard (consumer only): the local order already reflects this task."""
+        if not relayed:
+            return False
+        row = await self.order_ref_repo.obtener_por_order_id(order_id)
+        return row is not None and row.local_status == expected
+
+    async def _notify_sales_payment(self, payload: dict[str, Any], relayed: bool) -> None:
+        order_id = self._order_id(payload)
+        if await self._already_in_state(order_id, PAID_NOTIFIED, relayed):
+            logger.info("Payment of order %s already notified; redelivery skipped", order_id)
+            return
+        payment_data = payload.get("payment_data", {})
+        correlation_id = payload.get("correlation_id")
+
+        # Ventas deduplicates by `transaccionId` (ADR-0012), so a repeated call is harmless.
+        await self.sales_client.notify_payment(
+            order_id,
+            payment_data,
+            correlation_id=correlation_id,
+        )
+        await self.order_ref_repo.actualizar_estado(order_id, PAID_NOTIFIED)
+
+    async def _request_cancellation(self, payload: dict[str, Any], relayed: bool) -> None:
+        order_id = self._order_id(payload)
+        if await self._already_in_state(order_id, CANCELLED, relayed):
+            # Ventas answers 409 to a repeated cancellation, which would end in FAILED.
+            logger.info("Order %s already cancelled; redelivery skipped", order_id)
+            return
+        motivo = payload.get("motivo", "PAGO_NO_COMPLETADO")
+        comentario = payload.get("comentario", "Tiempo límite de espera agotado; cancelado por el canal")
+        correlation_id = payload.get("correlation_id")
+
+        await self.sales_client.cancel_order(
+            order_id,
+            motivo=motivo,
+            comentario=comentario,
+            correlation_id=correlation_id,
+        )
+        await self.order_ref_repo.actualizar_estado(order_id, CANCELLED)
+
+    async def _send_email(self, job_id: uuid.UUID, payload: dict[str, Any], relayed: bool) -> None:
+        service = self.notification_service
+        if not relayed:
+            if service:
+                # The service closes the outbox row itself (PROCESSED, retry or FAILED).
+                await service.handle_send_email_task(EmailTask(id=job_id, payload=payload))
+                return
+            logger.info("SEND_EMAIL dispatched for payload: %s", payload)
+            await self.outbox_repo.marcar_procesado(job_id)
+            return
+        if service is None:
+            raise HandlerUnavailableError("notification service unavailable")
+        # `send_confirmation` is the single send step: it skips SENT rows (unique
+        # `(order_id, resend_number)`) and keeps its own attempt counter in `notification`.
+        # Not `handle_send_email_task`: that one would mark the outbox row a second time.
+        result = await service.send_confirmation(
+            str(payload.get("order_id", "")), int(payload.get("resend_number", 0))
+        )
+        outcome = getattr(result.outcome, "value", result.outcome)
+        if outcome == "RETRY":
+            raise EmailSendRetryError(result.error or "e-mail send failed, retry scheduled")
+        if outcome == "FAILED":
+            raise NonRetryableTaskError(result.error or "e-mail send failed")

@@ -207,6 +207,30 @@ correos o notificaciones a Ventas solo en las colas. Si el broker no confirma,
 las filas quedan `PENDING` y se reprograman sin consumir intentos; el detalle
 está en el ADR-0030.
 
+### Consumidor del outbox (RabbitMQ, ADR-0030)
+
+El consumidor es un proceso aparte del API: en Railway es un segundo servicio
+con la misma imagen y otro comando de arranque. Procesa las colas
+`chatbot.ventas` y `chatbot.notificaciones`, reutiliza los manejadores del modo
+`direct` y no depende de `OUTBOX_DISPATCH_MODE`.
+
+```
+python -m src.infrastructure.consumer
+```
+
+| Variable | Obligatoria | Descripción |
+|---|---|---|
+| `RABBITMQ_URL` | Sí (falla al arrancar si falta) | `amqp://` o `amqps://`; **secreta**, solo en Railway y en los secretos de GitHub |
+| `RABBITMQ_PREFETCH` | No (10) | Mensajes sin confirmar por cola |
+| `DATABASE_URL`, `SALES_*`, `SECURITY_*`, `SMTP_*`, `MODULES_MODE` | Sí | Los mismos valores que el API, porque el consumidor llama a Ventas y envía correos |
+| `PORT` | No (8000) | Puerto del healthcheck HTTP (`GET /health`); Railway lo inyecta |
+
+`GET /health` responde `200` mientras la conexión y las dos suscripciones están
+activas y `503` en caso contrario; el JSON incluye los contadores
+`consumed`, `retried`, `deadLettered` y `failed`. `SIGTERM` detiene el consumo,
+termina el mensaje en curso y cierra la conexión. En producción el servicio debe
+estar sano antes de poner `OUTBOX_DISPATCH_MODE=broker` en el API.
+
 ## Cómo se comparten los secretos
 
 1. **Vault del equipo** (Bitwarden o 1Password, plan gratuito): una entrada por
