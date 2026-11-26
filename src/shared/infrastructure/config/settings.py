@@ -172,6 +172,8 @@ class Settings:
     # SPEC-23: private attachment storage (local adapter until Supabase is wired).
     # `local` (default, ephemeral disk) or `supabase` (private bucket, ADR-0028).
     attachment_storage: str = "local"
+    # Explicit PO-approved exception to boot production with the local disk (ADR-0028).
+    allow_local_attachments: bool = False
     attachment_storage_path: str = "var/attachments"
     supabase_url: str = ""
     supabase_service_key: str = ""
@@ -221,6 +223,17 @@ class Settings:
                 "Refusing to start with the fake Seguridad (accepts any credentials) when "
                 "APP_ENV is production. Set SECURITY_MODE=http, or ALLOW_FAKE_SECURITY=true "
                 "to run a demo on purpose."
+            )
+        if (
+            self.app_env in PRODUCTION_ENVIRONMENTS
+            and self.attachment_storage == "local"
+            and not self.allow_local_attachments
+        ):
+            raise ValueError(
+                "Refusing to start with ATTACHMENT_STORAGE=local when APP_ENV is production: "
+                "the container disk is ephemeral and attachments are lost on redeploy (ADR-0028). "
+                "Set ATTACHMENT_STORAGE=supabase, or ALLOW_LOCAL_ATTACHMENTS=true for an "
+                "explicit, PO-approved exception."
             )
 
     def module_mode(self, module: str) -> str:
@@ -292,8 +305,15 @@ def _is_onrender_host(url: str) -> bool:
 
 
 def warn_unsafe_defaults(settings: Settings, log) -> None:
-    """One startup WARNING listing every development-only setting outside production."""
+    """Startup WARNINGs: development-only settings outside production, plus accepted exceptions."""
     if settings.is_production:
+        if settings.attachment_storage == "local":
+            log.warning(
+                "APP_ENV=%s: ATTACHMENT_STORAGE=local accepted by ALLOW_LOCAL_ATTACHMENTS=true. "
+                "Uploads sit on the ephemeral container disk and are lost on every redeploy; "
+                "set ATTACHMENT_STORAGE=supabase (ADR-0028).",
+                settings.app_env,
+            )
         if not (settings.require_phone_verification or settings.require_verified_contact):
             log.warning(
                 "APP_ENV=%s: REQUIRE_PHONE_VERIFICATION and REQUIRE_VERIFIED_CONTACT are both "
@@ -426,6 +446,7 @@ def _build_settings() -> Settings:
         ),
         modo_qa=_flag("MODO_QA"),
         attachment_storage=_choice("ATTACHMENT_STORAGE", "local", ("local", "supabase")),
+        allow_local_attachments=_flag("ALLOW_LOCAL_ATTACHMENTS"),
         attachment_storage_path=os.getenv("ATTACHMENT_STORAGE_PATH", "var/attachments").strip(),
         supabase_url=os.getenv("SUPABASE_URL", "").strip().rstrip("/"),
         supabase_service_key=os.getenv("SUPABASE_SERVICE_KEY", "").strip(),

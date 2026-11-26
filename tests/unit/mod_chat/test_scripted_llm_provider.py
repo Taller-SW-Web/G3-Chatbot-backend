@@ -65,7 +65,14 @@ def test_factory_builds_the_scripted_provider_outside_production():
 
 
 def test_factory_refuses_the_scripted_provider_in_production():
-    settings = Settings(llm_provider="fake", app_env="production", allow_fake_security=True)
+    settings = Settings(
+        llm_provider="fake",
+        app_env="production",
+        allow_fake_security=True,
+        attachment_storage="supabase",
+        supabase_url="https://storage.example.com",
+        supabase_service_key="service-key-value",
+    )
 
     with pytest.raises(ValueError, match="not allowed"):
         provide_llm_provider(settings)

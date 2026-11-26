@@ -10,6 +10,11 @@ from src.shared.infrastructure.config.settings import Settings, get_settings
 
 G6 = "https://products.example/api/v1"
 G7 = "https://security.example/api/v1"
+PRODUCTION_STORAGE = {
+    "attachment_storage": "supabase",
+    "supabase_url": "https://storage.example.com",
+    "supabase_service_key": "service-key-value",
+}
 
 
 @pytest.mark.parametrize("value", ["auto", "disabled", "", "unknown"])
@@ -37,11 +42,11 @@ def test_default_is_service_and_explicit_fake_stays_fake():
 def test_production_public_requires_explicit_allowance(environment, allowed):
     if not allowed:
         with pytest.raises(ValueError, match="ALLOW_PUBLIC_PRODUCTS=true"):
-            Settings(app_env=environment, products_auth_mode="public")
+            Settings(app_env=environment, products_auth_mode="public", **PRODUCTION_STORAGE)
     else:
         assert Settings(app_env=environment, products_auth_mode="public",
-                        allow_public_products=True).products_auth_mode == "public"
-    assert Settings(app_env=environment).products_auth_mode == "service"
+                        allow_public_products=True, **PRODUCTION_STORAGE).products_auth_mode == "public"
+    assert Settings(app_env=environment, **PRODUCTION_STORAGE).products_auth_mode == "service"
 
 
 @pytest.mark.parametrize("value,allowed", [(None, False), ("false", False), ("0", False),
@@ -54,6 +59,9 @@ def test_public_allowance_environment_parsing(monkeypatch, value, allowed):
     monkeypatch.setenv("APP_ENV", " Production ")
     monkeypatch.setenv("SECURITY_MODE", "http")
     monkeypatch.setenv("PRODUCTS_AUTH_MODE", " PUBLIC ")
+    monkeypatch.setenv("ATTACHMENT_STORAGE", "supabase")
+    monkeypatch.setenv("SUPABASE_URL", "https://storage.example.com")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "service-key-value")
     if value is None:
         monkeypatch.delenv("ALLOW_PUBLIC_PRODUCTS", raising=False)
     else:
