@@ -51,7 +51,8 @@ se muestra el carrito:
 - recalcula precios con G6 y actualiza `cart_item.unit_price_ref` al último
   precio visto (la línea conserva el aviso de cambio vía `previous_price`);
 - evalúa promociones una sola vez y persiste en `cart.totals_snapshot`
-  `subtotal`, `descuentos`, `total`, `promociones_ok` y `promotion_reason`;
+  `subtotal`, `descuentos`, `total`, `promociones_ok`, `promotion_reason` y
+  `correlation_id`;
 - `GET /carrito` hace commit de ese snapshot. Sin ese commit, el checkout
   podría leer un snapshot anterior (caso `PED-2026-00088`).
 
@@ -61,6 +62,14 @@ cero. El checkout lo trata como carrito desactualizado y no crea el pedido.
 `mod-checkout` refresque y persista el snapshot antes de responder `409`, sin
 depender de que el cliente vuelva a abrir el carrito.
 Detalle en [`docs/checkout-consistencia.md`](../../../docs/checkout-consistencia.md).
+
+## Correlación y observabilidad
+
+El middleware ASGI reutiliza el `X-Correlation-Id` entrante cuando es un UUID
+válido (o genera uno), lo devuelve en toda respuesta —incluidos errores y
+streaming— y lo deja en `cart.totals_snapshot.correlation_id`. Un fallo de
+promociones deja un `WARNING` con `module`, `status`, `code` y `correlation_id`;
+nunca se registran payloads, tokens ni datos personales.
 
 ## Pruebas
 

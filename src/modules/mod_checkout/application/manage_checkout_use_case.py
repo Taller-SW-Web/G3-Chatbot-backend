@@ -1,4 +1,5 @@
 """Checkout and payment use cases (SPEC-12, SPEC-14)."""
+import asyncio
 import inspect
 import logging
 import re
@@ -28,7 +29,12 @@ from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteReque
 from src.shared.application.dto.order_ref_dto import NewOrderReference
 from src.shared.application.dto.outbox_task_dto import NewOutboxTask
 from src.shared.domain.masking import mask_phone
-from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.module_errors import (
+    ModuleRequestError,
+    ModuleUnavailableError,
+    failure_summary,
+)
+from src.shared.domain.request_context import correlation_id_var
 
 logger = logging.getLogger(__name__)
 DOCUMENT_PATTERNS = {
@@ -41,6 +47,10 @@ VERIFIED_CONTACT_MESSAGE = (
     "No pudimos confirmar el correo de tu cuenta. "
     "Revisa tus datos en Mi cuenta o inténtalo de nuevo."
 )
+# Internal `checkout.summary` keys used to reconcile a Sales order after a timeout.
+# The HTTP layer strips every `_`-prefixed key before exposing the summary.
+SALES_PENDING_KEY = "_salesPending"
+SALES_SNAPSHOT_KEY = "_salesSnapshot"
 
 
 async def _safe_call(obj: Any, method_name: str, *args: Any, **kwargs: Any) -> Any:
@@ -101,6 +111,7 @@ class ManageCheckoutUseCase:
         phone_verifications: Any | None = None,
         notification_service: Any | None = None,
         sales_client: Any | None = None,
+        sales_deadline_seconds: float = 30.0,
         outbox: Any | None = None,
         dispatch: Any | None = None,
         require_phone_verification: bool = False,
@@ -120,6 +131,7 @@ class ManageCheckoutUseCase:
         self.phone_verifications = phone_verifications
         self.notification_service = notification_service
         self.sales_client = sales_client
+        self.sales_deadline_seconds = sales_deadline_seconds
         self.outbox = outbox
         self.dispatch = dispatch
         self.require_phone_verification = require_phone_verification
@@ -261,6 +273,153 @@ class ManageCheckoutUseCase:
             {"motivo": "SIN_CONTACTO_VERIFICADO"},
         )
 
+    @staticmethod
+    def _is_sales_pending(checkout: Any) -> bool:
+        """True while the Ventas order is unconfirmed (checkout persisted, call in flight)."""
+        summary = getattr(checkout, "summary", None)
+        return isinstance(summary, dict) and summary.get(SALES_PENDING_KEY) is True
+
+    async def _create_order_in_sales(self, snapshot: dict[str, Any], idempotency_key: str) -> Any:
+        """Create the order in Ventas with an internal deadline shorter than the proxy timeout.
+
+        The checkout is already persisted when this runs, so a deadline hit is an
+        uncertain-but-recoverable state: the retry replays the same Idempotency-Key
+        and Ventas returns the order it may have created.
+        """
+        if self.sales_client is None:
+            raise ModuleUnavailableError("sales", "sales port not configured")
+        try:
+            return await asyncio.wait_for(
+                self.sales_client.create_order(snapshot, idempotency_key=idempotency_key),
+                timeout=self.sales_deadline_seconds,
+            )
+        except asyncio.TimeoutError as exc:
+            raise ModuleUnavailableError(
+                "sales",
+                f"order creation exceeded CHECKOUT_SALES_DEADLINE_SECONDS={self.sales_deadline_seconds:g}",
+            ) from exc
+
+    def _sales_unavailable_error(self, checkout: Any, exc: ModuleUnavailableError) -> CheckoutError:
+        """Recoverable 503: the client gets the checkout/order ids to retry or query."""
+        summary = checkout.summary if isinstance(checkout.summary, dict) else {}
+        timed_out = isinstance(exc.__cause__, TimeoutError)
+        return CheckoutError(
+            "MODULO_NO_DISPONIBLE",
+            "No pudimos confirmar tu pedido con Ventas. No se realizó ningún cobro; "
+            "reintenta con la misma Idempotency-Key o consulta el checkout.",
+            {
+                "modulo": "sales",
+                "motivo": "TIMEOUT_VENTAS" if timed_out else "VENTAS_NO_DISPONIBLE",
+                "checkoutId": str(checkout.id),
+                "orderId": summary.get("orderId"),
+                "orderIdProvisional": True,
+                "reintentable": True,
+            },
+        )
+
+    @staticmethod
+    def _sales_request_error(exc: ModuleRequestError) -> CheckoutError:
+        """A 4xx from Ventas is definitive: no order was created, so the local row is retired."""
+        if exc.status == 409:
+            return CheckoutError(
+                "STOCK_INSUFICIENTE",
+                "Uno o más productos ya no cuentan con stock suficiente",
+            )
+        if exc.status == 400:
+            return CheckoutError(
+                "DATO_INVALIDO",
+                "Los datos del pedido son inválidos según el módulo de Ventas",
+            )
+        return CheckoutError(
+            "ERROR_VENTAS",
+            f"Ventas rechazó la creación del pedido: {exc.code}",
+        )
+
+    async def _retire_sales_pending(self, checkout: Any) -> None:
+        """Free the cart and retire the provisional checkout after a definitive 4xx.
+
+        The row never stays `PENDING_PAYMENT`, so it cannot block a retry with a new key.
+        """
+        summary = dict(checkout.summary) if isinstance(checkout.summary, dict) else {}
+        summary.pop(SALES_PENDING_KEY, None)
+        summary.pop(SALES_SNAPSHOT_KEY, None)
+        checkout.summary = summary
+        await _safe_call(self.checkouts, "marcar_estado", checkout.id, CheckoutStatus.EXPIRED.value)
+        await _safe_call(self.carts, "cambiar_estado", checkout.cart_id, "ACTIVE")
+        if self.uow:
+            await _safe_call(self.uow, "commit")
+
+    async def _apply_sales_order(self, checkout: Any, ventas_res: Any) -> Any:
+        """Persist the real `pedidoId`, clear the provisional state and record `order_ref`."""
+        order_id = ventas_res.get("pedidoId") if isinstance(ventas_res, dict) else None
+        if not order_id:
+            raise ModuleUnavailableError("sales", "respuesta sin pedidoId")
+        summary = dict(checkout.summary) if isinstance(checkout.summary, dict) else {}
+        summary["orderId"] = str(order_id)
+        summary.pop(SALES_PENDING_KEY, None)
+        summary.pop(SALES_SNAPSHOT_KEY, None)
+        checkout.summary = summary
+        await _safe_call(self.checkouts, "guardar", checkout)
+        if self.orders:
+            try:
+                await _safe_call(
+                    self.orders,
+                    "guardar",
+                    NewOrderReference(
+                        order_id=str(order_id),
+                        customer_id=checkout.customer_id,
+                        checkout_id=checkout.id,
+                        local_status="CREATED",
+                        total=checkout.total,
+                    ),
+                )
+            except Exception:
+                pass
+        if self.uow:
+            await _safe_call(self.uow, "commit")
+        return checkout
+
+    async def _resume_pending_sale(self, checkout: Any) -> Any:
+        """Reconcile an order left pending by a timeout, replaying the same Idempotency-Key."""
+        if not self._is_sales_pending(checkout):
+            return checkout
+        if getattr(checkout, "status", None) != CheckoutStatus.PENDING_PAYMENT.value:
+            return checkout
+        expires_at = getattr(checkout, "expires_at", None)
+        if isinstance(expires_at, datetime) and datetime.now(timezone.utc) > expires_at:
+            await self.expire_checkout(checkout.id)
+            refreshed = await _safe_call(self.checkouts, "obtener_por_id", checkout.id)
+            return refreshed or checkout
+
+        summary = checkout.summary if isinstance(checkout.summary, dict) else {}
+        snapshot = summary.get(SALES_SNAPSHOT_KEY)
+        if not isinstance(snapshot, dict):
+            # Legacy row without the submitted snapshot: never invent a new payload
+            # under the same key. The client can query the checkout or retry with a new key.
+            raise CheckoutError(
+                "MODULO_NO_DISPONIBLE",
+                "Estamos confirmando tu pedido. Consulta el checkout antes de reintentar.",
+                {
+                    "modulo": "sales",
+                    "motivo": "RECONCILIACION_NO_DISPONIBLE",
+                    "checkoutId": str(checkout.id),
+                    "orderId": summary.get("orderId"),
+                    "orderIdProvisional": True,
+                    "reintentable": True,
+                },
+            )
+        try:
+            ventas_res = await self._create_order_in_sales(snapshot, checkout.idempotency_key)
+        except ModuleRequestError as exc:
+            await self._retire_sales_pending(checkout)
+            raise self._sales_request_error(exc) from exc
+        except ModuleUnavailableError as exc:
+            raise self._sales_unavailable_error(checkout, exc) from exc
+        try:
+            return await self._apply_sales_order(checkout, ventas_res)
+        except ModuleUnavailableError as exc:
+            raise self._sales_unavailable_error(checkout, exc) from exc
+
     async def create_checkout(self, input_data: CreateCheckoutInput) -> Any:
         if not input_data.idempotency_key:
             raise CheckoutError("VALIDACION", "Se requiere Idempotency-Key", {"campo": "Idempotency-Key"})
@@ -286,7 +445,7 @@ class ManageCheckoutUseCase:
         if isinstance(getattr(existing, "customer_id", None), uuid.UUID):
             if existing.customer_id != input_data.customer_id:
                 raise CheckoutError("CONFLICTO", "Idempotency-Key ya usada por otro usuario")
-            return existing
+            return await self._resume_pending_sale(existing)
 
         # 2. Resolución del carrito sin generar cartId ficticio que viole FK
         cart_id = input_data.cart_id
@@ -311,7 +470,7 @@ class ManageCheckoutUseCase:
             if existing_cart_chk.customer_id != input_data.customer_id:
                 raise CheckoutError("RECURSO_NO_ENCONTRADO", "Checkout no encontrado")
             if existing_cart_chk.idempotency_key == input_data.idempotency_key:
-                return existing_cart_chk
+                return await self._resume_pending_sale(existing_cart_chk)
             # A retry under a new key while a checkout is alive. A paid checkout is always
             # returned. A pending one is reused only if address, contact and cart content are
             # unchanged (decided once the lines are computed in step 5); otherwise it is
@@ -319,8 +478,8 @@ class ManageCheckoutUseCase:
             if existing_cart_chk.status != CheckoutStatus.PENDING_PAYMENT.value:
                 return existing_cart_chk
             if datetime.now(timezone.utc) > existing_cart_chk.expires_at:
-                await _safe_call(
-                    self.checkouts, "marcar_estado", existing_cart_chk.id, CheckoutStatus.EXPIRED.value
+                await self._retire_checkout(
+                    existing_cart_chk, "Checkout expirado por tiempo límite"
                 )
             else:
                 pending_checkout = existing_cart_chk
@@ -345,9 +504,9 @@ class ManageCheckoutUseCase:
         await self._revalidate_stock(cart, lineas, items, subtotal)
         if pending_checkout is not None:
             if self._is_reusable(pending_checkout, input_data, lineas, subtotal):
-                return pending_checkout
-            await _safe_call(
-                self.checkouts, "marcar_estado", pending_checkout.id, CheckoutStatus.EXPIRED.value
+                return await self._resume_pending_sale(pending_checkout)
+            await self._retire_checkout(
+                pending_checkout, "Checkout reemplazado por un nuevo intento"
             )
         quote = await self._quote_shipping(input_data, items)
         costo_envio = float(quote.costoEnvio)
@@ -364,11 +523,27 @@ class ManageCheckoutUseCase:
 
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(minutes=15)
-        order_id = f"PED-{now.year}-{uuid.uuid4().hex[:6].upper()}"
+        # Local fallback id (Ventas replaces it); 10 hex chars so a burst of orders cannot
+        # collide on the order_ref primary key.
+        order_id = f"PED-{now.year}-{uuid.uuid4().hex[:10].upper()}"
 
+        summary = {
+            "lineas": lineas,
+            "subtotal": round(subtotal, 2),
+            "costoEnvio": round(costo_envio, 2),
+            "descuento": round(descuento, 2),
+            "total": round(total_final, 2),
+            "moneda": quote.moneda,
+            "plazoEstimadoDias": quote.plazoEstimadoDias,
+            "direccion": input_data.direccion or {},
+            "contacto": input_data.contacto or {},
+            "orderId": order_id,
+            "avisoDireccion": await self._save_address(input_data),
+        }
+
+        sales_snapshot: dict[str, Any] | None = None
         if self.sales_client:
             from src.modules.mod_checkout.domain.snapshot_builder import SnapshotBuilder, SnapshotValidationError
-            from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 
             snapshot_items = [
                 {
@@ -405,9 +580,8 @@ class ManageCheckoutUseCase:
                 if descuento > 0
                 else None
             )
-
             try:
-                snapshot = SnapshotBuilder.build_snapshot(
+                sales_snapshot = SnapshotBuilder.build_snapshot(
                     cliente_id=str(input_data.customer_id),
                     contacto=contacto_data,
                     items=snapshot_items,
@@ -415,12 +589,6 @@ class ManageCheckoutUseCase:
                     pago=snapshot_pago,
                     cupon=cupon_data,
                 )
-                ventas_res = await self.sales_client.create_order(
-                    snapshot,
-                    idempotency_key=input_data.idempotency_key,
-                )
-                if isinstance(ventas_res, dict) and ventas_res.get("pedidoId"):
-                    order_id = str(ventas_res["pedidoId"])
             except SnapshotValidationError as exc:
                 # The lines or amounts we computed cannot form a valid order: the cart must be
                 # reviewed again, so reuse 409 CARRITO_DESACTUALIZADO with the server summary.
@@ -430,41 +598,9 @@ class ManageCheckoutUseCase:
                     "No pudimos validar tu carrito. Revisa el resumen actualizado antes de continuar.",
                     {"summary": self._stale_summary(items, subtotal, costo_envio)},
                 ) from exc
-            except ModuleRequestError as exc:
-                if exc.status == 409:
-                    raise CheckoutError(
-                        "STOCK_INSUFICIENTE",
-                        "Uno o más productos ya no cuentan con stock suficiente",
-                    ) from exc
-                if exc.status == 400:
-                    raise CheckoutError(
-                        "DATO_INVALIDO",
-                        "Los datos del pedido son inválidos según el módulo de Ventas",
-                    ) from exc
-                raise CheckoutError(
-                    "ERROR_VENTAS",
-                    f"Ventas rechazó la creación del pedido: {exc.code}",
-                ) from exc
-            except ModuleUnavailableError as exc:
-                raise CheckoutError(
-                    "MODULO_NO_DISPONIBLE",
-                    "El servicio de Ventas no está disponible en este momento",
-                    {"modulo": "sales"},
-                ) from exc
-
-        summary = {
-            "lineas": lineas,
-            "subtotal": round(subtotal, 2),
-            "costoEnvio": round(costo_envio, 2),
-            "descuento": round(descuento, 2),
-            "total": round(total_final, 2),
-            "moneda": quote.moneda,
-            "plazoEstimadoDias": quote.plazoEstimadoDias,
-            "direccion": input_data.direccion or {},
-            "contacto": input_data.contacto or {},
-            "orderId": order_id,
-            "avisoDireccion": await self._save_address(input_data),
-        }
+            summary[SALES_PENDING_KEY] = True
+            # Persisted so the same-key retry replays the exact payload Ventas received.
+            summary[SALES_SNAPSHOT_KEY] = sales_snapshot
 
         checkout_row = NewCheckout(
             cart_id=cart_id,
@@ -479,29 +615,52 @@ class ManageCheckoutUseCase:
 
         saved = await self.checkouts.guardar(checkout_row)
 
+        # Another request won the unique-key/cart race: use its row instead of a duplicate.
+        if getattr(saved, "id", None) != checkout_row.id:
+            return await self._resume_pending_sale(saved)
+
         # Actualizar estado del carrito a IN_CHECKOUT
         await _safe_call(self.carts, "cambiar_estado", cart_id, "IN_CHECKOUT")
 
-        # Registrar referencia del pedido en Ventas (SPEC-14, SPEC-15)
-        if self.orders:
-            try:
-                await _safe_call(
-                    self.orders,
-                    "guardar",
-                    NewOrderReference(
-                        order_id=order_id,
-                        customer_id=input_data.customer_id,
-                        checkout_id=saved.id,
-                        local_status="CREATED",
-                        total=saved.total,
-                    ),
-                )
-            except Exception:
-                pass
+        if sales_snapshot is None:
+            # Registrar referencia del pedido local (no hay pedido externo que reconciliar).
+            if self.orders:
+                try:
+                    await _safe_call(
+                        self.orders,
+                        "guardar",
+                        NewOrderReference(
+                            order_id=order_id,
+                            customer_id=input_data.customer_id,
+                            checkout_id=saved.id,
+                            local_status="CREATED",
+                            total=saved.total,
+                        ),
+                    )
+                except Exception:
+                    pass
+            if self.uow:
+                await _safe_call(self.uow, "commit")
+            return saved
 
+        # Durable before the external call: a timeout leaves a checkoutId and a
+        # provisional orderId the client can retry or query (issue #180).
         if self.uow:
             await _safe_call(self.uow, "commit")
-        return saved
+
+        try:
+            ventas_res = await self._create_order_in_sales(
+                sales_snapshot, input_data.idempotency_key
+            )
+        except ModuleRequestError as exc:
+            await self._retire_sales_pending(saved)
+            raise self._sales_request_error(exc) from exc
+        except ModuleUnavailableError as exc:
+            raise self._sales_unavailable_error(saved, exc) from exc
+        try:
+            return await self._apply_sales_order(saved, ventas_res)
+        except ModuleUnavailableError as exc:
+            raise self._sales_unavailable_error(saved, exc) from exc
 
     async def _revalidate_stock(self, cart: Any, lineas: list[dict[str, Any]], items: list[Any], subtotal: float) -> None:
         """Block the checkout when a line is out of stock or cannot be confirmed (SPEC-10)."""
@@ -510,7 +669,16 @@ class ManageCheckoutUseCase:
         try:
             validation = await self.cart_validator(cart)
         except Exception as exc:
-            logger.warning("Cart stock revalidation failed for cart %s: %s", getattr(cart, "id", "?"), exc)
+            module, status, code = failure_summary(exc, default_module="products")
+            logger.warning(
+                "checkout inventory revalidation failed module=%s status=%s code=%s "
+                "cart_id=%s correlation_id=%s",
+                module,
+                status,
+                code,
+                getattr(cart, "id", "?"),
+                correlation_id_var.get(),
+            )
             raise CheckoutError(
                 "MODULO_NO_DISPONIBLE",
                 "No pudimos confirmar el stock ahora. Intenta de nuevo en unos segundos.",
@@ -580,11 +748,18 @@ class ManageCheckoutUseCase:
             raw = await self.dispatch.quote_shipping(
                 destino=build_destination(request),
                 lineas=build_quote_lines(items),
-                correlation_id=str(uuid.uuid4()),
+                correlation_id=correlation_id_var.get() or str(uuid.uuid4()),
             )
             quote = parse_quote(raw, request.distrito)
         except (ModuleUnavailableError, ModuleRequestError) as exc:
-            logger.warning("Despacho quote failed during checkout: %s", exc)
+            module, status, code = failure_summary(exc, default_module="dispatch")
+            logger.warning(
+                "checkout dispatch quote failed module=%s status=%s code=%s correlation_id=%s",
+                module,
+                status,
+                code,
+                correlation_id_var.get(),
+            )
             raise CheckoutError(
                 "MODULO_NO_DISPONIBLE",
                 "No pudimos calcular el envío ahora. Intenta de nuevo en unos segundos.",
@@ -649,10 +824,15 @@ class ManageCheckoutUseCase:
             try:
                 fresh = await self.cart_totals(cart)
             except Exception as exc:
+                module, status, code = failure_summary(exc, default_module="products")
                 logger.warning(
-                    "Cart totals refresh failed for cart %s: %s",
+                    "checkout cart totals refresh failed module=%s status=%s code=%s "
+                    "cart_id=%s correlation_id=%s",
+                    module,
+                    status,
+                    code,
                     getattr(cart, "id", "?"),
-                    exc,
+                    correlation_id_var.get(),
                 )
             else:
                 if isinstance(fresh, dict) and fresh.get("promociones_ok") is True:
@@ -762,7 +942,76 @@ class ManageCheckoutUseCase:
 
         return row
 
-    async def _apply_expiry(self, row: Any) -> None:
+    @staticmethod
+    def _mark_sales_resolved(row: Any, order_id: str) -> None:
+        """Replace the provisional id and drop the reconciliation payload."""
+        summary = dict(row.summary) if isinstance(row.summary, dict) else {}
+        summary["orderId"] = str(order_id)
+        summary.pop(SALES_PENDING_KEY, None)
+        summary.pop(SALES_SNAPSHOT_KEY, None)
+        row.summary = summary
+
+    async def _order_id_for_cancellation(self, row: Any) -> str | None:
+        """Real Sales order of a checkout, reconciling a timeout-left provisional one.
+
+        A checkout persisted before the Sales call may expire before the order id is
+        known. Replaying the same Idempotency-Key returns the order Ventas may have
+        created, so the cancellation always targets the real `pedidoId`.
+        """
+        ord_row = await _safe_call(self.orders, "obtener_por_checkout_id", row.id)
+        order_id = getattr(ord_row, "order_id", None) if ord_row else None
+        if order_id:
+            self._mark_sales_resolved(row, str(order_id))
+            return str(order_id)
+
+        summary = row.summary if isinstance(row.summary, dict) else {}
+        if not self._is_sales_pending(row):
+            return summary.get("orderId")
+
+        snapshot = summary.get(SALES_SNAPSHOT_KEY)
+        if not isinstance(snapshot, dict) or self.sales_client is None:
+            logger.error(
+                "Checkout %s expired with a pending Ventas order and no snapshot to reconcile",
+                row.id,
+            )
+            return None
+        try:
+            ventas_res = await self._create_order_in_sales(snapshot, row.idempotency_key)
+        except Exception as exc:
+            logger.error(
+                "Could not reconcile the pending Ventas order of checkout %s before expiry: %s",
+                row.id,
+                exc,
+            )
+            return None
+        order_id = ventas_res.get("pedidoId") if isinstance(ventas_res, dict) else None
+        if not order_id:
+            logger.error("Ventas did not return a pedidoId while reconciling checkout %s", row.id)
+            return None
+        self._mark_sales_resolved(row, str(order_id))
+        if self.orders:
+            try:
+                await _safe_call(
+                    self.orders,
+                    "guardar",
+                    NewOrderReference(
+                        order_id=str(order_id),
+                        customer_id=row.customer_id,
+                        checkout_id=row.id,
+                        local_status="CREATED",
+                        total=row.total,
+                    ),
+                )
+            except Exception:
+                pass
+        return str(order_id)
+
+    async def _apply_expiry(
+        self,
+        row: Any,
+        *,
+        comentario: str = "Checkout expirado por tiempo límite",
+    ) -> None:
         """Single expiry routine (caller holds the row lock and commits).
 
         Marks the checkout EXPIRED, releases the cart, cancels the local order and always
@@ -770,13 +1019,10 @@ class ManageCheckoutUseCase:
         """
         await self.checkouts.marcar_estado(row.id, CheckoutStatus.EXPIRED.value)
         await _safe_call(self.carts, "cambiar_estado", row.cart_id, "ACTIVE")
-        ord_row = await _safe_call(self.orders, "obtener_por_checkout_id", row.id)
-        order_id = getattr(ord_row, "order_id", None) if ord_row else None
-        if not order_id and isinstance(row.summary, dict):
-            order_id = row.summary.get("orderId")
+        order_id = await self._order_id_for_cancellation(row)
         if not order_id:
             return
-        if ord_row:
+        if self.orders:
             await _safe_call(self.orders, "actualizar_estado", order_id, "CANCELLED")
         if self.outbox:
             await _safe_call(
@@ -787,10 +1033,16 @@ class ManageCheckoutUseCase:
                     payload={
                         "order_id": order_id,
                         "motivo": "PAGO_NO_COMPLETADO",
-                        "comentario": "Checkout expirado por tiempo límite",
+                        "comentario": comentario,
                     },
                 ),
             )
+
+    async def _retire_checkout(self, checkout: Any, comentario: str) -> None:
+        """Retire a live checkout that a new attempt replaces, cancelling its Sales order."""
+        await self._apply_expiry(checkout, comentario=comentario)
+        if self.uow:
+            await _safe_call(self.uow, "commit")
 
     async def expire_checkout(self, checkout_id: uuid.UUID) -> bool:
         """Expire one checkout under its row lock; False when it is no longer due."""
@@ -859,6 +1111,24 @@ class ManageCheckoutUseCase:
                 if self.uow:
                     await _safe_call(self.uow, "commit")
             raise CheckoutError("CHECKOUT_EXPIRADO", "El checkout venció hace más de 15 minutos")
+
+        if self._is_sales_pending(row):
+            # Never charge for a checkout whose Sales order is still provisional: the
+            # client must reconcile with the same Idempotency-Key first.
+            summary = row.summary if isinstance(row.summary, dict) else {}
+            raise CheckoutError(
+                "MODULO_NO_DISPONIBLE",
+                "Todavía estamos confirmando tu pedido con Ventas. "
+                "Reintenta el checkout con la misma Idempotency-Key.",
+                {
+                    "modulo": "sales",
+                    "motivo": "PEDIDO_EN_PROCESO",
+                    "checkoutId": str(row.id),
+                    "orderId": summary.get("orderId"),
+                    "orderIdProvisional": True,
+                    "reintentable": True,
+                },
+            )
 
         if row.status == CheckoutStatus.PAYMENT_APPROVED.value:
             attempts = await self.payment_attempts.listar_por_checkout(row.id)

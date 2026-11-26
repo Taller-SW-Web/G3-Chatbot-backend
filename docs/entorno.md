@@ -142,6 +142,52 @@ token de cliente y confirma que devuelve pedidos reales; si ves `items: []` con
 `200` y `404` en todos los detalles, revisa primero el modo (`fake` vs `http`),
 no la disponibilidad de G5.
 
+### Adjuntos en producción (ADR-0028)
+
+`ATTACHMENT_STORAGE=local` usa el disco del contenedor: sirve para desarrollo y
+pruebas, pero en Railway es efímero y no se comparte entre réplicas. Por eso
+`APP_ENV=production` con `ATTACHMENT_STORAGE=local` **aborta el arranque**
+(fail-closed); ya no es solo un warning.
+
+La configuración de producción es el bucket privado de Supabase Storage:
+
+```
+ATTACHMENT_STORAGE=supabase
+SUPABASE_URL=https://<proyecto>.supabase.co
+SUPABASE_SERVICE_KEY=<secreto del vault>
+ATTACHMENT_BUCKET=chat-attachments
+ATTACHMENT_PUBLIC_BASE_URL=https://<api-publica>/api/v1
+ATTACHMENT_SIGNING_SECRET=<secreto del vault>
+```
+
+El orden de creación del bucket, la verificación y el rollback están en el
+[runbook de adjuntos en Supabase](https://github.com/Taller-SW-Web/G3-Chatbot-specs/blob/development/docs/operacion/adjuntos-supabase.md).
+
+Solo con una aceptación explícita del PO se puede arrancar producción con disco
+local:
+
+```
+ATTACHMENT_STORAGE=local
+ALLOW_LOCAL_ATTACHMENTS=true
+```
+
+En ese caso el arranque registra un WARNING y los adjuntos se pierden al
+recrear el servicio. El flag no cambia el default de desarrollo: fuera de
+producción `local` sigue siendo válido sin configurar nada.
+
+| `APP_ENV` | `ATTACHMENT_STORAGE` | `ALLOW_LOCAL_ATTACHMENTS` | Resultado |
+|---|---|---|---|
+| `production` / `prod` | `local` | `false` (default) | El arranque falla |
+| `production` / `prod` | `local` | `true` | Arranca con WARNING (excepción del PO) |
+| `production` / `prod` | `supabase` | — | Arranca; exige `SUPABASE_URL` y `SUPABASE_SERVICE_KEY` |
+| `development` (default) | `local` | — | Arranca; default de desarrollo |
+
+> **Estado operativo (2026-11-26):** producción (Railway, `G3-Chatbot-backend`)
+> tiene `ATTACHMENT_STORAGE=local` y `ALLOW_LOCAL_ATTACHMENTS=true` como
+> excepción temporal para no bloquear el arranque mientras se configura el
+> bucket de Supabase. Al activar `ATTACHMENT_STORAGE=supabase` (SPEC-23/#53),
+> retirar `ALLOW_LOCAL_ATTACHMENTS` para que vuelva el fail-closed.
+
 ### Relay del outbox (RabbitMQ)
 
 `OUTBOX_DISPATCH_MODE=direct` es el valor por defecto y el rollback: el worker
@@ -160,6 +206,30 @@ procesa; hasta que el consumidor esté desplegado, mantén `direct` para no deja
 correos o notificaciones a Ventas solo en las colas. Si el broker no confirma,
 las filas quedan `PENDING` y se reprograman sin consumir intentos; el detalle
 está en el ADR-0030.
+
+### Consumidor del outbox (RabbitMQ, ADR-0030)
+
+El consumidor es un proceso aparte del API: en Railway es un segundo servicio
+con la misma imagen y otro comando de arranque. Procesa las colas
+`chatbot.ventas` y `chatbot.notificaciones`, reutiliza los manejadores del modo
+`direct` y no depende de `OUTBOX_DISPATCH_MODE`.
+
+```
+python -m src.infrastructure.consumer
+```
+
+| Variable | Obligatoria | Descripción |
+|---|---|---|
+| `RABBITMQ_URL` | Sí (falla al arrancar si falta) | `amqp://` o `amqps://`; **secreta**, solo en Railway y en los secretos de GitHub |
+| `RABBITMQ_PREFETCH` | No (10) | Mensajes sin confirmar por cola |
+| `DATABASE_URL`, `SALES_*`, `SECURITY_*`, `SMTP_*`, `MODULES_MODE` | Sí | Los mismos valores que el API, porque el consumidor llama a Ventas y envía correos |
+| `PORT` | No (8000) | Puerto del healthcheck HTTP (`GET /health`); Railway lo inyecta |
+
+`GET /health` responde `200` mientras la conexión y las dos suscripciones están
+activas y `503` en caso contrario; el JSON incluye los contadores
+`consumed`, `retried`, `deadLettered` y `failed`. `SIGTERM` detiene el consumo,
+termina el mensaje en curso y cierra la conexión. En producción el servicio debe
+estar sano antes de poner `OUTBOX_DISPATCH_MODE=broker` en el API.
 
 ## Cómo se comparten los secretos
 

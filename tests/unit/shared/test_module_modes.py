@@ -9,6 +9,12 @@ from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.fakes.fake_security import FakeSecurityAdapter
 from src.shared.infrastructure.http.security_client import SecurityClient
 
+PRODUCTION_STORAGE = {
+    "attachment_storage": "supabase",
+    "supabase_url": "https://storage.example.com",
+    "supabase_service_key": "service-key-value",
+}
+
 
 def test_modules_inherit_the_global_mode_without_overrides():
     settings = Settings(modules_mode="fake")
@@ -66,12 +72,22 @@ def test_fake_security_is_refused_in_production_without_opt_in():
 
 
 def test_fake_security_in_production_needs_the_explicit_opt_in():
-    settings = Settings(modules_mode="fake", app_env="production", allow_fake_security=True)
+    settings = Settings(
+        modules_mode="fake",
+        app_env="production",
+        allow_fake_security=True,
+        **PRODUCTION_STORAGE,
+    )
     assert settings.module_mode("security") == "fake"
 
 
 def test_production_with_real_security_and_other_fakes_starts():
-    settings = Settings(modules_mode="fake", security_mode="http", app_env="production")
+    settings = Settings(
+        modules_mode="fake",
+        security_mode="http",
+        app_env="production",
+        **PRODUCTION_STORAGE,
+    )
     assert settings.module_mode("security") == "http"
 
 
@@ -91,6 +107,9 @@ def test_env_reads_app_env_and_opt_in(monkeypatch, clean_settings):
         "src.shared.infrastructure.config.settings._require_production_safe", lambda settings: None
     )
     monkeypatch.setenv("ALLOW_FAKE_SECURITY", "true")
+    monkeypatch.setenv("ATTACHMENT_STORAGE", "supabase")
+    monkeypatch.setenv("SUPABASE_URL", "https://storage.example.com")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "service-key-value")
     assert get_settings().allow_fake_security is True
 
 

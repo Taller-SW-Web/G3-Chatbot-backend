@@ -10,6 +10,7 @@ import uuid
 import httpx
 
 from src.shared.domain.module_errors import ModuleUnavailableError
+from src.shared.domain.request_context import correlation_id_var
 
 __all__ = ["BaseModuleClient", "ModuleUnavailableError"]
 
@@ -28,7 +29,9 @@ class BaseModuleClient:
             await self._client.aclose()
 
     def _headers(self, correlation_id: str | None = None, extra: dict[str, str] | None = None) -> dict[str, str]:
-        headers = {"X-Correlation-Id": correlation_id or str(uuid.uuid4())}
+        # Inherit the request id when the caller has none: one request, one id
+        # across every module call (worker jobs outside a request still get one).
+        headers = {"X-Correlation-Id": correlation_id or correlation_id_var.get() or str(uuid.uuid4())}
         if extra:
             headers.update(extra)
         return headers

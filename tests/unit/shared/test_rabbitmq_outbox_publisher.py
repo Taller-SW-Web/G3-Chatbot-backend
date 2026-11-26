@@ -21,6 +21,7 @@ from src.shared.application.ports.outbox_publisher_port import (
 )
 from src.shared.infrastructure.broker import rabbitmq_outbox_publisher as adapter
 from src.shared.infrastructure.broker.rabbitmq_outbox_publisher import RabbitMqOutboxPublisher
+from tests.fakes.fake_broker import unroutable_error
 
 URL = "amqps://svc-user:s3cret-pw@broker.example.com/vh"
 
@@ -196,3 +197,40 @@ async def test_close_closes_the_connection_and_a_later_publish_reopens_it(broker
 
     await publisher.publish(_message())
     assert len(broker["connections"]) == 2
+
+
+class FlakyExchange(FakeExchange):
+    """Returns the first `unroutable` publishes, like a broker that lost its bindings."""
+
+    def __init__(self, unroutable_publishes):
+        super().__init__()
+        self.remaining = unroutable_publishes
+
+    async def publish(self, message, routing_key, *, mandatory, timeout):
+        if self.remaining:
+            self.remaining -= 1
+            raise unroutable_error(routing_key)
+        await super().publish(message, routing_key, mandatory=mandatory, timeout=timeout)
+
+
+@pytest.mark.asyncio
+async def test_an_unroutable_publish_redeclares_the_topology_once_and_then_succeeds(broker):
+    broker["exchange"] = FlakyExchange(1)
+    publisher = RabbitMqOutboxPublisher(URL)
+
+    await publisher.publish(_message())
+
+    assert broker["topology"] == 2  # at startup and once after the return
+    assert len(broker["exchange"].calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_still_unroutable_publish_is_reported_after_a_single_redeclaration(broker):
+    broker["exchange"] = FlakyExchange(5)
+    publisher = RabbitMqOutboxPublisher(URL)
+
+    with pytest.raises(BrokerUnavailableError):
+        await publisher.publish(_message())
+
+    assert broker["topology"] == 2
+    assert broker["exchange"].remaining == 3  # exactly two attempts, no loop

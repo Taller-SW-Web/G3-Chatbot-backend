@@ -51,3 +51,17 @@ class ModuleRequestError(Exception):
         self.errors = errors or []
         message = f"{module} request failed: HTTP {status} {code}"
         super().__init__(f"{message}: {detail}" if detail else message)
+
+
+def failure_summary(exc: BaseException, *, default_module: str) -> tuple[str, int | None, str]:
+    """Module, HTTP status and contract code of a failed module call.
+
+    A transport/5xx failure maps to the 503 the channel exposes; an unexpected
+    exception keeps its class name as the code, so the log still says *why* it
+    failed without ever touching the exception message or payload.
+    """
+    if isinstance(exc, ModuleRequestError):
+        return exc.module, exc.status, exc.code
+    if isinstance(exc, ModuleUnavailableError):
+        return exc.module, 503, "MODULO_NO_DISPONIBLE"
+    return default_module, None, type(exc).__name__

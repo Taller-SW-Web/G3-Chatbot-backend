@@ -1,4 +1,5 @@
 """Checkout revalidates the whole cart before quoting/creating the order (SPEC-10)."""
+import logging
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -11,6 +12,8 @@ from src.modules.mod_checkout.application.manage_checkout_use_case import (
     CreateCheckoutInput,
     ManageCheckoutUseCase,
 )
+from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.domain.request_context import correlation_id_var
 from tests.fakes.fake_commerce import FakeDispatch
 
 CUSTOMER = uuid.uuid4()
@@ -121,3 +124,28 @@ async def test_validator_unavailable_blocks_instead_of_assuming_stock():
     with pytest.raises(CheckoutError) as exc:
         await use_case.create_checkout(payload())
     assert exc.value.code == "MODULO_NO_DISPONIBLE"
+
+
+@pytest.mark.asyncio
+async def test_validator_failure_logs_module_status_and_correlation(caplog):
+    """An inventory failure must leave a trace, not just a 503 for the customer."""
+    async def validator(cart):
+        raise ModuleRequestError("products", 400, "INVENTARIO_INVALIDO")
+
+    use_case = build(validator)
+    correlation_id = str(uuid.uuid4())
+    token = correlation_id_var.set(correlation_id)
+    try:
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(CheckoutError) as exc:
+                await use_case.create_checkout(payload())
+    finally:
+        correlation_id_var.reset(token)
+
+    assert exc.value.code == "MODULO_NO_DISPONIBLE"
+    record = next(r for r in caplog.records if "inventory revalidation failed" in r.getMessage())
+    message = record.getMessage()
+    assert "module=products" in message
+    assert "status=400" in message
+    assert "code=INVENTARIO_INVALIDO" in message
+    assert f"correlation_id={correlation_id}" in message

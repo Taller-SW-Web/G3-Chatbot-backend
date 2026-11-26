@@ -63,6 +63,9 @@ verificación por cantidad). Si alguna línea está `AGOTADO`/`INSUFICIENTE` o n
 se pudo confirmar, responde `409 CARRITO_DESACTUALIZADO` con
 `lineas[{sku, nombre, cantidad, motivo, mensaje}]`; nada se degrada en silencio.
 `STOCK_BAJO` e `INDETERMINADO` no bloquean (la decisión final sigue en Ventas).
+Un fallo del validador deja un `WARNING` con `module`, `status`, `code` y
+`correlation_id`, y la respuesta `503 MODULO_NO_DISPONIBLE` conserva el
+`X-Correlation-Id` de la petición.
 
 ## Totales y promociones (SPEC-14 Req. 2)
 
@@ -78,6 +81,17 @@ que acaba de ver. **No** se crea checkout ni pedido con un total distinto al del
 carrito.
 
 El descuento nunca se toma del payload del cliente. Detalle en
+[`docs/checkout-consistencia.md`](../../../docs/checkout-consistencia.md).
+
+## Pedido en Ventas y timeout (SPEC-15, issue #180)
+
+El checkout se commitea localmente antes de `POST /pedidos`. La llamada a Ventas
+tiene un deadline interno (`CHECKOUT_SALES_DEADLINE_SECONDS`, default 30 s): si
+vence, el BFF responde `503 MODULO_NO_DISPONIBLE` con `motivo=TIMEOUT_VENTAS`,
+`checkoutId`, `orderId` provisional y `reintentable=true`. Un reintento con la
+misma `Idempotency-Key` reenvía el snapshot persistido y reconcilia el
+`pedidoId` real sin duplicar checkout ni pedido. Un `400/409` definitivo retira
+el checkout (`EXPIRED`) y libera el carrito. Detalle en
 [`docs/checkout-consistencia.md`](../../../docs/checkout-consistencia.md).
 
 ## Dirección guardada (SPEC-12)
@@ -103,6 +117,7 @@ de propiedad en Ventas. No se envía a Ventas; la CSAT de la entrega sigue en
 | `outbox_processor` | worker compartido | el lifespan no importa módulos |
 | `order_confirmation` (consumida) | este módulo | el correo pertenece a `mod-orders`; es requisito de arranque |
 | `feedback_notifier` (consumida) | worker de outbox | correo interno de SPEC-24; opcional, si falta el job reintenta |
+| `outbox_task_handler` | consumidor de RabbitMQ | despacho por tipo del outbox (`OutboxTaskHandler`), compartido con el modo `direct`; el proceso `python -m src.infrastructure.consumer` lo resuelve por mensaje (ADR-0030) |
 | `outbox_publisher` (consumida) | este módulo | solo con `OUTBOX_DISPATCH_MODE=broker` (ADR-0030): el lifespan registra la conexión única a RabbitMQ y el procesador publica en lugar de despachar |
 
 ## Pruebas
