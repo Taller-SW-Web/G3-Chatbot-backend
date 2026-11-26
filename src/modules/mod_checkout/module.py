@@ -41,6 +41,7 @@ from src.shared.infrastructure.di.capabilities import (
     ORDER_CONFIRMATION,
     OUTBOX_PROCESSOR,
     OUTBOX_PUBLISHER,
+    OUTBOX_TASK_HANDLER,
 )
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
@@ -54,6 +55,7 @@ from src.shared.infrastructure.persistence.order_ref_postgres_adapter import (
 )
 from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from src.shared.infrastructure.worker.outbox_handler import OutboxTaskHandler
 from src.shared.infrastructure.worker.outbox_worker import INLINE_EMAIL_GRACE, OutboxProcessor
 
 # Process-wide so orders created by checkout are visible to the orders module
@@ -151,6 +153,19 @@ def provide_outbox_processor(session: AsyncSession) -> OutboxProcessor:
     )
 
 
+def provide_outbox_task_handler(session: AsyncSession) -> OutboxTaskHandler:
+    """Per-type dispatch for the broker consumer (ADR-0030): one handler per message and session."""
+    return OutboxTaskHandler(
+        outbox_repo=OutboxPostgresAdapter(session),
+        order_ref_repo=OrderRefPostgresAdapter(session),
+        sales_client=provide_sales_port(get_settings()),
+        notification_service=_notification_service(session),
+        feedback_notifier=(
+            registry.resolve(FEEDBACK_NOTIFIER) if registry.is_registered(FEEDBACK_NOTIFIER) else None
+        ),
+    )
+
+
 def provide_purchase_rating_service(
     session: AsyncSession = Depends(get_session),
 ) -> PurchaseRatingService:
@@ -176,6 +191,7 @@ def configure(container) -> None:
     """Checkout exposes the checkout document and the outbox processor."""
     container.register(CHECKOUT_DOCUMENT, CheckoutPostgresAdapter)
     container.register(OUTBOX_PROCESSOR, provide_outbox_processor)
+    container.register(OUTBOX_TASK_HANDLER, provide_outbox_task_handler)
     container.register(CHECKOUT_EXPIRY, provide_checkout_expirer)
 
 
@@ -185,6 +201,7 @@ __all__ = [
     "MODULE_ID",
     "ORDER_CONFIRMATION",
     "OUTBOX_PROCESSOR",
+    "OUTBOX_TASK_HANDLER",
     "REQUIRED_CAPABILITIES",
     "build_router",
     "configure",
@@ -193,6 +210,7 @@ __all__ = [
     "provide_checkout_snapshot",
     "provide_confirmation_outbox",
     "provide_outbox_processor",
+    "provide_outbox_task_handler",
     "provide_payment_gateway",
     "provide_purchase_rating_service",
     "provide_sales_port",

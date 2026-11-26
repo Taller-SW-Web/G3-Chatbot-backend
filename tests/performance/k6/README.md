@@ -25,10 +25,15 @@ Cada SLO es un *threshold*: si uno no se cumple, k6 termina con código distinto
 cp .env.template .env && sed -i 's/^LLM_PROVIDER=.*/LLM_PROVIDER=fake/' .env
 alembic upgrade head
 
-# 2. Backend
-uvicorn src.infrastructure.main:app --host 0.0.0.0 --port 8000 --env-file .env
+# 2. RabbitMQ en Docker y outbox en modo broker (H5-P5)
+docker run -d --rm --name rabbit-perf -p 5672:5672 rabbitmq:4.1-management
+printf 'OUTBOX_DISPATCH_MODE=broker\nRABBITMQ_URL=amqp://guest:guest@localhost:5672/\n' >> .env
 
-# 3. k6 en Docker (no hace falta instalarlo); en Linux usa --network host y 127.0.0.1
+# 3. Backend y consumidor (en otra terminal; healthcheck en http://localhost:8001/health)
+uvicorn src.infrastructure.main:app --host 0.0.0.0 --port 8000 --env-file .env
+PORT=8001 python -c "from dotenv import load_dotenv; load_dotenv('.env'); import runpy; runpy.run_module('src.infrastructure.consumer', run_name='__main__')"
+
+# 4. k6 en Docker (no hace falta instalarlo); en Linux usa --network host y 127.0.0.1
 cd tests/performance/k6 && mkdir -p results
 docker run --rm -v "$PWD:/scripts" -w /scripts \
   -e BASE_URL=http://host.docker.internal:8000 -e RESULTS_DIR=/scripts/results \
@@ -52,6 +57,7 @@ y el backend en el runner, corre los tres escenarios, publica la tabla en el res
   cambio en `src/shared/` que va en su propio PR `cross-modulo`.
 - **Detalle de producto.** Solo se piden los productos semilla con precio validado; el resto responde
   `503` a propósito (imita los productos de G6 sin precio de canal).
-- **RabbitMQ.** Cuando entren H5-M2 y H5-M3, el workflow suma el servicio de RabbitMQ en Docker y el
-  consumidor; hasta entonces el outbox trabaja solo, igual que en el resto del CI.
+- **RabbitMQ.** Desde H5-P5 el workflow levanta RabbitMQ en Docker, pone el outbox en
+  `OUTBOX_DISPATCH_MODE=broker` y corre el consumidor (`python -m src.infrastructure.consumer`) como
+  proceso aparte. El job falla si el consumidor no procesa ningún evento. Nunca se usa CloudAMQP.
 - **LLM.** Con el modelo real hay que sumar la latencia de OpenAI, que estos SLO no controlan.
