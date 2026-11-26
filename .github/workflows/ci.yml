@@ -282,6 +282,7 @@ jobs:
         run: |
           mkdir -p zap-reports
           chmod 777 zap-reports
+          set +e
           docker run --rm --network host \
             -v "$PWD/zap-reports:/zap/wrk:rw" \
             -v "$PWD/.zap:/zap/config:ro" \
@@ -293,7 +294,8 @@ jobs:
               -c /zap/config/rules.tsv \
               -r zap-api-report.html \
               -J zap-api-report.json \
-              -w zap-api-report.md || true
+              -w zap-api-report.md
+          api_status=$?
           docker run --rm --network host \
             -v "$PWD/zap-reports:/zap/wrk:rw" \
             -v "$PWD/.zap:/zap/config:ro" \
@@ -303,7 +305,17 @@ jobs:
               -c /zap/config/rules.tsv \
               -r zap-health-report.html \
               -J zap-health-report.json \
-              -w zap-health-report.md || true
+              -w zap-health-report.md
+          health_status=$?
+          set -e
+          echo "ZAP API exit=$api_status; ZAP baseline exit=$health_status"
+          for status in "$api_status" "$health_status"; do
+            # 0=ok, 1=FAIL, 2=WARN are evaluated by the gate; anything else is a scan failure.
+            if [ "$status" -gt 2 ]; then
+              echo "::error::OWASP ZAP no pudo completar el escaneo (exit $status)"
+              exit 1
+            fi
+          done
       - name: Evaluate ZAP reports (fail on High findings)
         id: zap_gate
         run: |
@@ -312,6 +324,7 @@ jobs:
             --report zap-reports/zap-api-report.json \
             --report zap-reports/zap-health-report.json \
             --rules .zap/rules.tsv \
+            --exceptions-doc docs/seguridad/zap-exceptions.md \
             --summary-output zap-reports/summary.md
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
       - name: Publish ZAP summary

@@ -83,15 +83,40 @@ def test_allows_high_alert_when_explicitly_ignored_in_rules(tmp_path: Path) -> N
     )
     rules = tmp_path / "rules.tsv"
     rules.write_text("# comment\n40018\tIGNORE\tDocumented in zap-exceptions.md\n", encoding="utf-8")
+    doc = tmp_path / "zap-exceptions.md"
+    doc.write_text("| Plugin ID | Alerta |\n|---|---|\n| `40018` | Ejemplo justificado |\n", encoding="utf-8")
     summary = tmp_path / "summary.md"
 
     assert load_ignored_plugin_ids(rules) == {"40018"}
-    code = evaluate_reports([report], rules_path=rules, summary_output=summary)
+    code = evaluate_reports(
+        [report], rules_path=rules, summary_output=summary, exceptions_doc=doc
+    )
 
     assert code == 0
     content = summary.read_text(encoding="utf-8")
     assert "Exceptuada (`rules.tsv`)" in content
     assert "**Resultado: OK**" in content
+
+
+def test_blocks_when_an_ignore_rule_is_not_documented(tmp_path: Path) -> None:
+    report = _write_report(
+        tmp_path / "zap-api.json",
+        [{"pluginid": "40018", "name": "Example Alert", "riskcode": "3", "count": "1"}],
+    )
+    rules = tmp_path / "rules.tsv"
+    rules.write_text("40018\tIGNORE\tnot documented\n", encoding="utf-8")
+    doc = tmp_path / "zap-exceptions.md"
+    doc.write_text("| Plugin ID | Alerta |\n|---|---|\n| *(ninguna)* | — |\n", encoding="utf-8")
+    summary = tmp_path / "summary.md"
+
+    code = evaluate_reports(
+        [report], rules_path=rules, summary_output=summary, exceptions_doc=doc
+    )
+
+    assert code == 1
+    content = summary.read_text(encoding="utf-8")
+    assert "Excepciones sin documentar" in content
+    assert "**Resultado: FALLO**" in content
 
 
 def test_aggregates_multiple_reports_and_fails_on_missing_file(tmp_path: Path) -> None:

@@ -22,6 +22,9 @@ El script `scripts/check_zap_report.py` evalúa los reportes JSON generados:
   reporte y en el resumen; no bloquean el merge (por ejemplo, cabeceras HTML
   como CSP o `X-Frame-Options` que en esta arquitectura aplica el frontend en
   Vercel según ADR-0023).
+- **Excepciones:** el gate también falla si un plugin marcado `IGNORE` en
+  `.zap/rules.tsv` no tiene su fila en la tabla de este documento. Una regla
+  sola no basta para saltarse el bloqueo.
 
 ## Excepciones vigentes
 

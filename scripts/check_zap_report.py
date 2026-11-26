@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 from dataclasses import dataclass
 
@@ -57,6 +58,16 @@ def load_ignored_plugin_ids(rules_path: pathlib.Path | None) -> set[str]:
         if len(parts) >= 2 and parts[1].strip().upper() == "IGNORE":
             ignored.add(parts[0].strip())
     return ignored
+
+
+def load_documented_plugin_ids(doc_path: pathlib.Path | None) -> set[str]:
+    """Plugin IDs documented in the exceptions table of the security doc."""
+    if doc_path is None:
+        return set()
+    if not doc_path.is_file():
+        raise FileNotFoundError(f"ZAP exceptions doc not found: {doc_path}")
+    text = doc_path.read_text(encoding="utf-8")
+    return set(re.findall(r"`([0-9]+)`", text))
 
 
 def parse_zap_reports(
@@ -102,6 +113,7 @@ def parse_zap_reports(
 def render_markdown_summary(
     alerts: list[AlertSummary],
     report_paths: list[pathlib.Path],
+    undocumented_ids: list[str] | None = None,
 ) -> str:
     """Renders a GitHub Step Summary table for the ZAP DAST scan."""
     counts = {"High": 0, "Medium": 0, "Low": 0, "Informational": 0}
@@ -146,11 +158,20 @@ def render_markdown_summary(
     else:
         lines.append("Sin alertas reportadas por OWASP ZAP.")
 
-    lines.append("")
-    if blocking:
+    undocumented = undocumented_ids or []
+    if undocumented:
         lines.append(
-            f"**Resultado: FALLO** — {len(blocking)} alerta(s) High sin excepción justificada."
+            f"**Excepciones sin documentar:** {', '.join(f'`{item}`' for item in undocumented)}"
         )
+
+    lines.append("")
+    if blocking or undocumented:
+        reasons = []
+        if blocking:
+            reasons.append(f"{len(blocking)} alerta(s) High sin excepción justificada")
+        if undocumented:
+            reasons.append(f"{len(undocumented)} excepción(es) sin documentar")
+        lines.append(f"**Resultado: FALLO** — {'; '.join(reasons)}.")
     else:
         lines.append("**Resultado: OK** — 0 alertas High sin excepción.")
     lines.append("")
@@ -161,10 +182,13 @@ def evaluate_reports(
     report_paths: list[pathlib.Path],
     rules_path: pathlib.Path | None = None,
     summary_output: pathlib.Path | None = None,
+    exceptions_doc: pathlib.Path | None = None,
 ) -> int:
     ignored_ids = load_ignored_plugin_ids(rules_path)
+    documented_ids = load_documented_plugin_ids(exceptions_doc)
+    undocumented = sorted(ignored_ids - documented_ids) if exceptions_doc is not None else []
     alerts = parse_zap_reports(report_paths, ignored_ids)
-    summary = render_markdown_summary(alerts, report_paths)
+    summary = render_markdown_summary(alerts, report_paths, undocumented)
 
     if summary_output is not None:
         summary_output.parent.mkdir(parents=True, exist_ok=True)
@@ -172,7 +196,7 @@ def evaluate_reports(
 
     print(summary)
     blocking = [a for a in alerts if a.risk_code == HIGH_RISK_CODE and not a.ignored]
-    return 1 if blocking else 0
+    return 1 if blocking or undocumented else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -193,12 +217,23 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional path to write the Markdown summary.",
     )
+    parser.add_argument(
+        "--exceptions-doc",
+        default=None,
+        help="Markdown doc whose exception table must contain every IGNORE plugin ID.",
+    )
     args = parser.parse_args(argv)
 
     report_paths = [pathlib.Path(p) for p in args.report]
     rules_path = pathlib.Path(args.rules) if args.rules else None
     summary_output = pathlib.Path(args.summary_output) if args.summary_output else None
-    return evaluate_reports(report_paths, rules_path=rules_path, summary_output=summary_output)
+    exceptions_doc = pathlib.Path(args.exceptions_doc) if args.exceptions_doc else None
+    return evaluate_reports(
+        report_paths,
+        rules_path=rules_path,
+        summary_output=summary_output,
+        exceptions_doc=exceptions_doc,
+    )
 
 
 if __name__ == "__main__":
