@@ -48,6 +48,16 @@ async def test_order_ids_do_not_collide_across_restarts():
 
 
 @pytest.mark.asyncio
+async def test_order_ids_carry_enough_randomness_for_a_load_test():
+    # 6 hex chars (16.7 M values) collided in a k6 run of ~1,500 orders (order_ref PK);
+    # 10 hex chars keep the birthday probability negligible at that volume.
+    created = await FakeSalesPort().create_order(snapshot("c1"), idempotency_key="k1")
+    random_part = created["pedidoId"].rsplit("-", 1)[1]
+    assert len(random_part) == 10
+    int(random_part, 16)
+
+
+@pytest.mark.asyncio
 async def test_each_customer_lists_only_their_orders():
     sales = FakeSalesPort()
     mine = await sales.create_order(snapshot("c1"), idempotency_key="k1")
