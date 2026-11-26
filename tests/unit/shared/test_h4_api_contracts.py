@@ -26,6 +26,7 @@ from src.shared.application.dto.commerce_contracts_dto import (
     CreateCheckoutRequest,
     PaymentResultResponse,
     ProcessPaymentRequest,
+    SavedAddressDTO,
     ShippingQuoteRequest,
     validate_buyer_document,
 )
@@ -288,7 +289,7 @@ class _FakeShippingService:
                     "destinatario": "Juan Pérez",
                     "distrito": "Miraflores",
                     "direccion": "Av. Larco 1234",
-                    "predeterminada": True,
+                    "esPredeterminada": True,
                 }
             ]
         }
@@ -318,6 +319,7 @@ def test_shipping_endpoints_contract_and_error_translation() -> None:
     r_dirs = client.get("/api/v1/direcciones", headers=AUTH_HEADER)
     assert r_dirs.status_code == 200
     assert r_dirs.json()["direcciones"][0]["distrito"] == "Miraflores"
+    assert r_dirs.json()["direcciones"][0]["predeterminada"] is True
 
     r_quote = client.post(
         "/api/v1/envio/cotizar",
@@ -395,6 +397,30 @@ def test_shipping_endpoints_contract_and_error_translation() -> None:
     assert r_down.status_code == 503
     assert r_down.json()["code"] == "MODULO_NO_DISPONIBLE"
     assert r_down.json()["modulo"] == "dispatch"
+
+
+def test_saved_address_dto_accepts_g7_flag_and_keeps_the_public_name() -> None:
+    g7 = SavedAddressDTO.model_validate(
+        {
+            "id": "dir-1",
+            "distrito": "Miraflores",
+            "direccion": "Av. Larco 1234",
+            "esPredeterminada": True,
+        }
+    )
+    legacy = SavedAddressDTO.model_validate(
+        {
+            "id": "dir-2",
+            "distrito": "Miraflores",
+            "direccion": "Av. Larco 1235",
+            "predeterminada": True,
+        }
+    )
+
+    assert g7.predeterminada is True
+    assert legacy.predeterminada is True
+    assert "predeterminada" in g7.model_dump()
+    assert "esPredeterminada" not in g7.model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -551,7 +577,7 @@ def test_tracking_mapper_strips_forbidden_fields_and_llm_recipient() -> None:
         "motivoFallo": "Cliente ausente según nota interna",
         "hitos": [
             {
-                "titulo": "En camino",
+                "etiqueta": "En camino",
                 "fecha": "2026-11-06T16:00:00-05:00",
                 "completado": True,
                 "comentarioRepartidor": "Tráfico pesado",
@@ -651,7 +677,7 @@ class _FakeOrdersService:
             "distrito": "Miraflores",
             "coordenadas": {"lat": -12.1, "lng": -77.0},
             "repartidor": "Dato secreto",
-            "hitos": [{"titulo": "En camino", "fecha": "2026-11-06T16:00:00-05:00"}],
+            "hitos": [{"etiqueta": "En camino", "fecha": "2026-11-06T16:00:00-05:00"}],
         }
 
     async def resend_confirmation(

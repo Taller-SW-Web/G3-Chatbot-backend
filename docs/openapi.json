@@ -1097,6 +1097,11 @@
             "title": "Canal",
             "type": "string"
           },
+          "csatEnviado": {
+            "default": false,
+            "title": "Csatenviado",
+            "type": "boolean"
+          },
           "envio": {
             "anyOf": [
               {

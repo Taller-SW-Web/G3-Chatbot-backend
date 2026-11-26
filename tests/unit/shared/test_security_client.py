@@ -260,6 +260,40 @@ async def test_list_addresses_reads_direcciones_and_tolerates_early_shapes(body)
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_save_address_sends_the_exact_g7_body():
+    route = respx.post(url__regex=r".*/usuarios/.+/direcciones").mock(
+        return_value=httpx.Response(201, json={"id": "dir-1"})
+    )
+    result = await make_client().save_address(
+        "cust-001",
+        "holder-token",
+        {
+            "etiqueta": "Casa",
+            "departamento": "Lima",
+            "provincia": "Lima",
+            "distrito": "Miraflores",
+            "direccion": "Av. Larco 1234",
+            "referencia": "Frente al parque",
+            "predeterminada": True,
+        },
+    )
+
+    assert result == {"id": "dir-1"}
+    request = route.calls[0].request
+    assert request.headers["authorization"] == "Bearer holder-token"
+    assert json.loads(request.content) == {
+        "etiqueta": "Casa",
+        "departamento": "Lima",
+        "provincia": "Lima",
+        "distrito": "Miraflores",
+        "direccion": "Av. Larco 1234",
+        "referencia": "Frente al parque",
+        "esPredeterminada": True,
+    }
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_list_addresses_forwards_authorization_and_escapes_user_id():
     route = security_mocks.mock_addresses(BASE_URL)
     await make_client().list_addresses("a/b c", "holder-token")
