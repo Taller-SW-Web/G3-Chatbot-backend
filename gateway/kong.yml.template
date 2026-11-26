@@ -1,8 +1,10 @@
 _format_version: "3.0"
 _transform: true
 
-# Kong OSS DB-less declarative configuration (ADR-0031, H5-G2).
+# Kong OSS DB-less declarative configuration (ADR-0031, H5-G2 & H5-G3).
 # BACKEND_UPSTREAM_URL is rendered at startup by gateway/entrypoint.sh.
+# Perimeter rate-limiting acts as defense in depth while FastAPI keeps
+# `rate_limiter.py` and its `application/problem+json` contract intact.
 services:
   - name: chatbot-backend
     url: ${BACKEND_UPSTREAM_URL}
@@ -18,6 +20,23 @@ services:
           - GET
         strip_path: false
 
+      # H5-G3: publish OpenAPI schema and interactive docs through the gateway.
+      - name: chatbot-openapi
+        paths:
+          - /openapi.json
+          - /docs
+          - /redoc
+        methods:
+          - GET
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 60
+              policy: local
+              limit_by: ip
+              hide_client_headers: false
+
       # ADR-0021 & ADR-0031: disable response buffering so SSE tokens stream live.
       - name: chatbot-chat-sse
         paths:
@@ -27,8 +46,20 @@ services:
         strip_path: false
         response_buffering: false
         regex_priority: 200
+        plugins:
+          - name: request-size-limiting
+            config:
+              allowed_payload_size: 1
+              size_unit: megabytes
+          - name: rate-limiting
+            config:
+              minute: 25
+              policy: local
+              limit_by: ip
+              hide_client_headers: false
 
-      # SPEC-21 & SPEC-23: allow up to 6 MB for image attachments and return evidence.
+      # SPEC-21 & SPEC-23: allow up to 6 MB for image attachments and return evidence
+      # (1 MB extra margin over the 5 MB backend file limit for multipart overhead).
       - name: chatbot-uploads
         paths:
           - ~/api/v1/chat/conversaciones/[^/]+/adjuntos$
@@ -42,6 +73,86 @@ services:
             config:
               allowed_payload_size: 6
               size_unit: megabytes
+          - name: rate-limiting
+            config:
+              minute: 15
+              policy: local
+              limit_by: ip
+              hide_client_headers: false
+
+      - name: chatbot-chat-reaction
+        paths:
+          - ~/api/v1/chat/mensajes/[^/]+/reaccion$
+        methods:
+          - PUT
+        strip_path: false
+        regex_priority: 140
+        plugins:
+          - name: request-size-limiting
+            config:
+              allowed_payload_size: 1
+              size_unit: megabytes
+          - name: rate-limiting
+            config:
+              minute: 35
+              policy: local
+              limit_by: ip
+              hide_client_headers: false
+
+      - name: chatbot-auth-login
+        paths:
+          - /api/v1/sesion/login
+        methods:
+          - POST
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config:
+              allowed_payload_size: 1
+              size_unit: megabytes
+          - name: rate-limiting
+            config:
+              minute: 15
+              policy: local
+              limit_by: ip
+              hide_client_headers: false
+
+      - name: chatbot-auth-register
+        paths:
+          - /api/v1/sesion/registro
+        methods:
+          - POST
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config:
+              allowed_payload_size: 1
+              size_unit: megabytes
+          - name: rate-limiting
+            config:
+              minute: 5
+              hour: 30
+              policy: local
+              limit_by: ip
+              hide_client_headers: false
+
+      - name: chatbot-chat-suggestions
+        paths:
+          - /api/v1/chat/sugerencias
+        methods:
+          - POST
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config:
+              allowed_payload_size: 1
+              size_unit: megabytes
+          - name: rate-limiting
+            config:
+              hour: 10
+              policy: local
+              limit_by: ip
+              hide_client_headers: false
 
       - name: chatbot-api-v1
         paths:
@@ -52,6 +163,12 @@ services:
             config:
               allowed_payload_size: 1
               size_unit: megabytes
+          - name: rate-limiting
+            config:
+              minute: 120
+              policy: local
+              limit_by: ip
+              hide_client_headers: false
 
 plugins:
   - name: correlation-id

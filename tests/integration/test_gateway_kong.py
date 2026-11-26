@@ -104,3 +104,53 @@ async def test_upload_route_allows_over_1mb_while_api_rejects_oversized_json(
         )
         assert upload_resp.status_code != 413
         assert upload_resp.headers.get("x-gateway") == "kong"
+
+
+async def test_openapi_and_docs_are_published_through_kong(gateway_url: str) -> None:
+    async with httpx.AsyncClient(base_url=gateway_url, timeout=15.0) as client:
+        openapi_resp = await client.get("/openapi.json")
+        docs_resp = await client.get("/docs")
+
+    assert openapi_resp.status_code == 200
+    assert openapi_resp.headers.get("x-gateway") == "kong"
+    assert openapi_resp.headers.get("ratelimit-limit") == "60"
+    spec = openapi_resp.json()
+    assert "openapi" in spec
+    assert "/api/v1/catalogo/productos" in spec.get("paths", {})
+
+    assert docs_resp.status_code == 200
+    assert docs_resp.headers.get("x-gateway") == "kong"
+    assert "swagger" in docs_resp.text.lower()
+
+
+async def test_rate_limit_headers_and_429_enforced_by_kong(gateway_url: str) -> None:
+    async with httpx.AsyncClient(base_url=gateway_url, timeout=15.0) as client:
+        catalog_resp = await client.get(
+            "/api/v1/catalogo/productos",
+            headers={"X-Forwarded-For": "198.51.100.10"},
+        )
+        assert catalog_resp.status_code == 200
+        assert catalog_resp.headers.get("x-gateway") == "kong"
+        assert catalog_resp.headers.get("ratelimit-limit") == "120"
+        assert catalog_resp.headers.get("ratelimit-remaining") is not None
+
+        # Dedicated test IP so the burst does not affect other integration tests.
+        burst_headers = {"X-Forwarded-For": "198.51.100.99"}
+        for _ in range(5):
+            attempt = await client.post(
+                "/api/v1/sesion/registro",
+                json={},
+                headers=burst_headers,
+            )
+            assert attempt.status_code != 429
+
+        blocked = await client.post(
+            "/api/v1/sesion/registro",
+            json={},
+            headers=burst_headers,
+        )
+
+    assert blocked.status_code == 429
+    assert blocked.headers.get("x-gateway") == "kong"
+    assert blocked.headers.get("retry-after") is not None
+    assert "API rate limit exceeded" in blocked.text
