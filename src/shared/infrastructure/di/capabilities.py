@@ -11,6 +11,8 @@ CONVERSATION_CONTEXT = "conversation_context"
 DISPATCH_PORT = "dispatch_port"
 ORDER_CONFIRMATION = "order_confirmation"
 OUTBOX_PROCESSOR = "outbox_processor"
+# Long-lived RabbitMQ publisher, registered by the worker lifespan in broker mode (ADR-0030).
+OUTBOX_PUBLISHER = "outbox_publisher"
 ACTION_SCOPE = "action_scope"
 ATTACHMENT_CLEANUP = "attachment_cleanup"
 FEEDBACK_NOTIFIER = "feedback_notifier"
@@ -26,4 +28,5 @@ __all__ = [
     "FEEDBACK_NOTIFIER",
     "ORDER_CONFIRMATION",
     "OUTBOX_PROCESSOR",
+    "OUTBOX_PUBLISHER",
 ]

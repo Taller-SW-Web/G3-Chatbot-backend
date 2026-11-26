@@ -49,6 +49,7 @@ secreto para desarrollar**, salvo que quieras probar el chat con LLM real.
 | `NEXT_PUBLIC_API_BASE_URL` (frontend) | No | — | `.env.example` |
 | `API_PROXY_TARGET` (frontend) | No | — | `.env.example` |
 | `SONAR_TOKEN` | **Sí** | Admin de SonarCloud | GitHub → Secrets → Actions |
+| `RABBITMQ_URL` | **Sí** (contiene credenciales) | Lead/DevOps (CloudAMQP) | Railway/Vault; nunca en el repo |
 
 El resto (URLs, flags, modelos, timeouts) está en `.env.template` y se versiona.
 
@@ -141,6 +142,24 @@ token de cliente y confirma que devuelve pedidos reales; si ves `items: []` con
 `200` y `404` en todos los detalles, revisa primero el modo (`fake` vs `http`),
 no la disponibilidad de G5.
 
+### Relay del outbox (RabbitMQ)
+
+`OUTBOX_DISPATCH_MODE=direct` es el valor por defecto y el rollback: el worker
+procesa el outbox dentro del API. Para el entregable asíncrono del Hito 5
+(ADR-0030), cambia a `broker` y configura la URL de CloudAMQP en el vault:
+
+```
+OUTBOX_DISPATCH_MODE=broker
+RABBITMQ_URL=amqps://<usuario>:<clave>@<host>/<vhost>
+RABBITMQ_PREFETCH=10
+```
+
+`RABBITMQ_URL` lleva credenciales: no se versiona, no se pega en issues/PRs y no
+se registra en logs. En modo `broker` el API publica y el consumidor de H5-M3
+procesa; hasta que el consumidor esté desplegado, mantén `direct` para no dejar
+correos o notificaciones a Ventas solo en las colas. Si el broker no confirma,
+las filas quedan `PENDING` y se reprograman sin consumir intentos; el detalle
+está en el ADR-0030.
 
 ## Cómo se comparten los secretos
 

@@ -87,6 +87,20 @@ class OutboxPostgresAdapter:
         await self.session.flush()
         return row
 
+    async def reprogramar(
+        self, id: uuid.UUID, next_attempt_at: datetime, last_error: str | None = None
+    ) -> Outbox | None:
+        """Reschedules a PENDING row WITHOUT counting an attempt (broker down, ADR-0030)."""
+        row = await self.obtener_por_id(id)
+        if row is None:
+            return None
+        row.next_attempt_at = next_attempt_at
+        row.last_attempt_at = datetime.now(timezone.utc)
+        row.last_error = last_error
+        row.updated_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return row
+
     # -- EmailOutboxPort (SEND_EMAIL, SPEC-16) ----------------------------------
 
     async def encolar_envio(self, payload: dict) -> EmailTask:
