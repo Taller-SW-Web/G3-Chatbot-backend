@@ -28,7 +28,12 @@ from src.shared.application.dto.commerce_contracts_dto import ShippingQuoteReque
 from src.shared.application.dto.order_ref_dto import NewOrderReference
 from src.shared.application.dto.outbox_task_dto import NewOutboxTask
 from src.shared.domain.masking import mask_phone
-from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.module_errors import (
+    ModuleRequestError,
+    ModuleUnavailableError,
+    failure_summary,
+)
+from src.shared.domain.request_context import correlation_id_var
 
 logger = logging.getLogger(__name__)
 DOCUMENT_PATTERNS = {
@@ -510,7 +515,16 @@ class ManageCheckoutUseCase:
         try:
             validation = await self.cart_validator(cart)
         except Exception as exc:
-            logger.warning("Cart stock revalidation failed for cart %s: %s", getattr(cart, "id", "?"), exc)
+            module, status, code = failure_summary(exc, default_module="products")
+            logger.warning(
+                "checkout inventory revalidation failed module=%s status=%s code=%s "
+                "cart_id=%s correlation_id=%s",
+                module,
+                status,
+                code,
+                getattr(cart, "id", "?"),
+                correlation_id_var.get(),
+            )
             raise CheckoutError(
                 "MODULO_NO_DISPONIBLE",
                 "No pudimos confirmar el stock ahora. Intenta de nuevo en unos segundos.",
@@ -580,11 +594,18 @@ class ManageCheckoutUseCase:
             raw = await self.dispatch.quote_shipping(
                 destino=build_destination(request),
                 lineas=build_quote_lines(items),
-                correlation_id=str(uuid.uuid4()),
+                correlation_id=correlation_id_var.get() or str(uuid.uuid4()),
             )
             quote = parse_quote(raw, request.distrito)
         except (ModuleUnavailableError, ModuleRequestError) as exc:
-            logger.warning("Despacho quote failed during checkout: %s", exc)
+            module, status, code = failure_summary(exc, default_module="dispatch")
+            logger.warning(
+                "checkout dispatch quote failed module=%s status=%s code=%s correlation_id=%s",
+                module,
+                status,
+                code,
+                correlation_id_var.get(),
+            )
             raise CheckoutError(
                 "MODULO_NO_DISPONIBLE",
                 "No pudimos calcular el envío ahora. Intenta de nuevo en unos segundos.",
@@ -649,10 +670,15 @@ class ManageCheckoutUseCase:
             try:
                 fresh = await self.cart_totals(cart)
             except Exception as exc:
+                module, status, code = failure_summary(exc, default_module="products")
                 logger.warning(
-                    "Cart totals refresh failed for cart %s: %s",
+                    "checkout cart totals refresh failed module=%s status=%s code=%s "
+                    "cart_id=%s correlation_id=%s",
+                    module,
+                    status,
+                    code,
                     getattr(cart, "id", "?"),
-                    exc,
+                    correlation_id_var.get(),
                 )
             else:
                 if isinstance(fresh, dict) and fresh.get("promociones_ok") is True:

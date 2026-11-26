@@ -63,6 +63,9 @@ verificación por cantidad). Si alguna línea está `AGOTADO`/`INSUFICIENTE` o n
 se pudo confirmar, responde `409 CARRITO_DESACTUALIZADO` con
 `lineas[{sku, nombre, cantidad, motivo, mensaje}]`; nada se degrada en silencio.
 `STOCK_BAJO` e `INDETERMINADO` no bloquean (la decisión final sigue en Ventas).
+Un fallo del validador deja un `WARNING` con `module`, `status`, `code` y
+`correlation_id`, y la respuesta `503 MODULO_NO_DISPONIBLE` conserva el
+`X-Correlation-Id` de la petición.
 
 ## Totales y promociones (SPEC-14 Req. 2)
 
