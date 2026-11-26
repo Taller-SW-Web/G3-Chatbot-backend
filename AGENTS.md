@@ -86,6 +86,15 @@ Además:
   `development` y verificado. El cierre cita PR, commit y evidencia; duplicado u
   obsoleto se cierra con motivo, nunca como `completed` si el trabajo sigue
   pendiente.
+- **Ramas:** los PR van a `development`, rama por defecto y de producción;
+  `main` es un placeholder de un commit con solo `README.md`. No promuevas ni
+  despliegues desde `main`.
+- **Incoherencia con la spec:** si una issue contradice la spec o pide algo no
+  definido, no la implementes; abre una issue en `G3-Chatbot-specs` asignada a
+  `@Ankarmin`, enlaza la original y espera la decisión. Regla completa:
+  `G3-Chatbot-specs/AGENTS.md` §8.
+- **Higiene:** no reescribas la historia compartida de `development`, no borres
+  tags o ramas sin coordinar y no pegues secretos en issues o PRs.
 
 ## Atajos de lectura
 
