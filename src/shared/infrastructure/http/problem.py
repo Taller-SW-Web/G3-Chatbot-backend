@@ -1,9 +1,10 @@
 """application/problem+json errors with a `code` field (README, section 5)."""
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from src.shared.domain.module_errors import ModuleUnavailableError
+from src.shared.infrastructure.http.correlation import CORRELATION_HEADER
 
 
 class ProblemResponse(JSONResponse):
@@ -74,3 +75,16 @@ def register_problem_handlers(app: FastAPI) -> None:
             ),
             status_code=503,
         )
+
+    @app.exception_handler(Exception)
+    async def _unhandled(request: Request, _exc: Exception) -> PlainTextResponse:
+        """Keep Starlette's plain 500 body, but never lose the correlation header.
+
+        This handler is invoked by `ServerErrorMiddleware`, outside
+        `CorrelationMiddleware`; the id travels in the ASGI state for that reason.
+        """
+        headers = {}
+        state = request.scope.get("state")
+        if isinstance(state, dict) and state.get("correlation_id"):
+            headers[CORRELATION_HEADER] = str(state["correlation_id"])
+        return PlainTextResponse("Internal Server Error", status_code=500, headers=headers)

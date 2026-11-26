@@ -1,4 +1,5 @@
 """Cart use case flows (SPEC-11, SPEC-10). Fakes only: no network, no database."""
+import logging
 import uuid
 from decimal import Decimal
 
@@ -10,6 +11,8 @@ from src.modules.mod_cart.application.manage_cart_use_case import (
 )
 from src.modules.mod_cart.ports.cart_repository_port import StaleCartError
 from src.shared.domain.caller_identity import CallerIdentity
+from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+from src.shared.domain.request_context import correlation_id_var
 from tests.fakes.fake_commerce import (
     FakeCarts,
     FakeCatalogPort,
@@ -374,3 +377,97 @@ async def test_view_persists_unavailable_promotions_instead_of_zero_discount():
     snapshot = carts.rows[cart.id].totals_snapshot
     assert snapshot["promociones_ok"] is False
     assert Decimal(snapshot["total"]) == Decimal("10")
+
+
+@pytest.mark.asyncio
+async def test_view_persists_the_request_correlation_id_in_the_snapshot():
+    """The snapshot must let an incident find the G6 evaluation request (issue #181)."""
+    sku = "NIK-REV7-42-NEG"
+    carts, items, uow = FakeCarts(), FakeItems(), FakeUow()
+    cart_uc = ManageCartUseCase(
+        carts, items, _priced_catalog(sku, 10.0),
+        FakeInventoryPort({sku: "DISPONIBLE"}), FakeConversationContext(), uow,
+    )
+    cart = await carts.crear_para_cliente(CUSTOMER_ID)
+    await items.agregar(
+        cart_id=cart.id, product_id="prod-1", sku=sku, name="Zapatilla",
+        quantity=1, unit_price_ref=10.0,
+    )
+    correlation_id = str(uuid.uuid4())
+    token = correlation_id_var.set(correlation_id)
+    try:
+        await cart_uc.view(make_caller(), None)
+    finally:
+        correlation_id_var.reset(token)
+
+    snapshot = carts.rows[cart.id].totals_snapshot
+    assert snapshot["correlation_id"] == correlation_id
+    assert snapshot["promociones_ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_view_logs_promotion_failures_with_module_status_and_correlation(caplog):
+    """A degraded promotion engine stays visible: module, status/code and request id."""
+    sku = "NIK-REV7-42-NEG"
+
+    class RejectedPromotionsCatalog(FakeCatalogPort):
+        async def evaluate_promotions(self, *args, **kwargs):
+            raise ModuleRequestError("products", 400, "PROMOCIONES_INVALIDAS")
+
+    carts, items = FakeCarts(), FakeItems()
+    cart_uc = ManageCartUseCase(
+        carts, items, RejectedPromotionsCatalog(), FakeInventoryPort({sku: "DISPONIBLE"}),
+        FakeConversationContext(), FakeUow(),
+    )
+    cart = await carts.crear_para_cliente(CUSTOMER_ID)
+    await items.agregar(
+        cart_id=cart.id, product_id="prod-1", sku=sku, name="Zapatilla",
+        quantity=1, unit_price_ref=10.0,
+    )
+    correlation_id = str(uuid.uuid4())
+    token = correlation_id_var.set(correlation_id)
+    try:
+        with caplog.at_level(logging.WARNING):
+            await cart_uc.view(make_caller(), None)
+    finally:
+        correlation_id_var.reset(token)
+
+    record = next(r for r in caplog.records if "promotions evaluation failed" in r.getMessage())
+    message = record.getMessage()
+    assert "module=products" in message
+    assert "status=400" in message
+    assert "code=PROMOCIONES_INVALIDAS" in message
+    assert f"correlation_id={correlation_id}" in message
+    snapshot = carts.rows[cart.id].totals_snapshot
+    assert snapshot["promociones_ok"] is False
+    assert snapshot["correlation_id"] == correlation_id
+
+
+@pytest.mark.asyncio
+async def test_add_logs_inventory_failures_with_module_status_and_correlation(caplog):
+    class BrokenInventory(FakeInventoryPort):
+        async def get_availability(self, skus, **kwargs):
+            raise ModuleUnavailableError("products", "timeout")
+
+    cart_uc, conversations = make_cart_use_case()
+    cart_uc._inventory = BrokenInventory()
+    owned(cart_uc, conversations)
+    correlation_id = str(uuid.uuid4())
+    token = correlation_id_var.set(correlation_id)
+    try:
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(CartError) as error:
+                await cart_uc.add(
+                    make_caller(), CONVERSATION_ID,
+                    sku="NIK-REV7-42-NEG", quantity=1,
+                )
+    finally:
+        correlation_id_var.reset(token)
+
+    assert error.value.code == "SERVICIO_NO_DISPONIBLE"
+    record = next(r for r in caplog.records if "inventory check failed" in r.getMessage())
+    message = record.getMessage()
+    assert "module=products" in message
+    assert "status=503" in message
+    assert "code=MODULO_NO_DISPONIBLE" in message
+    assert f"correlation_id={correlation_id}" in message
