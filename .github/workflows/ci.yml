@@ -194,14 +194,13 @@ jobs:
         with:
           python-version: '3.12'
       # Gate bloqueante (H5-C1): una vulnerabilidad conocida en requirements.txt
-      # tumba el job. Las excepciones aceptadas viven en
-      # docs/seguridad/pip-audit-exceptions.md y se ignoran por ID, nunca por
-      # paquete: cualquier vulnerabilidad nueva sigue rompiendo el pipeline.
+      # tumba el job. No hay excepciones vigentes: si se necesitara una, se
+      # documenta en docs/seguridad/pip-audit-exceptions.md y se ignora por ID,
+      # nunca por paquete.
       - name: Audit requirements (blocking)
         run: |
           pip install pip-audit
-          pip-audit --strict -r requirements.txt \
-            --ignore-vuln PYSEC-2026-1845
+          pip-audit --strict -r requirements.txt
 
   docker:
     name: Dockerfile + Trivy
