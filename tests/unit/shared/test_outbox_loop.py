@@ -206,6 +206,28 @@ async def test_lifespan_in_broker_mode_opens_registers_and_closes_the_publisher(
 
 
 @pytest.mark.asyncio
+async def test_lifespan_closes_the_publisher_when_a_later_startup_step_fails(monkeypatch):
+    from src.shared.infrastructure.config.settings import Settings
+    from src.shared.infrastructure.db import connection
+    from src.shared.infrastructure.di.registry import registry
+
+    cfg = Settings(outbox_dispatch_mode="broker", rabbitmq_url="amqp://h/v")
+    _patch_lifespan(monkeypatch, cfg, [])
+    monkeypatch.setattr(registry, "_providers", dict(registry._providers))
+
+    def broken_engine():
+        raise RuntimeError("engine unavailable")
+
+    monkeypatch.setattr(connection, "get_engine", broken_engine)
+
+    with pytest.raises(RuntimeError, match="engine unavailable"):
+        async with outbox_worker_lifespan(FastAPI()):
+            pass
+    (publisher,) = _SpyPublisher.instances
+    assert publisher.events == ["start", "close"]
+
+
+@pytest.mark.asyncio
 async def test_lifespan_in_direct_mode_never_builds_a_publisher(monkeypatch):
     from src.shared.infrastructure.config.settings import Settings
 
