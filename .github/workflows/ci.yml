@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [development, main]
+    branches: [development]
   pull_request:
-    branches: [development, main]
+    branches: [development]
 
 # Least privilege: the workflow only reads the repository.
 permissions:
@@ -300,7 +300,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-          git clone --depth 1 https://github.com/Taller-SW-Web/G3-Chatbot-specs.git specs-repo
+          git clone --depth 1 --branch development https://github.com/Taller-SW-Web/G3-Chatbot-specs.git specs-repo
           printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
           python scripts/check_specs.py --base "origin/${{ github.base_ref }}" --specs-repo specs-repo --body "$RUNNER_TEMP/pr-body.md"
         env:
