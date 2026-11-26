@@ -83,6 +83,17 @@ carrito.
 El descuento nunca se toma del payload del cliente. Detalle en
 [`docs/checkout-consistencia.md`](../../../docs/checkout-consistencia.md).
 
+## Pedido en Ventas y timeout (SPEC-15, issue #180)
+
+El checkout se commitea localmente antes de `POST /pedidos`. La llamada a Ventas
+tiene un deadline interno (`CHECKOUT_SALES_DEADLINE_SECONDS`, default 30 s): si
+vence, el BFF responde `503 MODULO_NO_DISPONIBLE` con `motivo=TIMEOUT_VENTAS`,
+`checkoutId`, `orderId` provisional y `reintentable=true`. Un reintento con la
+misma `Idempotency-Key` reenvía el snapshot persistido y reconcilia el
+`pedidoId` real sin duplicar checkout ni pedido. Un `400/409` definitivo retira
+el checkout (`EXPIRED`) y libera el carrito. Detalle en
+[`docs/checkout-consistencia.md`](../../../docs/checkout-consistencia.md).
+
 ## Dirección guardada (SPEC-12)
 
 `POST /checkout` acepta `guardarDireccion: true`. Con el cliente autenticado se
