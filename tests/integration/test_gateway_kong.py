@@ -74,3 +74,33 @@ async def test_sse_chat_streams_through_kong_preserving_chat_sid_cookie(
 
     assert "event: aceptado" in body
     assert "event: fin" in body
+
+
+async def test_upload_route_allows_over_1mb_while_api_rejects_oversized_json(
+    gateway_url: str,
+) -> None:
+    oversized_json = b'{"x":"' + (b"a" * (1100 * 1024)) + b'"}'
+    payload_over_1mb = b"x" * (1100 * 1024)
+
+    async with httpx.AsyncClient(base_url=gateway_url, timeout=30.0) as client:
+        # General /api/v1 route enforces 1 MB request-size-limiting.
+        rejected = await client.post(
+            "/api/v1/chat/conversaciones",
+            content=oversized_json,
+            headers={"content-type": "application/json"},
+        )
+        assert rejected.status_code == 413
+        assert rejected.headers.get("x-gateway") == "kong"
+
+        # Upload route (/adjuntos) allows up to 6 MB: Kong forwards it to FastAPI
+        # instead of rejecting with 413.
+        created = await client.post("/api/v1/chat/conversaciones", json={})
+        assert created.status_code == 201
+        conv_id = created.json()["conversacionId"]
+
+        upload_resp = await client.post(
+            f"/api/v1/chat/conversaciones/{conv_id}/adjuntos",
+            files={"archivo": ("prueba.bin", payload_over_1mb, "application/octet-stream")},
+        )
+        assert upload_resp.status_code != 413
+        assert upload_resp.headers.get("x-gateway") == "kong"

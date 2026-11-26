@@ -25,14 +25,15 @@ Navegador → Vercel (Next.js /api/* via API_PROXY_TARGET)
 
 1. En el proyecto de Railway del backend, crear un nuevo servicio conectado al
    repositorio `G3-Chatbot-backend` (rama `development`).
-2. Configurar **Root Directory** en `gateway` (o **Dockerfile Path** en
-   `gateway/Dockerfile`).
+2. Configurar **Root Directory** en `gateway` y **Dockerfile Path** en
+   `Dockerfile` (relativo al Root Directory; no poner `gateway/Dockerfile` si
+   Root Directory ya es `gateway`).
 3. Configurar las variables de entorno del servicio Kong:
 
 | Variable | Valor | Notas |
 |---|---|---|
 | `BACKEND_UPSTREAM_URL` | `http://<servicio-backend>.railway.internal:8000` | Obligatoria (fail-closed si falta). Ajustar el puerto si el backend usa otro |
-| `KONG_TRUSTED_IPS` | `0.0.0.0/0,::/0` | Opcional (valor por defecto en `entrypoint.sh`) |
+| `KONG_TRUSTED_IPS` | `0.0.0.0/0,::/0` | Opcional (valor por defecto en `entrypoint.sh`). Riesgo aceptado en ADR-0031: quien llame directo a Kong puede falsificar `X-Forwarded-For`; mitigación futura: restringir origen a Vercel o exigir una cabecera secreta compartida |
 | `KONG_REAL_IP_HEADER` | `X-Forwarded-For` | Opcional; conserva la IP real detrás de Vercel |
 
 > Railway inyecta `$PORT` automáticamente y provee TLS en el dominio público del
