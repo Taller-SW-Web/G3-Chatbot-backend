@@ -1206,10 +1206,13 @@ class ManageCheckoutUseCase:
                     "moneda": "PEN",
                     "metodo": "TARJETA_CREDITO",
                     "marcaTarjeta": payment_res.brand or "VISA",
-                    "ultimosCuatroDigitos": payment_res.last4 or "••••",
                     "fechaPago": datetime.now(timezone.utc).isoformat(),
                     "codigoAutorizacion": f"AUTH-{uuid.uuid4().hex[:6].upper()}",
                 }
+                # G5 declares `ultimosCuatroDigitos` with pattern ^\d{4}$ and
+                # does not accept null/placeholders: omit it when unknown.
+                if payment_res.last4:
+                    payment_payload["ultimosCuatroDigitos"] = payment_res.last4
                 outbox_entry = NewOutboxTask(
                     type="NOTIFY_SALES_PAYMENT",
                     payload={
