@@ -82,6 +82,10 @@ Además:
   cambios de contrato. Si no hay cambio de contrato, dilo explícitamente.
 - La revisión humana decide en lo irreversible (migraciones, capacidad,
   borrado de datos, cambios de DAG).
+- **Cierre de issues:** un issue no se cierra hasta que el PR esté mergeado en
+  `development` y verificado. El cierre cita PR, commit y evidencia; duplicado u
+  obsoleto se cierra con motivo, nunca como `completed` si el trabajo sigue
+  pendiente.
 
 ## Atajos de lectura
 
