@@ -99,6 +99,29 @@ def test_cart_requires_caller():
     response = client.get("/api/v1/carrito")
     assert response.status_code == 401
     assert response.json()["code"] == "REQUIERE_SESION"
+    assert uuid.UUID(response.headers["X-Correlation-Id"])
+
+
+def test_cart_correlates_response_and_persisted_snapshot():
+    """The same request id comes back and is stored next to the evaluation (issue #181)."""
+    client, cart_uc = make_app()
+    correlation_id = str(uuid.uuid4())
+    headers = {"X-Correlation-Id": correlation_id}
+
+    added = client.post(
+        "/api/v1/carrito/items",
+        json={"sku": "NIK-REV7-42-NEG", "cantidad": 1},
+        headers=headers,
+    )
+    assert added.status_code == 200
+    assert added.headers["X-Correlation-Id"] == correlation_id
+
+    viewed = client.get("/api/v1/carrito", headers=headers)
+    assert viewed.status_code == 200
+    assert viewed.headers["X-Correlation-Id"] == correlation_id
+
+    [cart] = cart_uc._carts.rows.values()
+    assert cart.totals_snapshot["correlation_id"] == correlation_id
 
 
 def test_cart_patch_and_remove_item():

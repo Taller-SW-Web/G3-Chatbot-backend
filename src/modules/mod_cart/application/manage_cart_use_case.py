@@ -40,7 +40,9 @@ from src.shared.domain.module_errors import (
     GENERIC_UNAVAILABLE_TEXT,
     ModuleRequestError,
     ModuleUnavailableError,
+    failure_summary,
 )
+from src.shared.domain.request_context import correlation_id_var
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +113,10 @@ class ManageCartUseCase:
             except Exception:
                 # The cart transaction has already committed. No failure here may undo it.
                 await self._uow.rollback()
-                logger.warning("cross-sell unavailable after successful add")
+                logger.warning(
+                    "cart cross-sell unavailable after successful add correlation_id=%s",
+                    correlation_id_var.get(),
+                )
         return result
 
     async def update_quantity(self, caller, conversation_id: uuid.UUID | None, *,
@@ -522,6 +527,8 @@ class ManageCartUseCase:
             # promotions: a zero discount is not the same as an unavailable engine.
             "promociones_ok": promotions_ok,
             "promotion_reason": evaluation.get("reason") if evaluation else None,
+            # Lets an incident match this snapshot with the G6 evaluation.
+            "correlation_id": correlation_id_var.get(),
         })
         if touch:
             await self._carts.touch(cart.id)
@@ -723,8 +730,15 @@ class ManageCartUseCase:
                     if sku in sellable_skus(found):
                         detail = found
                         break
-            except Exception:
-                logger.warning("product lookup unavailable for explicit SKU")
+            except Exception as exc:
+                module, status, code = failure_summary(exc, default_module="products")
+                logger.warning(
+                    "cart product lookup failed module=%s status=%s code=%s correlation_id=%s",
+                    module,
+                    status,
+                    code,
+                    correlation_id_var.get(),
+                )
         return sku, (detail or {"name": sku, "images": [], "product_id": ""}), {
             "sku": sku, "talla": size, "color": color,
         }
@@ -802,13 +816,32 @@ class ManageCartUseCase:
             if values["original_amount"] - values["discount_amount"] != values["result_amount"]:
                 raise ValueError("inconsistent evaluation totals")
             return result, True
-        except Exception:
+        except Exception as exc:
+            # Degrading to `promociones_ok: false` is a product decision, but the
+            # failure must stay traceable: module, upstream status/code and the
+            # request correlation id, never the payload.
+            module, status, code = failure_summary(exc, default_module="products")
+            logger.warning(
+                "cart promotions evaluation failed module=%s status=%s code=%s correlation_id=%s",
+                module,
+                status,
+                code,
+                correlation_id_var.get(),
+            )
             return None, False
 
     async def _promotion_names(self) -> dict[str, str]:
         try:
             rows = await self._catalog.list_promotions()
-        except Exception:
+        except Exception as exc:
+            module, status, code = failure_summary(exc, default_module="products")
+            logger.warning(
+                "cart promotion names unavailable module=%s status=%s code=%s correlation_id=%s",
+                module,
+                status,
+                code,
+                correlation_id_var.get(),
+            )
             return {}
         return {
             str(row.get("promotion_id")): str(row.get("name") or row.get("nombre") or "Descuento")
@@ -824,7 +857,10 @@ class ManageCartUseCase:
         try:
             await self._conversation_context.touch(conversation_id)
         except Exception:
-            logger.warning("could not touch conversation %s", conversation_id)
+            logger.warning(
+                "cart conversation touch failed correlation_id=%s",
+                correlation_id_var.get(),
+            )
 
     @staticmethod
     def _variant_label(variant: dict | None) -> str | None:
