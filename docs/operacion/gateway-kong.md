@@ -20,6 +20,19 @@ Navegador → Vercel (Next.js /api/* via API_PROXY_TARGET)
   desactiva `response_buffering` y fija `read_timeout: 90000` ms.
 - Trazabilidad: añade `X-Request-ID` (`correlation-id`) y `X-Gateway: kong`
   (`response-transformer`).
+- Publicación de OpenAPI (H5-G3): expone `GET /openapi.json`, `GET /docs` y
+  `GET /redoc` a través del gateway (60 req/min por IP).
+- Rate limiting perimetral (H5-G3): aplica `rate-limiting` (`policy: local`,
+  `limit_by: ip`, cabeceras `RateLimit-*` y `Retry-After`) como defensa en
+  profundidad sin retirar `rate_limiter.py` del backend (`application/problem+json`
+  conservado):
+  - Global `/api/v1`: `120/min`
+  - `POST /api/v1/sesion/login`: `15/min`
+  - `POST /api/v1/sesion/registro`: `5/min`, `30/hora`
+  - `POST /api/v1/chat/conversaciones/*/mensajes`: `25/min`
+  - `POST /api/v1/chat/conversaciones/*/adjuntos` y `POST /api/v1/evidencias`: `15/min`
+  - `POST /api/v1/mensajes/{message_id}/reaccion`: `35/min`
+  - `POST /api/v1/sugerencias`: `10/hora`
 
 ## 2. Despliegue en Railway
 
