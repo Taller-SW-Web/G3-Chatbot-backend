@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.deployment.environment == 'G3-Chatbot / production' &&
+      (github.event.deployment.environment == 'chatbot / production' &&
        contains(fromJSON('["success", "failure", "error"]'), github.event.deployment_status.state))
     steps:
       - name: Fail when the Railway deployment failed
