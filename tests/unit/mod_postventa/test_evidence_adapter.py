@@ -1,6 +1,7 @@
 """referencias locales de SPEC-21, sin upload a Ventas."""
 
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -84,5 +85,51 @@ async def test_asociacion_atomica_filtra_id_conversacion_y_devolucion(session, e
     assert "evidence.return_id IS NULL OR evidence.return_id =" in str(compiled)
     assert "RETURNING evidence.id" in str(compiled)
     assert stmt.get_execution_options()["populate_existing"] is True
+    session.commit.assert_not_awaited()
+    session.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_listar_borrador_por_urls_filtra_cliente_y_pendientes(session):
+    """SPEC-21 · Req. 4: only the caller's unlinked rows can be attached."""
+    customer_id = uuid.uuid4()
+    rows = [Evidence(id=uuid.uuid4(), return_id=None)]
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = rows
+    session.execute.return_value = result
+
+    found = await EvidencePostgresAdapter(session).listar_borrador_por_urls(
+        ["https://ventas.example/a.jpg", "https://ventas.example/b.jpg"], customer_id
+    )
+
+    assert found == rows
+    stmt = session.execute.call_args.args[0]
+    compiled = stmt.compile(dialect=postgresql.dialect())
+    sql = str(compiled)
+    assert "JOIN conversation ON conversation.id = evidence.conversation_id" in sql
+    assert "conversation.customer_id" in sql
+    assert "evidence.return_id IS NULL" in sql
+    assert "evidence.url IN" in sql
+    assert customer_id in compiled.params.values()
+
+
+@pytest.mark.asyncio
+async def test_purgar_borradores_borra_solo_pendientes_anteriores_al_corte(session):
+    """SPEC-21 · Req. 3: the 24 h purge never touches linked evidence."""
+    cutoff = datetime(2026, 11, 26, 12, 0, tzinfo=timezone.utc)
+    result = MagicMock()
+    result.rowcount = 2
+    session.execute.return_value = result
+
+    removed = await EvidencePostgresAdapter(session).purgar_borradores(cutoff)
+
+    assert removed == 2
+    stmt = session.execute.call_args.args[0]
+    compiled = stmt.compile(dialect=postgresql.dialect())
+    sql = str(compiled)
+    assert sql.startswith("DELETE FROM evidence")
+    assert "evidence.return_id IS NULL" in sql
+    assert "evidence.created_at <" in sql
+    assert cutoff in compiled.params.values()
     session.commit.assert_not_awaited()
     session.rollback.assert_not_awaited()

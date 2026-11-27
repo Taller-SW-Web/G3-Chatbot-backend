@@ -41,6 +41,25 @@ también las mismas líneas), responde `409 RECLAMO_DUPLICADO` /
 reintentar con `forzar: true` para registrar igual; `forzar` no se envía a G5.
 Un caso ya `ATENDIDO`/`DERIVADO` (o `RECHAZADA`/`COMPLETADA`) no es duplicado.
 
+El listado se recorre **página por página** (50 por página) hasta agotarlo; un
+duplicado en la posición 51 también responde `409`. Si G5 falla o expira, la
+creación continúa (fail-open, SPEC-19/21) y se registra un `warning` con el
+`correlation_id`; el cliente no ve un error de duplicados.
+
+## Evidencias y borradores (SPEC-19/21)
+
+- Al registrar una devolución, las evidencias subidas en esa solicitud se ligan
+  a `return_ref.return_id` en la **misma unidad de trabajo** (`evidence.return_id`)
+  mediante `EvidencePostgresAdapter.asociar_devolucion`.
+- Los borradores de reclamo y devolución viven en `conversation.context`
+  (`postventaClaimDraft`, `postventaReturnDraft`) y expiran a las 24 h. El
+  servicio los persiste cuando el caso de uso recibe `conversation_id`
+  (`save_*_draft`), los recupera (`get_*_draft`) y los borra al registrar. El
+  contrato HTTP no cambia.
+- `python -m src.modules.mod_postventa.jobs.purge_drafts` borra las referencias
+  de evidencia de borradores sin enviar con más de 24 h. El archivo en Ventas no
+  se toca. El job es propio del módulo y se agenda fuera del worker compartido.
+
 ## CSAT (SPEC-24)
 
 `POST /pedidos/{id}/csat` sigue delegando en Ventas y ahora marca

@@ -1,10 +1,13 @@
 """Duplicate detection for claims and returns, with `forzar` (SPEC-19/21)."""
+import logging
+
 import anyio
 import pytest
 
 from src.modules.mod_postventa.adapters.fake_postventa import FakePostventaPort
 from src.modules.mod_postventa.application.postventa_dto import PostventaError
 from src.modules.mod_postventa.application.postventa_service import PostventaService
+from src.shared.domain.request_context import correlation_id_var
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
 
 CUSTOMER = "11111111-1111-1111-1111-111111111111"
@@ -202,3 +205,151 @@ def test_forzar_true_registers_the_return_anyway():
     second = anyio.run(run)
     assert second["devolucionId"].startswith("DEV-")
     assert len(port.returns) == 2
+
+
+# -- fail-open and full pagination (issue #251) --------------------------------------
+
+
+class _FailingListPort(FakePostventaPort):
+    async def list_customer_returns(self, *args, **kwargs):
+        raise TimeoutError("G5 listado de devoluciones caído")
+
+    async def list_customer_claims(self, *args, **kwargs):
+        raise TimeoutError("G5 listado de reclamos caído")
+
+
+def test_return_listing_failure_is_fail_open_with_the_request_correlation_id(caplog):
+    port = _FailingListPort()
+    svc = PostventaService(postventa=port, sales=FakeSalesPort(), return_refs=MemoryRefs())
+    token = correlation_id_var.set("corr-251-return")
+    try:
+        with caplog.at_level(
+            logging.WARNING,
+            logger="src.modules.mod_postventa.application.postventa_service",
+        ):
+            detail = anyio.run(
+                lambda: svc.create_return(
+                    customer_id=CUSTOMER,
+                    holder_token=HOLDER,
+                    payload=return_payload("PED-2026-00001"),
+                    idempotency_key="return-fail-open",
+                )
+            )
+    finally:
+        correlation_id_var.reset(token)
+
+    assert detail["devolucionId"].startswith("DEV-")
+    assert len(port.returns) == 1
+    assert "corr-251-return" in caplog.text
+    assert "fail-open" in caplog.text
+
+
+def test_claim_listing_failure_is_fail_open_with_correlation_id(caplog):
+    port = _FailingListPort()
+    sales = FakeSalesPort()
+    svc = PostventaService(postventa=port, sales=sales, claim_refs=MemoryRefs())
+    order = anyio.run(create_order, sales)
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="src.modules.mod_postventa.application.postventa_service",
+    ):
+        detail = anyio.run(
+            lambda: svc.create_claim(
+                customer_id=CUSTOMER,
+                holder_token=HOLDER,
+                payload=claim_payload(order["pedidoId"]),
+                idempotency_key="claim-fail-open",
+                correlation_id="corr-251-claim",
+            )
+        )
+
+    assert detail["codigoSeguimiento"].startswith("REC-")
+    assert len(port.claims) == 1
+    assert "corr-251-claim" in caplog.text
+    assert "fail-open" in caplog.text
+
+
+def test_duplicate_return_in_position_51_is_detected():
+    port = FakePostventaPort()
+    svc = PostventaService(postventa=port, sales=FakeSalesPort(), return_refs=MemoryRefs())
+
+    async def seed():
+        for index in range(50):
+            await port.create_return(
+                {
+                    "pedidoId": f"PED-OTHER-{index}",
+                    "tipo": "CAMBIO",
+                    "motivo": "OTRO",
+                    "items": [{"productoId": "P-1", "cantidad": 1}],
+                },
+                holder_token=HOLDER,
+            )
+        target = await port.create_return(
+            {
+                "pedidoId": "PED-2026-00051",
+                "tipo": "DEVOLUCION_DINERO",
+                "motivo": "OTRO",
+                "items": [{"productoId": "P-1", "cantidad": 1}],
+            },
+            holder_token=HOLDER,
+        )
+        return target["devolucionId"]
+
+    target_id = anyio.run(seed)
+
+    with pytest.raises(PostventaError) as exc:
+        anyio.run(
+            lambda: svc.create_return(
+                customer_id=CUSTOMER,
+                holder_token=HOLDER,
+                payload=return_payload("PED-2026-00051"),
+                idempotency_key="return-page-51",
+            )
+        )
+    assert exc.value.code == "DEVOLUCION_DUPLICADA"
+    assert exc.value.extra["devolucionId"] == target_id
+    assert len(port.returns) == 51
+
+
+def test_duplicate_claim_in_position_51_is_detected():
+    port = FakePostventaPort()
+    sales = FakeSalesPort()
+    svc = PostventaService(postventa=port, sales=sales, claim_refs=MemoryRefs())
+    order = anyio.run(create_order, sales)
+
+    async def seed():
+        for index in range(50):
+            await port.create_claim(
+                {
+                    "pedidoId": f"PED-OTHER-{index}",
+                    "tipo": "RECLAMO",
+                    "motivo": "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
+                    "detalle": "La suela se despegó al primer uso.",
+                },
+                holder_token=HOLDER,
+            )
+        return await port.create_claim(
+            {
+                "pedidoId": order["pedidoId"],
+                "tipo": "RECLAMO",
+                "motivo": "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
+                "detalle": "La suela se despegó al primer uso.",
+            },
+            holder_token=HOLDER,
+        )
+
+    target = anyio.run(seed)
+
+    with pytest.raises(PostventaError) as exc:
+        anyio.run(
+            lambda: svc.create_claim(
+                customer_id=CUSTOMER,
+                holder_token=HOLDER,
+                payload=claim_payload(order["pedidoId"]),
+                idempotency_key="claim-page-51",
+            )
+        )
+    assert exc.value.code == "RECLAMO_DUPLICADO"
+    assert exc.value.extra["codigoSeguimiento"] == target["codigoSeguimiento"]
+    assert len(port.claims) == 51

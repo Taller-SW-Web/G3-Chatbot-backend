@@ -5,11 +5,16 @@ de evidencias y el INSERT de return_ref deben compartir transacción.
 """
 
 import uuid
+from collections.abc import Sequence
+from datetime import datetime
+from typing import Any, cast
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import delete, or_, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.mod_postventa.domain.references import NewEvidenceReference
+from src.shared.infrastructure.db.models.conversation import Conversation
 from src.shared.infrastructure.db.models.evidence import Evidence
 
 
@@ -60,6 +65,42 @@ class EvidencePostgresAdapter:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def listar_borrador_por_urls(
+        self, urls: Sequence[str], customer_id: uuid.UUID
+    ) -> list[Evidence]:
+        """Drafts of this customer whose URL was sent in the confirmed return.
+
+        Joins `conversation` so a URL copied from another customer never links.
+        """
+        values = [url for url in dict.fromkeys(urls) if url]
+        if not values:
+            return []
+        stmt = (
+            select(Evidence)
+            .join(Conversation, Conversation.id == Evidence.conversation_id)
+            .where(
+                Evidence.return_id.is_(None),
+                Evidence.url.in_(values),
+                Conversation.customer_id == customer_id,
+            )
+            .order_by(Evidence.created_at, Evidence.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def purgar_borradores(self, corte: datetime) -> int:
+        """Delete evidence references still unlinked after the retention window.
+
+        Ventas keeps the file; this only removes the local URL of an abandoned draft.
+        Returns rows deleted and never commits: the job owns the unit of work.
+        """
+        stmt = delete(Evidence).where(
+            Evidence.return_id.is_(None),
+            Evidence.created_at < corte,
+        )
+        result = cast(CursorResult[Any], await self.session.execute(stmt))
+        return int(result.rowcount or 0)
 
     async def asociar_devolucion(
         self, evidence_id: uuid.UUID, conversation_id: uuid.UUID, return_id: str
