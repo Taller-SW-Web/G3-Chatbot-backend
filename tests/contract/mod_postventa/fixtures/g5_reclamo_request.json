@@ -1,0 +1,13 @@
+{
+  "pedidoId": "PED-2026-00981",
+  "tipo": "RECLAMO",
+  "canal": "CHATBOT",
+  "motivo": "INCUMPLIMIENTO_PLAZO_ENTREGA",
+  "detalle": "El pedido superó la fecha estimada de entrega sin aviso.",
+  "consumidor": {
+    "nombreCompleto": "Ana Díaz",
+    "documento": "40123456",
+    "email": "ana@example.com",
+    "telefono": "+51987654321"
+  }
+}

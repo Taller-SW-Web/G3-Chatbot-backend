@@ -1,0 +1,1414 @@
+openapi: 3.1.0
+
+# Contenido repetido de las respuestas de error (ancla de YAML)
+x-anclas:
+  error: &error
+    application/json:
+      schema:
+        $ref: '#/components/schemas/Error'
+
+info:
+  title: 'API de Postventa (M2): Devoluciones, Reembolsos, CSAT y Reclamos'
+  version: 1.6.0
+  description: |
+    **Módulo D, Ventas y Postventa (G5).** Atiende lo que ocurre después de la venta.
+    El pedido pertenece a M1: M2 nunca escribe sobre él y lo consulta siempre por API.
+
+    ## Cómo encaja con los demás módulos
+
+    - G1 Marketplace, G3 Chatbot y G4 Retail registran devoluciones, reclamos y calificaciones.
+    - M1 Ventas pide reembolsos de anulaciones (2.6) y envía eventos del pedido (2.13). M2 le consulta pedidos (1.3) y le pide reemplazos (1.11).
+    - La pasarela de pagos (simulador) ejecuta el extorno de un reembolso cuando M2 se lo pide.
+    - A G6 Productos, M2 le consulta disponibilidad y le pide reintegrar stock.
+    - G7 Seguridad emite y firma los tokens, y M2 los valida con su JWKS.
+
+    ## Recorrido de una devolución
+
+    SOLICITADA → EN_EVALUACION → APROBADA → COMPLETADA, o RECHAZADA.
+
+    1. El cliente registra el expediente (2.2) dentro de los 7 días desde la entrega.
+    2. El Gestor lo abre (2.3), y eso lo pasa a EN_EVALUACION.
+    3. El Gestor resuelve (2.5). Aprobar nunca mueve stock.
+    4. El producto llega al almacén (2.5b), y recién ahí se reintegran las unidades aptas.
+    5. Pasa a COMPLETADA cuando el reembolso es exitoso o el reemplazo se entregó, y la recepción está completa.
+
+    ## Decisiones de diseño
+
+    - **Autenticación:** Authorization con Bearer y el JWT firmado por G7. Usa el botón **Authorize**.
+      - **Token de servicio:** módulo contra módulo. Se autoriza por scope.
+      - **Token de usuario:** una persona. Se autoriza por rol: CLIENTE o ADMIN_VENTAS (el Gestor).
+    - **Datos propios:** las rutas /me toman la identidad del claim sub, nunca de la URL.
+    - **Idempotencia:** repetir una operación no la duplica.
+      - 2.6 usa X-Idempotency-Key: un reintento nunca paga dos veces.
+      - 2.5b reenvía el mismo operation_id a Productos: un reintento nunca reintegra dos veces.
+      - 2.13 usa idEvento: un evento repetido no se aplica dos veces.
+    - **Códigos públicos:** DEV-AAAA-NNNN, REEM-NNNNN, REC-AAAA-NNNN; nunca el id interno.
+    - **Paginación:** pagina desde 0 y tamano. **Fechas:** ISO-8601 en UTC.
+    - **Errores:** siempre el mismo formato, con un codigo estable.
+
+    Además de los errores de cada operación, cualquiera puede responder 500 ERROR_INTERNO.
+
+servers:
+  - url: /
+    description: Este mismo servicio
+  - url: https://g5-ventas-postventas-backend.onrender.com
+    description: M2 publicado (Render)
+  - url: https://g5-api-gateway.onrender.com
+    description: API Gateway publicado (no enruta 2.13)
+  - url: http://localhost:8082
+    description: M2 en local
+
+tags:
+  - name: F3 Devoluciones y cambios
+    description: Expediente, resolución y recepción física. Responsable Joseph.
+  - name: F4 Reembolsos
+    description: Devolución de dinero originada por una anulación o una devolución. Responsable Luis Alejandro.
+  - name: F5 Calificaciones
+    description: Encuesta CSAT posterior a la entrega. Responsable Johan.
+  - name: F6 Reclamos
+    description: Libro de Reclamaciones con plazo de 15 días hábiles. Responsable Fabrizio.
+  - name: F6 Dashboard
+    description: Métricas consolidadas. Responsable Fabrizio.
+  - name: Interno
+    description: Comunicación de M1 a M2. El API Gateway no la publica.
+
+paths:
+  /api/v2/devoluciones/evidencias/upload:
+    post:
+      tags: [F3 Devoluciones y cambios]
+      operationId: subirEvidencia
+      summary: 2.1 Subir evidencia
+      description: |
+        Sube una foto o documento y devuelve su URL, que luego se envía en evidencias de 2.2 o en evidencia de 2.5b.
+
+        **Permiso:** scope postventa:devoluciones:escribir, o rol CLIENTE o ADMIN_VENTAS. El Gestor la usa para la foto de la recepción.
+
+        **Archivo:** image/jpeg, image/png, image/webp o application/pdf, hasta 5 MB. M2 valida que el contenido corresponda al formato.
+      security:
+        - TokenServicio: ['postventa:devoluciones:escribir']
+        - TokenUsuario: [CLIENTE, ADMIN_VENTAS]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Archivo guardado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenciaSubida'
+        '400':
+          description: 'ARCHIVO_REQUERIDO, ARCHIVO_INVALIDO o PARAMETRO_FALTANTE.'
+          content: *error
+        '503':
+          description: 'ALMACEN_NO_DISPONIBLE: el almacenamiento no responde.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/devoluciones:
+    post:
+      tags: [F3 Devoluciones y cambios]
+      operationId: registrarDevolucion
+      summary: 2.2 Registrar devolución o cambio
+      description: |
+        Crea el expediente tras la entrega. M2 consulta el pedido a M1 (1.3) para validar titular, estado y plazo.
+
+        **Permiso:** scope postventa:devoluciones:escribir (canales) o rol CLIENTE.
+
+        **Reglas:**
+
+        - El pedido debe estar ENTREGADO, y dentro de los 7 días naturales desde la entrega.
+        - Las unidades no pueden superar lo comprado, descontando devoluciones no rechazadas del mismo pedido.
+        - Algunos motivos exigen evidencia, y cada URL debe haber salido de 2.1.
+      security:
+        - TokenServicio: ['postventa:devoluciones:escribir']
+        - TokenUsuario: [CLIENTE]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrarDevolucionRequest'
+      responses:
+        '201':
+          description: Expediente creado. La cabecera Location indica su URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrarDevolucionResponse'
+        '400':
+          description: |
+            EVIDENCIA_REQUERIDA, EVIDENCIA_INVALIDA, PLAZO_VENCIDO, ITEM_INVALIDO, DATOS_INVALIDOS, FORMATO_INVALIDO o CODIGO_INVALIDO.
+          content: *error
+        '403':
+          description: 'ACCESO_DENEGADO: el pedido pertenece a otro cliente.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '409':
+          description: 'PEDIDO_NO_ENTREGADO o DEVOLUCION_EN_CURSO (esas unidades ya tienen una devolución no rechazada).'
+          content: *error
+        '503':
+          description: 'VENTAS_NO_DISPONIBLE: M1 no responde.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    get:
+      tags: [F3 Devoluciones y cambios]
+      operationId: listarDevoluciones
+      summary: 2.4 Bandeja de devoluciones del Gestor
+      description: |
+        **Permiso:** token de usuario con rol ADMIN_VENTAS. Sin clienteId lista todos los expedientes.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: clienteId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoDevolucion' }
+        - name: tipo
+          in: query
+          schema: { $ref: '#/components/schemas/TipoDevolucion' }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de expedientes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListadoDevoluciones'
+        '400':
+          description: 'PAGINACION_INVALIDA o FORMATO_INVALIDO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/devoluciones/me:
+    get:
+      tags: [F3 Devoluciones y cambios]
+      operationId: listarMisDevoluciones
+      summary: 2.4b Mis devoluciones
+      description: |
+        **Permiso:** token de usuario con rol CLIENTE. La identidad sale del sub; no se acepta clienteId.
+      security:
+        - TokenUsuario: [CLIENTE]
+      parameters:
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoDevolucion' }
+        - name: tipo
+          in: query
+          schema: { $ref: '#/components/schemas/TipoDevolucion' }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de expedientes del cliente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListadoDevoluciones'
+        '400':
+          description: 'PAGINACION_INVALIDA.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/devoluciones/{devolucionId}:
+    get:
+      tags: [F3 Devoluciones y cambios]
+      operationId: consultarDevolucion
+      summary: 2.3 Consultar expediente
+      description: |
+        Detalle, historial, recepciones y, si corresponde, la trazabilidad del reembolso.
+
+        **Permiso:** rol CLIENTE (solo los suyos) o ADMIN_VENTAS.
+
+        **Efecto:** si está SOLICITADA y lo abre el Gestor, pasa a EN_EVALUACION en esta misma llamada. Por eso la ruta no es
+        de solo lectura para el Gestor: es la señal de que alguien empezó a revisarlo.
+      security:
+        - TokenUsuario: [CLIENTE, ADMIN_VENTAS]
+      parameters:
+        - $ref: '#/components/parameters/DevolucionId'
+      responses:
+        '200':
+          description: Expediente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevolucionDetalle'
+        '403':
+          description: 'ACCESO_DENEGADO: el expediente es de otro cliente.'
+          content: *error
+        '404':
+          description: 'DEVOLUCION_NO_ENCONTRADA.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+
+  /api/v2/devoluciones/{devolucionId}/resolucion:
+    patch:
+      tags: [F3 Devoluciones y cambios]
+      operationId: resolverDevolucion
+      summary: 2.5 Resolver expediente
+      description: |
+        El Gestor aprueba o rechaza. El autorizador se toma del sub del token, nunca del cuerpo.
+
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        - RECHAZADA: Exige fundamento.
+        - APROBADA como REEMBOLSO: M2 ejecuta el reembolso (F4); referenciaOperacion es REEM-….
+        - APROBADA como CAMBIO: M2 consulta stock a Productos y pide a M1 una orden de reemplazo sin cobro (1.11); referenciaOperacion es PED-….
+
+        **La aprobación comercial no mueve stock:** eso ocurre en la recepción física (2.5b).
+
+        Sin tipoResolucion se sigue lo que pidió el cliente. Un CAMBIO sin stock puede resolverse como REEMBOLSO; al revés, no.
+
+        **Reintento seguro:** repetir la misma aprobación reintenta la coordinación sin duplicar nada.
+
+        **Si M1 anula el reemplazo** (por ejemplo, venció la reserva), el expediente vuelve a EN_EVALUACION y se puede aprobar otra vez.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - $ref: '#/components/parameters/DevolucionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolverDevolucionRequest'
+            examples:
+              aprobar:
+                summary: Aprobar según lo que pidió el cliente
+                value: { decision: APROBADA }
+              rechazar:
+                summary: Rechazar con fundamento
+                value: { decision: RECHAZADA, fundamento: El equipo presenta signos de manipulación interna }
+              sinStock:
+                summary: Resolver como reembolso un cambio sin stock
+                value: { decision: APROBADA, tipoResolucion: REEMBOLSO }
+              sinDevolverProducto:
+                summary: Reembolso sin que el cliente devuelva el producto
+                value: { decision: APROBADA, tipoResolucion: REEMBOLSO, requiereDevolucionFisica: false }
+      responses:
+        '200':
+          description: Resolución aplicada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolucionResponse'
+        '400':
+          description: 'FUNDAMENTO_REQUERIDO, RESOLUCION_INVALIDA, DATOS_INVALIDOS o CODIGO_INVALIDO.'
+          content: *error
+        '404':
+          description: 'DEVOLUCION_NO_ENCONTRADA.'
+          content: *error
+        '409':
+          description: |
+            DEVOLUCION_NO_RESOLUBLE: ya está resuelto, o otro Gestor lo resolvió al mismo tiempo.
+            PEDIDO_INCONSISTENTE: M1 ya no encuentra el pedido.
+            SIN_STOCK: no hay disponibilidad para el cambio; se puede resolver como REEMBOLSO o rechazar.
+            REEMPLAZO_RECHAZADO: M1 rechazó la orden de reemplazo.
+          content: *error
+        '503':
+          description: 'PRODUCTOS_NO_DISPONIBLE o VENTAS_NO_DISPONIBLE: un módulo no respondió; reintenta la misma aprobación.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/devoluciones/{devolucionId}/recepcion:
+    patch:
+      tags: [F3 Devoluciones y cambios]
+      operationId: confirmarRecepcion
+      summary: 2.5b Confirmar recepción física
+      description: |
+        Registra que el producto llegó al almacén y cuántas unidades son aptas. Recién aquí se reintegra stock, y solo por las aptas.
+
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        - sku debe ser una línea devuelta del pedido original.
+        - cantidadApta no puede superar cantidadRecibida.
+        - El expediente pasa a COMPLETADA si ya no falta nada; si no, sigue APROBADA. Se admiten recepciones parciales.
+
+        **Reintento seguro:** si Productos falla, responde 503, la recepción queda pendiente y reintentar reenvía el mismo operation_id.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - $ref: '#/components/parameters/DevolucionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmarRecepcionRequest'
+      responses:
+        '200':
+          description: Recepción registrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmarRecepcionResponse'
+        '400':
+          description: 'CANTIDAD_INVALIDA o DATOS_INVALIDOS.'
+          content: *error
+        '404':
+          description: 'DEVOLUCION_NO_ENCONTRADA.'
+          content: *error
+        '409':
+          description: |
+            RESOLUCION_NO_APROBADA: no está aprobada o no requiere devolución física.
+            RECEPCION_YA_CONFIRMADA: esas unidades ya se recibieron; no se duplica el reintegro.
+          content: *error
+        '503':
+          description: 'PRODUCTOS_NO_DISPONIBLE: la recepción queda pendiente; repite la misma petición.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/reembolsos:
+    post:
+      tags: [F4 Reembolsos]
+      operationId: procesarReembolso
+      summary: 2.6 Procesar reembolso
+      description: |
+        Devuelve dinero por una ANULACION (M1) o una DEVOLUCION (M2). Un reembolso no se crea sin origen.
+
+        **Permiso:** scope postventa:reembolsos:procesar, o rol ADMIN_VENTAS.
+        Con origen ANULACION solo M1 lo crea; el Gestor únicamente puede continuar uno que ya existe.
+
+        **Idempotencia:** la misma X-Idempotency-Key con los mismos datos devuelve el mismo reembolso, sin pagar otra vez.
+        Por eso no existe un endpoint /reintentar: reintentar es reenviar este POST con los datos de 2.6c.
+
+        **Validaciones:** M2 consulta a M1 que el pago esté confirmado, y que la suma de reembolsos no supere lo pagado.
+      security:
+        - TokenServicio: ['postventa:reembolsos:procesar']
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: true
+          description: Clave única de la operación (máximo 100 caracteres). Fija por origen, para que un reintento no pague dos veces.
+          schema: { type: string, maxLength: 100 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcesarReembolsoRequest'
+      responses:
+        '201':
+          description: Reembolso procesado. También responde 201 cuando es un reintento con la misma clave.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcesarReembolsoResponse'
+        '400':
+          description: |
+            CABECERA_FALTANTE, CLAVE_IDEMPOTENCIA_REQUERIDA o CLAVE_IDEMPOTENCIA_INVALIDA: problema con la clave.
+            ORIGEN_NO_ELEGIBLE: el origen no existe o no permite reembolso.
+            MONTO_INVALIDO: no es positivo o tiene más de dos decimales.
+            PAGO_INVALIDO: el pago no está confirmado o su moneda no coincide.
+            DATOS_INVALIDOS: estructura inválida.
+          content: *error
+        '403':
+          description: 'ACCESO_DENEGADO: un Gestor intenta crear un reembolso nuevo de una anulación.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '409':
+          description: |
+            CLAVE_IDEMPOTENCIA_EN_CONFLICTO: la clave ya existe con otros datos.
+            ORIGEN_YA_REEMBOLSADO: ese origen ya tiene un reembolso.
+            SALDO_INSUFICIENTE: supera el total pagado.
+          content: *error
+        '503':
+          description: 'VENTAS_NO_DISPONIBLE: M1 no responde.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    get:
+      tags: [F4 Reembolsos]
+      operationId: listarReembolsos
+      summary: 2.6b Bandeja de reembolsos
+      description: |
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        No trae cliente ni canal: obtenerlos exigiría consultar a M1 por cada fila. Esos datos están en el detalle (2.6c).
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoReembolso' }
+        - name: origen
+          in: query
+          schema: { $ref: '#/components/schemas/OrigenReembolso' }
+        - name: pedidoId
+          in: query
+          description: Código PED-AAAA-NNNNN.
+          schema: { type: string }
+        - name: buscar
+          in: query
+          description: Código exacto REEM-, ANUL-, DEV- o PED-.
+          schema: { type: string }
+        - name: desde
+          in: query
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          schema: { type: string, format: date }
+        - name: orden
+          in: query
+          schema: { type: string, enum: [RECIENTES, ANTIGUOS], default: RECIENTES }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de reembolsos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListadoReembolsos'
+        '400':
+          description: 'PAGINACION_INVALIDA, RANGO_FECHAS_INVALIDO o CODIGO_INVALIDO (código de pedido mal formado).'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/reembolsos/{reembolsoId}:
+    get:
+      tags: [F4 Reembolsos]
+      operationId: consultarReembolso
+      summary: 2.6c Detalle de un reembolso
+      description: |
+        Detalle completo, con sus intentos y los datos para un reintento (claveIdempotencia, origen, origenId, pedidoId, monto, moneda).
+
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        canal, clienteId, clienteNombre y metodoPago se consultan a M1 solo en esta operación.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: reembolsoId
+          in: path
+          required: true
+          schema: { type: string, examples: [REEM-00001] }
+      responses:
+        '200':
+          description: Detalle del reembolso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetalleReembolso'
+        '404':
+          description: 'REEMBOLSO_NO_ENCONTRADO o PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/csat:
+    post:
+      tags: [F5 Calificaciones]
+      operationId: registrarCsat
+      summary: 2.7 Registrar calificación
+      description: |
+        **Permiso:** token de usuario con rol CLIENTE, porque hay que verificar que el pedido sea suyo.
+
+        Marketplace traduce sus botones Mal, Regular y Bien a 1, 3 y 5 (acuerdo H-04).
+      security:
+        - TokenUsuario: [CLIENTE]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrarCsatRequest'
+      responses:
+        '201':
+          description: Calificación guardada. Sin cuerpo.
+        '400':
+          description: 'PUNTUACION_INVALIDA (fuera de 1 a 5), DATOS_INVALIDOS o FORMATO_INVALIDO.'
+          content: *error
+        '403':
+          description: 'ACCESO_DENEGADO: el pedido no pertenece al usuario.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '409':
+          description: 'CSAT_ALREADY_SUBMITTED: ese pedido ya tiene calificación.'
+          content: *error
+        '422':
+          description: 'ORDER_NOT_DELIVERED: el pedido no está ENTREGADO (código y estado acordados con Marketplace en H-04).'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+    get:
+      tags: [F5 Calificaciones]
+      operationId: listarCalificaciones
+      summary: 2.7b Bandeja de calificaciones
+      description: |
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        resumen se calcula sobre todo el filtro, no solo la página. distribucion siempre trae las claves de 1 a 5.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: canal
+          in: query
+          schema: { $ref: '#/components/schemas/CanalVenta' }
+        - name: puntaje
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5 }
+        - name: desde
+          in: query
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de calificaciones con su resumen.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListadoCalificaciones'
+        '400':
+          description: 'PAGINACION_INVALIDA, PUNTAJE_INVALIDO o RANGO_FECHAS_INVALIDO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/reclamos:
+    post:
+      tags: [F6 Reclamos]
+      operationId: registrarReclamo
+      summary: 2.8 Registrar reclamo
+      description: |
+        Registro formal en el Libro de Reclamaciones, con plazo de respuesta de 15 días hábiles.
+
+        **Permiso:** scope postventa:reclamos:escribir (canales) o rol CLIENTE.
+      security:
+        - TokenServicio: ['postventa:reclamos:escribir']
+        - TokenUsuario: [CLIENTE]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrarReclamoRequest'
+      responses:
+        '201':
+          description: Reclamo registrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrarReclamoResponse'
+        '400':
+          description: 'DATOS_INVALIDOS o FORMATO_INVALIDO: datos incompletos o motivo fuera de catálogo.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+    get:
+      tags: [F6 Reclamos]
+      operationId: listarReclamos
+      summary: 2.10 Bandeja de reclamos
+      description: |
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        sla es el semáforo del plazo legal, distinto de estado: un reclamo puede estar EN_PROCESO y VENCIDO a la vez.
+        Filtrar por POR_VENCER incluye los CRITICO. Días hábiles: lunes a viernes.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: documento
+          in: query
+          description: Documento del reclamante.
+          schema: { type: string }
+        - name: clienteId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoReclamo' }
+        - name: buscar
+          in: query
+          description: Un código PED-… filtra por pedido. Otro texto busca por código de reclamo, documento o parte del nombre.
+          schema: { type: string }
+        - name: sla
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoSla' }
+        - name: desde
+          in: query
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          schema: { type: string, format: date }
+        - name: orden
+          in: query
+          schema: { type: string, enum: [RECIENTES, ANTIGUOS], default: RECIENTES }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de reclamos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListadoReclamos'
+        '400':
+          description: 'PAGINACION_INVALIDA, RANGO_FECHAS_INVALIDO o FORMATO_INVALIDO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/reclamos/me:
+    get:
+      tags: [F6 Reclamos]
+      operationId: listarMisReclamos
+      summary: 2.10b Mis reclamos
+      description: |
+        **Permiso:** token de usuario con rol CLIENTE. La identidad sale del sub.
+      security:
+        - TokenUsuario: [CLIENTE]
+      parameters:
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoReclamo' }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de reclamos del cliente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListadoReclamos'
+        '400':
+          description: 'PAGINACION_INVALIDA.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/reclamos/{codigoSeguimiento}:
+    get:
+      tags: [F6 Reclamos]
+      operationId: consultarReclamo
+      summary: 2.9 Consultar reclamo
+      description: |
+        **Permiso:** rol CLIENTE o ADMIN_VENTAS.
+
+        diasHabilesRestantes es null si ya está atendido (0 = vence hoy; negativo = vencido).
+        slaCumplido es null mientras no haya respuesta.
+      security:
+        - TokenUsuario: [CLIENTE, ADMIN_VENTAS]
+      parameters:
+        - name: codigoSeguimiento
+          in: path
+          required: true
+          schema: { type: string, examples: [REC-2026-0015] }
+      responses:
+        '200':
+          description: Detalle del reclamo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclamoDetalle'
+        '400':
+          description: 'CODIGO_INVALIDO.'
+          content: *error
+        '404':
+          description: 'RECLAMO_NO_ENCONTRADO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/reclamos/{reclamoId}/respuesta:
+    patch:
+      tags: [F6 Reclamos]
+      operationId: responderReclamo
+      summary: 2.11 Responder reclamo
+      description: |
+        **Permiso:** token de usuario con rol ADMIN_VENTAS. El autor registrado es el sub del token, no el texto del cuerpo.
+
+        - EN_PROCESO: Inicia la atención, solo desde REGISTRADO y sin respuesta.
+        - ATENDIDO o DERIVADO: Exige respuestaVisibleCliente y registra la fecha de respuesta.
+
+        atendidoPor solo se usa con la seguridad deshabilitada (desarrollo local).
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: reclamoId
+          in: path
+          required: true
+          schema: { type: string, examples: [REC-2026-0015] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResponderReclamoRequest'
+      responses:
+        '200':
+          description: Reclamo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespuestaReclamo'
+        '400':
+          description: 'RESPUESTA_VACIA, ESTADO_INVALIDO, DATOS_INVALIDOS o CODIGO_INVALIDO.'
+          content: *error
+        '404':
+          description: 'RECLAMO_NO_ENCONTRADO.'
+          content: *error
+        '409':
+          description: 'RECLAMO_YA_ATENDIDO o RECLAMO_NO_RESPONDIBLE (transición inválida, o dos Gestores a la vez).'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/dashboard/metricas:
+    get:
+      tags: [F6 Dashboard]
+      operationId: metricasDashboard
+      summary: 2.12 Métricas del Dashboard
+      description: |
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        pedidos informa **hechos del periodo** por su fecha, no una cohorte:
+
+        - total: pedidos pagados en el periodo.
+        - anulados y entregados: anulaciones y entregas ocurridas en el periodo.
+
+        Por eso anulados / total **no es una tasa de anulación**; esa sale de la API de Ventas (1.14).
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: desde
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: canal
+          in: query
+          schema: { $ref: '#/components/schemas/CanalVenta' }
+      responses:
+        '200':
+          description: Métricas consolidadas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metricas'
+        '400':
+          description: 'PARAMETRO_FALTANTE, RANGO_FECHAS_INVALIDO o FORMATO_INVALIDO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v2/eventos:
+    post:
+      tags: [Interno]
+      operationId: recibirEventoPedido
+      summary: 2.13 Recibir evento de pedido
+      description: |
+        M1 publica aquí cada cambio relevante del pedido (patrón outbox, con reintentos). Alimenta el Dashboard y el cambio de producto.
+
+        **Permiso:** token de servicio con scope postventa:reembolsos:procesar. El API Gateway no publica esta ruta.
+
+        **Idempotencia:** el mismo idEvento responde 200 con repetido: true y no se aplica dos veces.
+
+        **Orden de reemplazo:** si trae datos.devolucionId, no suma al Dashboard porque no es una venta. pedido.entregado puede
+        completar la devolución, y pedido.anulado la devuelve a EN_EVALUACION.
+      security:
+        - TokenServicio: ['postventa:reembolsos:procesar']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventoPedido'
+      responses:
+        '200':
+          description: Evento procesado, o repetido.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idEvento: { type: string, format: uuid }
+                  repetido: { type: boolean }
+        '400':
+          description: 'DATOS_INVALIDOS o FORMATO_INVALIDO: tipo desconocido o estructura inválida.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+components:
+  responses:
+    NoAutenticado:
+      description: 'TOKEN_INVALIDO: token ausente, vencido o inválido.'
+      content: *error
+    SinPermiso:
+      description: 'ACCESO_DENEGADO: el token no tiene el rol o scope que exige esta operación.'
+      content: *error
+
+  securitySchemes:
+    TokenServicio:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de módulo (tipo servicio, aud incluye api-postventa), obtenido de G7 con client_credentials. Se autoriza por scope.
+    TokenUsuario:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de persona (tipo acceso), emitido por G7 al iniciar sesión. Se autoriza por el rol en el claim roles.
+
+  parameters:
+    DevolucionId:
+      name: devolucionId
+      in: path
+      required: true
+      schema: { type: string, examples: [DEV-2026-0042] }
+    Pagina:
+      name: pagina
+      in: query
+      description: Página, desde 0.
+      schema: { type: integer, minimum: 0, default: 0 }
+    Tamano:
+      name: tamano
+      in: query
+      description: Registros por página (1 a 100).
+      schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+
+  schemas:
+    Error:
+      type: object
+      description: Formato único de error.
+      required: [codigo, mensaje, timestamp]
+      properties:
+        codigo: { type: string, description: Código estable para decidir por programa., examples: [DEVOLUCION_NO_ENCONTRADA] }
+        mensaje: { type: string, description: Texto legible. }
+        timestamp: { type: string, format: date-time }
+        detalles:
+          type: array
+          items:
+            type: object
+            properties:
+              campo: { type: string }
+              error: { type: string }
+
+    CanalVenta: { type: string, enum: [MARKETPLACE, CHATBOT, RETAIL] }
+    EstadoDevolucion: { type: string, enum: [SOLICITADA, EN_EVALUACION, APROBADA, RECHAZADA, COMPLETADA] }
+    TipoDevolucion: { type: string, enum: [CAMBIO, DEVOLUCION_DINERO] }
+    MotivoDevolucion: { type: string, enum: [PRODUCTO_DEFECTUOSO, PRODUCTO_DANADO, PRODUCTO_INCORRECTO, OTRO] }
+    TipoEvidencia: { type: string, enum: [IMAGEN, DOCUMENTO] }
+    TipoResolucion: { type: string, enum: [CAMBIO, REEMBOLSO, RECHAZO] }
+    DecisionDevolucion: { type: string, enum: [APROBADA, RECHAZADA] }
+    ActorDevolucion: { type: string, enum: [CLIENTE, CANAL, GESTOR, SISTEMA] }
+    EstadoReintegro: { type: string, enum: [PENDIENTE, COMPLETADO] }
+    EstadoReembolso: { type: string, enum: [PENDIENTE, EXITOSO, FALLIDO] }
+    OrigenReembolso: { type: string, enum: [ANULACION, DEVOLUCION] }
+    EstadoReclamo: { type: string, enum: [REGISTRADO, EN_PROCESO, ATENDIDO, DERIVADO] }
+    EstadoSla: { type: string, enum: [EN_PLAZO, POR_VENCER, CRITICO, VENCIDO, ATENDIDO] }
+    TipoReclamo: { type: string, enum: [RECLAMO, QUEJA] }
+    MotivoReclamo:
+      type: string
+      enum: [INCUMPLIMIENTO_PLAZO_ENTREGA, PRODUCTO_DEFECTUOSO_O_INCORRECTO, COBRO_INDEBIDO_O_NO_RECONOCIDO, ATENCION_INADECUADA, INCUMPLIMIENTO_GARANTIA]
+
+    EvidenciaSubida:
+      type: object
+      properties:
+        tipo: { $ref: '#/components/schemas/TipoEvidencia' }
+        url: { type: string }
+        nombreArchivoOriginal: { type: string }
+        tamanioBytes: { type: integer }
+        fechaSubida: { type: string, format: date-time }
+
+    RegistrarDevolucionRequest:
+      type: object
+      required: [pedidoId, tipo, motivo, items]
+      properties:
+        pedidoId: { type: string, examples: [PED-2026-00981] }
+        tipo: { $ref: '#/components/schemas/TipoDevolucion' }
+        motivo: { $ref: '#/components/schemas/MotivoDevolucion' }
+        descripcion: { type: string, maxLength: 2000 }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productoId, cantidad]
+            properties:
+              productoId: { type: string, examples: [PROD-101] }
+              cantidad: { type: integer, minimum: 1, examples: [1] }
+        evidencias:
+          type: array
+          description: Cada url debe haber salido de 2.1.
+          items:
+            type: object
+            required: [tipo, url]
+            properties:
+              tipo: { $ref: '#/components/schemas/TipoEvidencia' }
+              url: { type: string, maxLength: 500 }
+    RegistrarDevolucionResponse:
+      type: object
+      properties:
+        devolucionId: { type: string, examples: [DEV-2026-0042] }
+        pedidoId: { type: string }
+        tipo: { $ref: '#/components/schemas/TipoDevolucion' }
+        estado: { $ref: '#/components/schemas/EstadoDevolucion' }
+        fechaRegistro: { type: string, format: date-time }
+
+    DevolucionDetalle:
+      type: object
+      properties:
+        devolucionId: { type: string }
+        pedidoId: { type: string }
+        clienteId: { type: [string, 'null'], format: uuid }
+        tipo: { $ref: '#/components/schemas/TipoDevolucion' }
+        estado: { $ref: '#/components/schemas/EstadoDevolucion' }
+        motivo: { $ref: '#/components/schemas/MotivoDevolucion' }
+        descripcion: { type: [string, 'null'] }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              productoId: { type: string }
+              cantidad: { type: integer }
+        resolucion:
+          description: 'null mientras no se resuelva.'
+          oneOf:
+            - $ref: '#/components/schemas/Resolucion'
+            - type: 'null'
+        evidencias:
+          type: array
+          items:
+            type: object
+            properties:
+              tipo: { $ref: '#/components/schemas/TipoEvidencia' }
+              url: { type: string }
+        fechaRegistro: { type: string, format: date-time }
+        historial:
+          type: array
+          description: Cada cambio de estado, con quién lo hizo.
+          items:
+            type: object
+            properties:
+              estadoAnterior:
+                oneOf:
+                  - $ref: '#/components/schemas/EstadoDevolucion'
+                  - type: 'null'
+              estado: { $ref: '#/components/schemas/EstadoDevolucion' }
+              actor: { $ref: '#/components/schemas/ActorDevolucion' }
+              idActor: { type: [string, 'null'] }
+              detalle: { type: [string, 'null'] }
+              fecha: { type: string, format: date-time }
+        recepciones:
+          type: array
+          description: Una fila por línea confirmada en 2.5b.
+          items:
+            type: object
+            properties:
+              sku: { type: string }
+              productoId: { type: [string, 'null'] }
+              cantidadRecibida: { type: integer }
+              cantidadApta: { type: integer }
+              reintegroEstado: { $ref: '#/components/schemas/EstadoReintegro' }
+              idActor: { type: [string, 'null'] }
+              fecha: { type: string, format: date-time }
+    Resolucion:
+      type: object
+      properties:
+        decision: { $ref: '#/components/schemas/DecisionDevolucion' }
+        tipoResolucion: { $ref: '#/components/schemas/TipoResolucion' }
+        fundamento: { type: [string, 'null'] }
+        autorizadorId: { type: [string, 'null'], format: uuid }
+        fechaResolucion: { type: string, format: date-time }
+        referenciaOperacion: { type: [string, 'null'], description: 'REEM-… en un reembolso; PED-… (el reemplazo) en un cambio.' }
+        requiereDevolucionFisica: { type: boolean }
+        reembolso:
+          oneOf:
+            - type: object
+              properties:
+                reembolsoId: { type: string }
+                estado: { type: string }
+                monto: { type: number }
+                moneda: { type: string }
+                transaccionPasarelaId: { type: [string, 'null'] }
+                fechaEjecucion: { type: [string, 'null'], format: date-time }
+            - type: 'null'
+    ListadoDevoluciones:
+      type: object
+      properties:
+        clienteId: { type: [string, 'null'], format: uuid, description: Solo si se filtró por un cliente. }
+        contenido:
+          type: array
+          items:
+            type: object
+            properties:
+              devolucionId: { type: string }
+              pedidoId: { type: string }
+              tipo: { $ref: '#/components/schemas/TipoDevolucion' }
+              estado: { $ref: '#/components/schemas/EstadoDevolucion' }
+              motivo: { $ref: '#/components/schemas/MotivoDevolucion' }
+              estadoReembolso: { type: [string, 'null'], description: Solo si la resolución fue un reembolso. }
+              fechaRegistro: { type: string, format: date-time }
+        pagina: { type: integer }
+        totalPaginas: { type: integer }
+        totalElementos: { type: integer }
+    ResolverDevolucionRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision: { $ref: '#/components/schemas/DecisionDevolucion' }
+        fundamento: { type: string, maxLength: 2000, description: Obligatorio al rechazar. }
+        tipoResolucion:
+          description: 'CAMBIO o REEMBOLSO. Si no se envía, sale del tipo del expediente.'
+          allOf:
+            - $ref: '#/components/schemas/TipoResolucion'
+        requiereDevolucionFisica: { type: boolean, default: true, description: Solo puede ser false en un REEMBOLSO; un cambio siempre la requiere. }
+    ResolucionResponse:
+      type: object
+      properties:
+        devolucionId: { type: string }
+        estado: { $ref: '#/components/schemas/EstadoDevolucion' }
+        decision: { $ref: '#/components/schemas/DecisionDevolucion' }
+        tipoResolucion: { $ref: '#/components/schemas/TipoResolucion' }
+        fundamento: { type: [string, 'null'] }
+        autorizadorId: { type: [string, 'null'], format: uuid }
+        fechaResolucion: { type: string, format: date-time }
+        referenciaOperacion: { type: [string, 'null'] }
+    ConfirmarRecepcionRequest:
+      type: object
+      required: [lineas]
+      properties:
+        lineas:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [sku, cantidadRecibida, cantidadApta]
+            properties:
+              sku: { type: string, maxLength: 50, examples: [SKU-AUR-01] }
+              cantidadRecibida: { type: integer, minimum: 1, examples: [1] }
+              cantidadApta: { type: integer, minimum: 0, examples: [1] }
+        evidencia: { type: string, maxLength: 500, description: Opcional. URL obtenida en 2.1. }
+    ConfirmarRecepcionResponse:
+      type: object
+      properties:
+        devolucionId: { type: string }
+        recepcionConfirmada: { type: boolean }
+        fechaRecepcion: { type: string, format: date-time }
+        actor: { type: [string, 'null'] }
+        lineas:
+          type: array
+          items:
+            type: object
+            properties:
+              sku: { type: string }
+              cantidadApta: { type: integer }
+        reintegroSolicitado: { type: boolean }
+        estado: { $ref: '#/components/schemas/EstadoDevolucion' }
+
+    ProcesarReembolsoRequest:
+      type: object
+      required: [origen, origenId, referenciaId, monto, moneda]
+      properties:
+        origen: { $ref: '#/components/schemas/OrigenReembolso' }
+        origenId: { type: string, description: 'ANUL-NNNN o DEV-AAAA-NNNN.', examples: [ANUL-0012] }
+        referenciaId: { type: string, description: Código del pedido., examples: [PED-2026-00981] }
+        monto: { type: number, minimum: 0.01, examples: [129.90] }
+        moneda: { type: string, pattern: '^[A-Z]{3}$', examples: [PEN] }
+        motivo: { type: string }
+        solicitadoPor: { type: string, description: 'Si es un UUID, queda como autorizador.' }
+    ProcesarReembolsoResponse:
+      type: object
+      properties:
+        reembolsoId: { type: string, examples: [REEM-00001] }
+        transaccionPasarelaId: { type: [string, 'null'] }
+        estado: { $ref: '#/components/schemas/EstadoReembolso' }
+        monto: { type: number }
+        moneda: { type: string }
+        fechaEjecucion: { type: [string, 'null'], format: date-time }
+    ListadoReembolsos:
+      type: object
+      properties:
+        contenido:
+          type: array
+          items:
+            type: object
+            properties:
+              reembolsoId: { type: string }
+              pedidoId: { type: string }
+              origen: { $ref: '#/components/schemas/OrigenReembolso' }
+              origenId: { type: string }
+              monto: { type: number }
+              moneda: { type: string }
+              estado: { $ref: '#/components/schemas/EstadoReembolso' }
+              transaccionPasarelaId: { type: [string, 'null'] }
+              fecha: { type: string, format: date }
+              intentos: { type: integer }
+              ultimoResultado: { type: [string, 'null'] }
+              fechaUltimoIntento: { type: [string, 'null'], format: date-time }
+        pagina: { type: integer }
+        totalPaginas: { type: integer }
+        totalElementos: { type: integer }
+    DetalleReembolso:
+      type: object
+      properties:
+        reembolsoId: { type: string }
+        pedidoId: { type: string }
+        origen: { $ref: '#/components/schemas/OrigenReembolso' }
+        origenId: { type: string }
+        monto: { type: number }
+        moneda: { type: string }
+        estado: { $ref: '#/components/schemas/EstadoReembolso' }
+        transaccionPasarelaId: { type: [string, 'null'] }
+        fecha: { type: string, format: date }
+        autorizadorId: { type: [string, 'null'], format: uuid }
+        clienteId: { type: [string, 'null'], format: uuid }
+        clienteNombre: { type: [string, 'null'] }
+        canal:
+          oneOf:
+            - $ref: '#/components/schemas/CanalVenta'
+            - type: 'null'
+        metodoPago: { type: [string, 'null'] }
+        total: { type: boolean, description: 'true si cubre el total del pedido; false si es parcial.' }
+        claveIdempotencia: { type: string, description: La clave para reenviar el POST de 2.6. }
+        intentos:
+          type: array
+          items:
+            type: object
+            properties:
+              numero: { type: integer }
+              estado: { $ref: '#/components/schemas/EstadoReembolso' }
+              transaccionPasarelaId: { type: [string, 'null'] }
+              resultado: { type: [string, 'null'] }
+              fecha: { type: string, format: date-time }
+
+    RegistrarCsatRequest:
+      type: object
+      required: [pedidoId, clienteId, canal, puntuacion]
+      properties:
+        pedidoId: { type: string, pattern: '^PED-[0-9]{4}-[0-9]{5,}$', examples: [PED-2026-00981] }
+        clienteId: { type: string, format: uuid }
+        canal: { $ref: '#/components/schemas/CanalVenta' }
+        puntuacion: { type: integer, minimum: 1, maximum: 5, examples: [5] }
+        comentario: { type: string }
+    ListadoCalificaciones:
+      type: object
+      properties:
+        contenido:
+          type: array
+          items:
+            type: object
+            properties:
+              pedidoId: { type: string }
+              puntaje: { type: integer }
+              comentario: { type: [string, 'null'] }
+              canal: { $ref: '#/components/schemas/CanalVenta' }
+              fecha: { type: string, format: date }
+        pagina: { type: integer }
+        totalPaginas: { type: integer }
+        totalElementos: { type: integer }
+        resumen:
+          type: object
+          properties:
+            total: { type: integer }
+            promedio: { type: [number, 'null'] }
+            distribucion:
+              type: object
+              additionalProperties: { type: integer }
+
+    RegistrarReclamoRequest:
+      type: object
+      required: [tipo, canal, motivo, detalle, consumidor]
+      properties:
+        pedidoId: { type: string, description: Opcional., examples: [PED-2026-00981] }
+        tipo: { $ref: '#/components/schemas/TipoReclamo' }
+        canal: { $ref: '#/components/schemas/CanalVenta' }
+        motivo: { $ref: '#/components/schemas/MotivoReclamo' }
+        detalle: { type: string }
+        consumidor:
+          type: object
+          required: [nombreCompleto, documento, email, telefono]
+          properties:
+            nombreCompleto: { type: string, maxLength: 150 }
+            documento: { type: string, maxLength: 20 }
+            email: { type: string, maxLength: 150 }
+            telefono: { type: string, maxLength: 20 }
+    RegistrarReclamoResponse:
+      type: object
+      properties:
+        reclamoId: { type: string }
+        codigoSeguimiento: { type: string }
+        estado: { $ref: '#/components/schemas/EstadoReclamo' }
+        motivo: { $ref: '#/components/schemas/MotivoReclamo' }
+        plazoDiasHabiles: { type: integer }
+        fechaLimiteSLA: { type: string, format: date-time }
+        respuestaVisibleCliente: { type: [string, 'null'] }
+    ReclamoDetalle:
+      type: object
+      properties:
+        reclamoId: { type: string }
+        codigoSeguimiento: { type: string }
+        pedidoId: { type: [string, 'null'] }
+        tipo: { $ref: '#/components/schemas/TipoReclamo' }
+        canal: { $ref: '#/components/schemas/CanalVenta' }
+        motivo: { $ref: '#/components/schemas/MotivoReclamo' }
+        detalle: { type: string }
+        estado: { $ref: '#/components/schemas/EstadoReclamo' }
+        plazoDiasHabiles: { type: integer }
+        fechaLimiteSLA: { type: string, format: date-time }
+        fechaRegistro: { type: string, format: date-time }
+        fechaAtencion: { type: [string, 'null'], format: date-time }
+        respuestaVisibleCliente: { type: [string, 'null'] }
+        consumidor:
+          type: object
+          properties:
+            nombreCompleto: { type: string }
+            documento: { type: string }
+            email: { type: string }
+            telefono: { type: string }
+        atendidoPor: { type: [string, 'null'] }
+        estadoSla: { $ref: '#/components/schemas/EstadoSla' }
+        diasHabilesRestantes: { type: [integer, 'null'] }
+        slaCumplido: { type: [boolean, 'null'] }
+    ListadoReclamos:
+      type: object
+      properties:
+        contenido:
+          type: array
+          items:
+            type: object
+            properties:
+              reclamoId: { type: string }
+              codigoSeguimiento: { type: string }
+              tipo: { $ref: '#/components/schemas/TipoReclamo' }
+              motivo: { $ref: '#/components/schemas/MotivoReclamo' }
+              estado: { $ref: '#/components/schemas/EstadoReclamo' }
+              fechaRegistro: { type: string, format: date-time }
+              fechaLimiteSLA: { type: string, format: date-time }
+              pedidoId: { type: [string, 'null'] }
+              canal: { $ref: '#/components/schemas/CanalVenta' }
+              nombreConsumidor: { type: [string, 'null'] }
+              estadoSla: { $ref: '#/components/schemas/EstadoSla' }
+              diasHabilesRestantes: { type: [integer, 'null'] }
+        pagina: { type: integer }
+        totalPaginas: { type: integer }
+        totalElementos: { type: integer }
+    ResponderReclamoRequest:
+      type: object
+      required: [nuevoEstado]
+      properties:
+        nuevoEstado: { $ref: '#/components/schemas/EstadoReclamo' }
+        respuestaVisibleCliente: { type: string, description: Obligatoria con ATENDIDO o DERIVADO. }
+        atendidoPor: { type: string, maxLength: 50, description: Solo con la seguridad deshabilitada. }
+    RespuestaReclamo:
+      type: object
+      properties:
+        reclamoId: { type: string }
+        estado: { $ref: '#/components/schemas/EstadoReclamo' }
+        fechaRespuesta: { type: [string, 'null'], format: date-time }
+        respuestaVisibleCliente: { type: [string, 'null'] }
+
+    Metricas:
+      type: object
+      properties:
+        periodo:
+          type: object
+          properties:
+            desde: { type: string, format: date }
+            hasta: { type: string, format: date }
+        pedidos:
+          type: object
+          properties:
+            total: { type: integer }
+            anulados: { type: integer }
+            entregados: { type: integer }
+        postventa:
+          type: object
+          properties:
+            devolucionesAprobadas: { type: integer }
+            montoReembolsadoPEN: { type: number }
+            csatPromedio: { type: [number, 'null'] }
+            reclamosPendientesSLA: { type: integer }
+        ultimaActualizacion: { type: [string, 'null'], format: date-time, description: Hasta cuándo están consolidados los datos. }
+
+    EventoPedido:
+      type: object
+      required: [idEvento, tipo, pedidoId, fecha, datos]
+      properties:
+        idEvento: { type: string, format: uuid, description: Si M1 reintenta, envía el mismo valor. }
+        tipo: { type: string, enum: [pedido.pagado, pedido.anulado, pedido.entregado] }
+        pedidoId: { type: string }
+        fecha: { type: string, format: date-time }
+        datos:
+          type: object
+          required: [canal, clienteId, total, moneda]
+          properties:
+            canal: { $ref: '#/components/schemas/CanalVenta' }
+            clienteId: { type: string }
+            vendedorId: { type: [string, 'null'], format: uuid }
+            total: { type: number, minimum: 0 }
+            moneda: { type: string, enum: [PEN, USD] }
+            motivo: { type: [string, 'null'], description: Obligatorio en pedido.anulado. }
+            items:
+              type: [array, 'null']
+              description: Obligatorio en pedido.pagado.
+              items:
+                type: object
+                properties:
+                  productoId: { type: string }
+                  cantidad: { type: integer }
+                  importe: { type: number }
+            devolucionId: { type: [string, 'null'], pattern: '^DEV-\d{4}-\d{4,}$', description: Solo en órdenes de reemplazo. }

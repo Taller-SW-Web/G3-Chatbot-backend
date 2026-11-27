@@ -1,0 +1,9 @@
+{
+  "reclamoId": "REC-2026-0077",
+  "codigoSeguimiento": "REC-77-2026",
+  "estado": "REGISTRADO",
+  "motivo": "INCUMPLIMIENTO_PLAZO_ENTREGA",
+  "plazoDiasHabiles": 15,
+  "fechaLimiteSLA": "2026-12-17T23:59:59Z",
+  "respuestaVisibleCliente": null
+}

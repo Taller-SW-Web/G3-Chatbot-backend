@@ -1,0 +1,21 @@
+{
+  "contenido": [
+    {
+      "reclamoId": "REC-2026-0077",
+      "codigoSeguimiento": "REC-77-2026",
+      "tipo": "RECLAMO",
+      "motivo": "INCUMPLIMIENTO_PLAZO_ENTREGA",
+      "estado": "REGISTRADO",
+      "fechaRegistro": "2026-11-26T12:00:00Z",
+      "fechaLimiteSLA": "2026-12-17T23:59:59Z",
+      "pedidoId": "PED-2026-00981",
+      "canal": "CHATBOT",
+      "nombreConsumidor": "Ana Díaz",
+      "estadoSla": "EN_PLAZO",
+      "diasHabilesRestantes": 15
+    }
+  ],
+  "pagina": 0,
+  "totalPaginas": 1,
+  "totalElementos": 1
+}
