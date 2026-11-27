@@ -134,7 +134,48 @@ async def test_rate_limit_headers_and_429_enforced_by_kong(gateway_url: str) -> 
         assert catalog_resp.headers.get("ratelimit-limit") == "120"
         assert catalog_resp.headers.get("ratelimit-remaining") is not None
 
-        # Dedicated test IP so the burst does not affect other integration tests.
+        # Verify route-specific perimeter limits match OpenAPI routes (H5-G3).
+        login_resp = await client.post(
+            "/api/v1/sesion/login",
+            json={},
+            headers={"X-Forwarded-For": "198.51.100.11"},
+        )
+        assert login_resp.headers.get("x-gateway") == "kong"
+        assert login_resp.headers.get("ratelimit-limit") == "15"
+
+        reaction_resp = await client.post(
+            "/api/v1/mensajes/00000000-0000-0000-0000-000000000001/reaccion",
+            json={},
+            headers={"X-Forwarded-For": "198.51.100.12"},
+        )
+        assert reaction_resp.headers.get("x-gateway") == "kong"
+        assert reaction_resp.headers.get("ratelimit-limit") == "35"
+
+        created = await client.post(
+            "/api/v1/chat/conversaciones",
+            json={},
+            headers={"X-Forwarded-For": "198.51.100.13"},
+        )
+        assert created.status_code == 201
+        conv_id = created.json()["conversacionId"]
+
+        sse_resp = await client.post(
+            f"/api/v1/chat/conversaciones/{conv_id}/mensajes",
+            json={"texto": "Hola"},
+            headers={"X-Forwarded-For": "198.51.100.13"},
+        )
+        assert sse_resp.status_code == 200
+        assert sse_resp.headers.get("ratelimit-limit") == "25"
+
+        upload_resp = await client.post(
+            f"/api/v1/chat/conversaciones/{conv_id}/adjuntos",
+            files={"archivo": ("tiny.bin", b"abc", "application/octet-stream")},
+            headers={"X-Forwarded-For": "198.51.100.14"},
+        )
+        assert upload_resp.headers.get("x-gateway") == "kong"
+        assert upload_resp.headers.get("ratelimit-limit") == "15"
+
+        # Dedicated test IP for /sesion/registro burst (5/min).
         burst_headers = {"X-Forwarded-For": "198.51.100.99"}
         for _ in range(5):
             attempt = await client.post(
@@ -143,14 +184,35 @@ async def test_rate_limit_headers_and_429_enforced_by_kong(gateway_url: str) -> 
                 headers=burst_headers,
             )
             assert attempt.status_code != 429
+            assert attempt.headers.get("ratelimit-limit") == "5"
 
         blocked = await client.post(
             "/api/v1/sesion/registro",
             json={},
             headers=burst_headers,
         )
+        assert blocked.status_code == 429
+        assert blocked.headers.get("x-gateway") == "kong"
+        assert blocked.headers.get("retry-after") is not None
+        assert "API rate limit exceeded" in blocked.text
 
-    assert blocked.status_code == 429
-    assert blocked.headers.get("x-gateway") == "kong"
-    assert blocked.headers.get("retry-after") is not None
-    assert "API rate limit exceeded" in blocked.text
+        # Dedicated test IP for /sugerencias burst (10/hour).
+        suggestions_headers = {"X-Forwarded-For": "198.51.100.77"}
+        for _ in range(10):
+            s_attempt = await client.post(
+                "/api/v1/sugerencias",
+                json={},
+                headers=suggestions_headers,
+            )
+            assert s_attempt.status_code != 429
+            assert s_attempt.headers.get("ratelimit-limit") == "10"
+
+        s_blocked = await client.post(
+            "/api/v1/sugerencias",
+            json={},
+            headers=suggestions_headers,
+        )
+        assert s_blocked.status_code == 429
+        assert s_blocked.headers.get("x-gateway") == "kong"
+        assert s_blocked.headers.get("retry-after") is not None
+        assert "API rate limit exceeded" in s_blocked.text

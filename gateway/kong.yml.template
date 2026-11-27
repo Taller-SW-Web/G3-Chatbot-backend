@@ -82,9 +82,9 @@ services:
 
       - name: chatbot-chat-reaction
         paths:
-          - ~/api/v1/chat/mensajes/[^/]+/reaccion$
+          - ~/api/v1/mensajes/[^/]+/reaccion$
         methods:
-          - PUT
+          - POST
         strip_path: false
         regex_priority: 140
         plugins:
@@ -138,7 +138,7 @@ services:
 
       - name: chatbot-chat-suggestions
         paths:
-          - /api/v1/chat/sugerencias
+          - /api/v1/sugerencias
         methods:
           - POST
         strip_path: false

@@ -31,8 +31,8 @@ Navegador → Vercel (Next.js /api/* via API_PROXY_TARGET)
   - `POST /api/v1/sesion/registro`: `5/min`, `30/hora`
   - `POST /api/v1/chat/conversaciones/*/mensajes`: `25/min`
   - `POST /api/v1/chat/conversaciones/*/adjuntos` y `POST /api/v1/evidencias`: `15/min`
-  - `PUT /api/v1/chat/mensajes/*/reaccion`: `35/min`
-  - `POST /api/v1/chat/sugerencias`: `10/hora`
+  - `POST /api/v1/mensajes/{message_id}/reaccion`: `35/min`
+  - `POST /api/v1/sugerencias`: `10/hora`
 
 ## 2. Despliegue en Railway
 
