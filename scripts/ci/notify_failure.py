@@ -117,6 +117,20 @@ def _needs_failures(needs_json: str) -> list[str]:
     return sorted(failed)
 
 
+def success_markdown(*, run_url: str, reason: str) -> str:
+    return "\n".join(
+        [
+            MARKER,
+            "## CI recuperado",
+            "",
+            f"**Run:** {run_url}",
+            f"**Alcance:** {reason or 'no reportado'}",
+            "",
+            "Todos los jobs terminaron en `success` o se omitieron a propósito.",
+        ]
+    ) + "\n"
+
+
 def build_markdown(
     *,
     repo: str,
@@ -270,6 +284,25 @@ def main(argv: list[str] | None = None) -> int:
     token = os.getenv("GITHUB_TOKEN", "")
     server = os.getenv("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
     run_url = f"{server}/{args.repo}/actions/runs/{args.run_id}"
+
+    if not _needs_failures(args.needs_json):
+        body = success_markdown(run_url=run_url, reason=args.reason)
+        args.output.write_text(body, encoding="utf-8")
+        print(body)
+        summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with Path(summary_path).open("a", encoding="utf-8") as summary:
+                summary.write(body)
+        if token and args.pr and (not args.head_repo or args.head_repo == args.repo):
+            existing = _find_comment(args.repo, args.pr, token)
+            if existing is not None:
+                _request_json(
+                    "PATCH",
+                    f"{_api_base()}/repos/{args.repo}/issues/comments/{existing}",
+                    token,
+                    {"body": body},
+                )
+        return 0
 
     jobs: list[dict[str, Any]] = []
     logs: dict[str, str] = {}

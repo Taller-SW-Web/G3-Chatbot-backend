@@ -316,15 +316,16 @@ def build_scope(
         repo_root=repo_root,
     )
     is_pull_request = event == "pull_request"
-    force_expensive = not is_pull_request or forced_by_label
+    force_expensive = not is_pull_request or forced_by_label or full_scope
 
     run_validate = mode in {"code", "deps", "ci"}
     run_unit = mode in {"code", "deps", "ci"}
     run_integration = run_unit and bool(shards)
-    run_docker = mode in {"code", "deps", "infra"} or has_docker
+    run_docker = full_scope or mode in {"code", "deps", "infra"} or has_docker
     run_security = (
         mode == "deps"
         or forced_by_label
+        or full_scope
         or event in {"schedule", "workflow_dispatch"}
     )
     run_dast = force_expensive and mode in {"code", "deps", "ci"}
@@ -385,22 +386,16 @@ def main(argv: list[str] | None = None) -> int:
 
     labels = [label for label in args.labels.split(",") if label]
     event = args.event
-    full = args.full or event in {"schedule", "workflow_dispatch"}
-
-    if full:
-        changed: list[str] = []
-    else:
-        resolved_base = _resolve_base(args.base, args.before, args.repo_root)
-        if resolved_base is None:
-            full = True
-            changed = []
-        else:
-            try:
-                changed = _diff_files(resolved_base, args.repo_root)
-            except RuntimeError as error:
-                print(f"::warning::scope fallback to full: {error}", file=sys.stderr)
-                full = True
-                changed = []
+    # Team decision: full pipeline on every run. The diff is still computed
+    # for reporting and sonar_sources_changed.
+    full = True
+    changed: list[str] = []
+    resolved_base = _resolve_base(args.base, args.before, args.repo_root)
+    if resolved_base is not None:
+        try:
+            changed = _diff_files(resolved_base, args.repo_root)
+        except RuntimeError as error:
+            print(f"::warning::scope diff unavailable: {error}", file=sys.stderr)
 
     scope = build_scope(
         changed,

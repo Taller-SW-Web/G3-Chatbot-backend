@@ -83,6 +83,19 @@ def test_ci_full_label_forces_everything_even_on_docs() -> None:
     assert scope["run_security"] is True
     assert scope["run_dast"] is True
     assert scope["run_gateway"] is True
+    assert scope["run_docker"] is True
+
+
+def test_full_scope_runs_docker_even_on_ci_only_changes() -> None:
+    scope = build_scope(
+        ["scripts/ci/scope.py"],
+        graph=GRAPH,
+        event="pull_request",
+        labels=[],
+        full=True,
+    )
+    assert scope["mode"] == "ci"
+    assert scope["run_docker"] is True
 
 
 def test_shared_code_forces_full_scope() -> None:

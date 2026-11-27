@@ -91,7 +91,7 @@ openapi-spec-validator docs/openapi.json
 python scripts/ci/scope.py --base origin/development --event pull_request --json
 ```
 
-Un PR de solo documentación no corre tests, Docker ni Sonar. La etiqueta `ci:full` fuerza el alcance completo, los jobs caros y la auditoría; añadirla relanza el workflow. Detalle y comandos de integración en [docs/ci-pipeline.md](https://github.com/Taller-SW-Web/G3-Chatbot-specs/blob/development/docs/ci-pipeline.md).
+El CI corre **full** en cada PR y push: un PR de documentación también ejecuta tests, Docker, Sonar, DAST y gateway. Ya no hace falta añadir `ci:full`; la etiqueta se conserva por compatibilidad. Detalle y comandos de integración en [docs/ci-pipeline.md](https://github.com/Taller-SW-Web/G3-Chatbot-specs/blob/development/docs/ci-pipeline.md).
 
 > **Windows:** `test_consumer_entrypoint.py::test_sigterm_stops_the_consumer_and_returns_cleanly` falla por `asyncio.add_signal_handler`, que no existe en Windows. Usa WSL o deselecciónalo; el CI corre en Ubuntu.
 

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 
-from scripts.ci.notify_failure import MARKER, build_markdown, truncate_log
+from scripts.ci.notify_failure import (
+    MARKER,
+    build_markdown,
+    success_markdown,
+    truncate_log,
+)
 
 
 def test_build_markdown_lists_failed_jobs_and_logs() -> None:
@@ -30,6 +35,16 @@ def test_build_markdown_lists_failed_jobs_and_logs() -> None:
     assert "ruff error" in body
     assert "pytest failure" in body
     assert "sonar" not in body
+
+
+def test_success_markdown_is_idempotent_evidence() -> None:
+    body = success_markdown(
+        run_url="https://github.com/Taller-SW-Web/G3-Chatbot-backend/actions/runs/1",
+        reason="full run",
+    )
+    assert body.startswith(MARKER)
+    assert "CI recuperado" in body
+    assert "actions/runs/1" in body
 
 
 def test_truncate_log_strips_ansi_and_backticks() -> None:
