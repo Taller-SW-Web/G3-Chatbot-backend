@@ -11,7 +11,7 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from src.modules.mod_catalog.application.discovery import DiscoveryMixin
+from src.modules.mod_catalog.application.discovery import DiscoveryMixin, block
 from src.modules.mod_catalog.application.partial import CommercialRows, PartialRows
 from src.modules.mod_catalog.application.product_lookup import (
     MEMORY_CAROUSEL_KEY,
@@ -21,7 +21,7 @@ from src.modules.mod_catalog.application.product_lookup import (
 )
 from src.modules.mod_catalog.application.tools import SearchArguments
 from src.modules.mod_catalog.domain.offer_policy import price_projection
-from src.modules.mod_catalog.domain.product_normalizer import ProductNormalizer
+from src.modules.mod_catalog.domain.product_normalizer import MAX_CHIPS, ProductNormalizer
 from src.modules.mod_catalog.domain.product_ordering import sort_summaries
 from src.modules.mod_catalog.domain.product_projection import normalize_detail, sellable_skus
 from src.modules.mod_catalog.domain.similar_products import SimilarProducts
@@ -146,7 +146,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
             return {
                 "code": "OK",
                 "texto": self._clarifying_question(filters),
-                "bloques": [],
+                "bloques": self._clarifying_blocks(filters, categories, brands),
             }
         partial = False
         if discover_offers:
@@ -764,18 +764,55 @@ class ManageCatalogUseCase(DiscoveryMixin):
     def _clarifying_question(filters) -> str:
         if filters.unresolved_category and filters.unresolved_brand:
             return (
-                f"No ubico la categoría {filters.unresolved_category} ni la marca "
-                f"{filters.unresolved_brand}. ¿Buscas zapatillas, polos o mochilas?"
+                f"No ubico la categoría {filters.unresolved_category} y no "
+                f"trabajamos la marca {filters.unresolved_brand}. "
+                "Elige una opción disponible."
             )
         if filters.unresolved_category:
             return (
                 f"No ubico la categoría {filters.unresolved_category}. "
-                "¿Buscas zapatillas, polos o mochilas?"
+                "¿Buscas alguna de estas?"
             )
         return (
-            f"No ubico la marca {filters.unresolved_brand}. "
-            "¿De qué marca lo buscas: Nike, Adidas o Andes?"
+            f"No trabajamos la marca {filters.unresolved_brand}. "
+            "¿Buscas alguna de estas marcas?"
         )
+
+    @classmethod
+    def _clarifying_blocks(cls, filters, categories, brands) -> list[dict]:
+        """Chips with up to `MAX_CHIPS` real categories/brands from the catalog."""
+        actions: list[dict] = []
+        if filters.unresolved_category:
+            actions.extend(cls._option_actions(
+                categories, "categoria", "BUSCAR_POR_CATEGORIA"
+            ))
+        if filters.unresolved_brand:
+            actions.extend(cls._option_actions(
+                brands, "marca", "BUSCAR_PRODUCTOS"
+            ))
+        unique: list[dict] = []
+        seen: set[str] = set()
+        for action in actions:
+            key = action["etiqueta"].casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(action)
+            if len(unique) == MAX_CHIPS:
+                break
+        return [block("ACCIONES_RAPIDAS", {"acciones": unique})] if unique else []
+
+    @staticmethod
+    def _option_actions(options, field, action_id) -> list[dict]:
+        names: list[str] = []
+        for option in options:
+            name = option.get("name")
+            if isinstance(name, str) and name.strip() and name.strip() not in names:
+                names.append(name.strip())
+        return [
+            {"id": action_id, "etiqueta": name, "payload": {field: name}}
+            for name in names
+        ]
 
     @staticmethod
     def map_module_error(exc: Exception, *, inactive: bool = False) -> CatalogError:
