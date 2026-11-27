@@ -68,7 +68,7 @@ python scripts/check_modules.py
 python scripts/export_openapi.py --check
 ```
 
-El job `validate` agrupa `ruff`, `mypy`, fronteras y OpenAPI; `pytest` vive en `unit-tests`. El CI calcula el alcance por módulo: un PR de solo documentación no corre tests, Docker ni Sonar; la etiqueta `ci:full` fuerza todo (incluidos DAST, gateway y auditoría) y relanza el workflow. En Windows, `test_consumer_entrypoint.py::test_sigterm_stops_the_consumer_and_returns_cleanly` falla por `asyncio.add_signal_handler` (no existe en Windows): usa WSL o deselecciónalo. Detalle en `docs/flujo-de-trabajo.md` §4.
+El job `validate` agrupa `ruff`, `mypy`, fronteras y OpenAPI; `pytest` vive en `unit-tests`. El CI corre **full** en cada PR/push: un PR de documentación también ejecuta tests, Docker, Sonar, DAST y gateway; `ci:full` se conserva por compatibilidad y ya no es necesario. En Windows, `test_consumer_entrypoint.py::test_sigterm_stops_the_consumer_and_returns_cleanly` falla por `asyncio.add_signal_handler` (no existe en Windows): usa WSL o deselecciónalo. Detalle en `docs/flujo-de-trabajo.md` §4.
 
 Además:
 
