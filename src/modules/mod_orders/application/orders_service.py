@@ -15,6 +15,7 @@ from src.modules.mod_orders.domain.cancellation import (
     cancellation_message,
     cancellation_reason,
     refund_message,
+    safe_reason,
 )
 from src.modules.mod_orders.domain.status_mapper import map_order_status_label
 from src.shared.application.ports.order_repository_port import SalesOrderPort
@@ -94,12 +95,19 @@ class OrdersService:
             moneda = raw.get("moneda", payment.get("moneda", "PEN"))
             history = _order_history(raw)
             reason = cancellation_reason(history)
+            # `historialEstados` is replaced by the sanitized `historial` below (no raw G5 text).
+            public_raw = {k: v for k, v in raw.items() if k != "historialEstados"}
             detail = {
-                **_with_status_label({**raw, "total": total, "moneda": moneda}),
+                **_with_status_label({**public_raw, "total": total, "moneda": moneda}),
                 "motivoAnulacion": reason if str(raw.get("estado") or "").upper() == "ANULADO" else None,
                 "reembolso": refund_message(str(raw.get("estado") or ""), reason, payment, history),
                 "historial": [
-                    {**_with_status_label(m, key="etiqueta"), "completado": m.get("completado", True)}
+                    {
+                        **_with_status_label(m, key="etiqueta"),
+                        # Never pass G5 free text through: only published reason codes.
+                        "motivo": safe_reason(m.get("motivo")),
+                        "completado": m.get("completado", True),
+                    }
                     for m in history
                 ],
             }

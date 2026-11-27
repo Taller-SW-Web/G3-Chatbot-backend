@@ -183,6 +183,20 @@ async def test_stock_cancelled_order_detail_explains_reason_and_refund():
 
 
 @pytest.mark.asyncio
+async def test_unpaid_stock_cancelled_order_states_the_reason_without_a_refund():
+    sales = FakeSalesPort()
+    order_id = await _order(sales)
+    sales.cancel_for_stock(order_id, paid=False)
+
+    result = await _handler(sales)(OrderQueryArguments(pedidoId=order_id), _context())
+
+    assert result.data["texto"] == f"Tu pedido {order_id} fue anulado por falta de stock."
+    pedido = result.data["bloques"][0]["datos"]["pedido"]
+    assert pedido["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
+    assert "reembolso" not in pedido
+
+
+@pytest.mark.asyncio
 async def test_cancelled_unpaid_order_states_no_refund():
     sales = FakeSalesPort()
     order_id = await _order(sales)

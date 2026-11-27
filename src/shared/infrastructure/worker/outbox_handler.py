@@ -1,8 +1,9 @@
 """Per-type dispatch of an outbox task, shared by the direct worker and the consumer (ADR-0030).
 
 `OutboxProcessor` (direct mode) and the RabbitMQ consumer run the very same effects:
-- NOTIFY_SALES_PAYMENT: call Ventas and follow its `nuevoEstado`: PAGADO -> PAID_NOTIFIED plus
-  the confirmation e-mail; ANULADO (late payment) -> CANCELLED, no e-mail.
+- NOTIFY_SALES_PAYMENT: call Ventas and follow its `nuevoEstado`: only PAGADO -> PAID_NOTIFIED plus
+  the confirmation e-mail; ANULADO (late payment) -> CANCELLED, no e-mail; a missing or unknown
+  value keeps PAYMENT_PENDING_NOTIFICATION, logs an error and sends no e-mail.
 - REQUEST_CANCELLATION: call Ventas, then update `order_ref`; a 409 PEDIDO_NO_ANULABLE is a
   success when Ventas reports the order as ANULADO.
 - SEND_EMAIL: order confirmation through the notification service.
@@ -127,13 +128,16 @@ class OutboxTaskHandler:
             return
 
         if new_state != SALES_PAID:
-            # `nuevoEstado` is optional in the contract. A 200 means Ventas applied an approved
-            # payment, so the previous behavior (paid) is kept, but it is worth a warning.
-            logger.warning(
-                "Ventas answered the payment without a PAGADO/ANULADO state: order_id=%s "
-                "correlation_id=%s nuevoEstado=%r; treating the order as paid",
+            # `nuevoEstado` is optional in the contract. Only an explicit PAGADO confirms the order
+            # to the customer. Ventas already accepted the payment idempotently, so retrying would
+            # not change the answer: the local status stays PAYMENT_PENDING_NOTIFICATION, the
+            # anomaly is logged for follow-up and the task completes.
+            logger.error(
+                "Ventas answered the payment without a PAGADO/ANULADO state; the order is not "
+                "confirmed: order_id=%s correlation_id=%s nuevoEstado=%r",
                 order_id, correlation_id, new_state,
             )
+            return
         await self.order_ref_repo.actualizar_estado(order_id, PAID_NOTIFIED)
         await self._enqueue_confirmation(order_id)
 

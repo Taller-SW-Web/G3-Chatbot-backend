@@ -246,16 +246,23 @@ async def test_a_late_payment_on_a_cancelled_order_cancels_locally_without_a_con
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("result", [{}, {"nuevoEstado": "MARCIANO"}, None])
-async def test_a_payment_answer_without_a_known_state_keeps_the_old_paid_behaviour_with_a_warning(result, caplog):
+@pytest.mark.parametrize("relayed", [False, True])
+@pytest.mark.parametrize("result", [{}, {"nuevoEstado": "MARCIANO"}, {"nuevoEstado": None}, None])
+async def test_a_payment_answer_without_a_known_state_is_not_confirmed_and_logs_an_error(result, relayed, caplog):
     service = _confirmation_service()
-    handler, _, order_ref, sales = _handler(notification_service=service)
+    handler, outbox, order_ref, sales = _handler(notification_service=service)
     sales.notify_payment.return_value = result
-    with caplog.at_level("WARNING"):
-        await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", PAYMENT, relayed=True)
-    order_ref.actualizar_estado.assert_awaited_once_with("PED-1", "PAID_NOTIFIED")
-    service.enqueue_confirmation.assert_awaited_once_with("PED-1")
-    assert "without a PAGADO/ANULADO state" in caplog.text
+    with caplog.at_level("ERROR"):
+        await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", PAYMENT, relayed=relayed)
+    # The local status stays PAYMENT_PENDING_NOTIFICATION: no transition, no e-mail, no retry.
+    order_ref.actualizar_estado.assert_not_awaited()
+    service.enqueue_confirmation.assert_not_awaited()
+    assert outbox.marcar_procesado.await_count == (0 if relayed else 1)
+    record = next(r for r in caplog.records if "without a PAGADO/ANULADO state" in r.getMessage())
+    assert record.levelname == "ERROR"
+    text = record.getMessage()
+    assert "order_id=PED-1" in text and "correlation_id=c-1" in text
+    assert f"nuevoEstado={(result or {}).get('nuevoEstado')!r}" in text
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 """Checkout and payment endpoints (SPEC-14, contratos-integracion.md §2.5)."""
 import inspect
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
@@ -41,10 +41,34 @@ class ProcessPaymentRequest(BaseModel):
     cvv: str
 
 
+PaymentInProgress = Literal["PAGO_EN_PROCESO"]
+
+
+class ProcessPaymentResponse(BaseModel):
+    """`POST /checkout/{id}/pago` 200 body. `estado` is `PAGO_EN_PROCESO` for an approved payment
+    (the order is confirmed later by the outbox, never here); `nuevoEstado`, `motivo`,
+    `reembolso` and `correoEnmascarado` stay null on this endpoint."""
+
+    id: str
+    checkoutId: str
+    orderId: str | None = None
+    resultado: str
+    marca: str | None = None
+    ultimos4: str | None = None
+    monto: float
+    idTransaccion: str | None = None
+    estado: PaymentInProgress | None = None
+    nuevoEstado: str | None = None
+    motivo: str | None = None
+    reembolso: str | None = None
+    correoEnmascarado: str | None = None
+    mensaje: str | None = None
+
+
 _RESULT_LABELS = {"APPROVED": "APROBADO", "REJECTED": "RECHAZADO", "ERROR": "ERROR"}
 
 # Approved payments are not confirmed to the customer until Ventas answers (outbox).
-_PAYMENT_IN_PROGRESS = "PAGO_EN_PROCESO"
+_PAYMENT_IN_PROGRESS: PaymentInProgress = "PAGO_EN_PROCESO"
 _PAYMENT_IN_PROGRESS_MESSAGE = "Pago recibido. Estamos confirmando tu pedido y te avisaremos por correo."
 
 
@@ -183,7 +207,7 @@ def create_checkout_router(
         except CheckoutError as exc:
             raise _translate_error(exc) from exc
 
-    @router.post("/checkout/{checkout_id}/pago")
+    @router.post("/checkout/{checkout_id}/pago", response_model=ProcessPaymentResponse)
     async def process_payment(
         checkout_id: UUID,
         payload: ProcessPaymentRequest,

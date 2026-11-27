@@ -134,11 +134,8 @@ def _detail_block(detail: dict[str, Any], seguimiento: dict[str, Any] | None = N
 def _detail_text(detail: dict[str, Any]) -> str:
     summary = _summary(detail)
     if summary["estado"] == "ANULADO":
-        reason, refund = detail.get("motivoAnulacion"), detail.get("reembolso")
-        if reason or refund:
-            return cancellation_message(reason, refund, summary["pedidoId"])
-        return (f"Tu pedido {summary['pedidoId']} fue anulado. "
-                "Si corresponde un reembolso, se procesará al medio de pago original.")
+        return cancellation_message(
+            detail.get("motivoAnulacion"), detail.get("reembolso"), summary["pedidoId"])
     if summary["estado"] == "ENTREGADO":
         return f"Tu pedido {summary['pedidoId']} ya fue entregado. ¿Todo bien con tu compra?"
     return (f"Tu pedido {summary['pedidoId']} está en estado: "

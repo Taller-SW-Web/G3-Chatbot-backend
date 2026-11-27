@@ -1,6 +1,7 @@
 """Unit tests for checkout HTTP router (SPEC-14, contratos-integracion §2.5)."""
 import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -290,6 +291,7 @@ async def test_process_payment_approved_200(test_app, mock_service, customer_id)
         transaction_id="SIM-12345",
     )
     mock_service.process_payment.return_value = attempt
+    mock_service.orders.obtener_por_checkout_id.return_value = SimpleNamespace(order_id="PED-1")
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_app), base_url="http://test") as client:
         res = await client.post(
@@ -308,6 +310,7 @@ async def test_process_payment_approved_200(test_app, mock_service, customer_id)
         assert data["marca"] == "VISA"
         assert data["ultimos4"] == "1111"
         assert data["idTransaccion"] == "SIM-12345"
+        assert data["orderId"] == "PED-1"
         # Not confirmed until Ventas answers: same fields as the CONFIRMACION_PEDIDO block.
         assert data["estado"] == "PAGO_EN_PROCESO"
         assert data["nuevoEstado"] is None
@@ -375,6 +378,7 @@ async def test_process_payment_response_derives_resultado_from_attempt(test_app,
         id=uuid.uuid4(), checkout_id=chk_id, idempotency_key="k", result="REJECTED",
         brand="VISA", last4="1111", amount=10.0,
     )
+    mock_service.orders.obtener_por_checkout_id.return_value = None
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_app), base_url="http://test") as client:
         res = await client.post(
             f"/api/v1/checkout/{chk_id}/pago",

@@ -241,21 +241,32 @@ def test_detail_of_an_order_that_is_not_cancelled_has_no_reason_or_refund():
 
 
 def test_detail_refund_applies_when_the_payment_was_confirmed_or_the_order_was_paid():
-    confirmed = _detail(CancelledSales(reason="CLIENTE_DESISTE"))
-    paid_before = _detail(CancelledSales(reason="CLIENTE_DESISTE", payment_status="PENDIENTE", paid_in_history=True))
+    confirmed = _detail(CancelledSales(reason="SOLICITUD_CLIENTE"))
+    paid_before = _detail(CancelledSales(reason="SOLICITUD_CLIENTE", payment_status="PENDIENTE", paid_in_history=True))
 
-    assert confirmed["motivoAnulacion"] == "CLIENTE_DESISTE"
+    assert confirmed["motivoAnulacion"] == "SOLICITUD_CLIENTE"
     assert confirmed["reembolso"] == REFUND
     assert paid_before["reembolso"] == REFUND
 
 
-def test_detail_without_a_payment_has_no_refund_unless_stock_cancelled():
+def test_detail_without_payment_evidence_has_no_refund_even_when_stock_cancelled():
     unpaid = _detail(CancelledSales(reason="PAGO_NO_COMPLETADO", payment_status="PENDIENTE"))
     stock = _detail(CancelledSales(payment_status="PENDIENTE"))
 
     assert unpaid["motivoAnulacion"] == "PAGO_NO_COMPLETADO"
     assert unpaid["reembolso"] is None
-    assert stock["reembolso"] == REFUND
+    assert stock["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
+    assert stock["reembolso"] is None
+
+
+def test_detail_hides_a_free_text_reason_from_the_reason_field_and_the_history():
+    result = _detail(CancelledSales(reason="Error interno: fallo en bodega 7"))
+
+    assert result["estado"] == "ANULADO"
+    assert result["motivoAnulacion"] is None
+    assert result["historial"][-1]["motivo"] is None
+    assert result["reembolso"] == REFUND
+    assert "Error interno" not in str(result)
 
 
 def test_tracking_of_a_stock_cancelled_order_explains_reason_and_refund():
@@ -266,6 +277,22 @@ def test_tracking_of_a_stock_cancelled_order_explains_reason_and_refund():
     assert result["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
     assert result["reembolso"] == REFUND
     assert result["mensaje"] == f"Tu pedido fue anulado por falta de stock. {REFUND}"
+
+
+def test_tracking_of_an_unpaid_stock_cancelled_order_has_no_refund_sentence():
+    result = _tracking(CancelledSales(payment_status="PENDIENTE"))
+
+    assert result["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
+    assert result["reembolso"] is None
+    assert result["mensaje"] == "Tu pedido fue anulado por falta de stock."
+
+
+def test_tracking_hides_a_free_text_reason_and_uses_the_generic_message():
+    result = _tracking(CancelledSales(reason="Error interno: fallo en bodega 7"))
+
+    assert result["motivoAnulacion"] is None
+    assert result["mensaje"] == f"Tu pedido fue anulado. {REFUND}"
+    assert "Error interno" not in str(result)
 
 
 def test_tracking_of_a_cancelled_order_with_unknown_reason_uses_the_generic_message():

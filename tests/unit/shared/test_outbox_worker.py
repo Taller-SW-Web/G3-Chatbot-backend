@@ -20,6 +20,7 @@ def mock_repos():
 @pytest.mark.asyncio
 async def test_notify_sales_payment_success(mock_repos):
     outbox_repo, order_ref_repo, sales_client = mock_repos
+    sales_client.notify_payment.return_value = {"pedidoId": "PED-1", "nuevoEstado": "PAGADO"}
     processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client)
 
     job = Outbox(
