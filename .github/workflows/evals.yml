@@ -3,8 +3,9 @@ name: Evals (LLM real)
 # H5-E1: conversaciones de referencia contra el LLM real con todos los módulos
 # en fake. Se ejecuta a mano o de noche; nunca en PRs ni contra producción.
 # El reporte `evals-report.json` se publica como artefacto y en el resumen del job.
-# Requiere el secreto LLM_API_KEY en el environment `evals`: sin él, el job falla
-# a propósito en vez de pasar con todos los casos omitidos.
+# Requiere el secreto LLM_API_KEY en el environment `evals`. Una corrida manual
+# sin el secreto falla a propósito; la corrida programada se omite con un aviso
+# explícito en el resumen para no dejar el workflow en rojo todas las noches.
 on:
   workflow_dispatch:
     inputs:
@@ -48,13 +49,22 @@ jobs:
           python-version: '3.12'
           cache: pip
       - name: Require LLM_API_KEY
-        if: ${{ env.LLM_API_KEY == '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && env.LLM_API_KEY == '' }}
         run: |
           echo "::error::Falta LLM_API_KEY en el environment evals; las evals no pueden correr."
           exit 1
+      - name: Announce skipped scheduled evals
+        if: ${{ github.event_name != 'workflow_dispatch' && env.LLM_API_KEY == '' }}
+        run: |
+          echo "::warning::LLM_API_KEY no configurada en el environment evals; se omite la corrida programada."
+          {
+            echo "## Evals H5-E1 omitidas"
+            echo "Falta \`LLM_API_KEY\` en el environment \`evals\`. La corrida programada no ejecutó casos reales."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run evals
+        if: ${{ env.LLM_API_KEY != '' }}
         run: python -m pytest tests/evals -m evals -q
       - name: Summarize report
         if: always()
