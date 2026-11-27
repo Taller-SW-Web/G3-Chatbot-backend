@@ -60,6 +60,22 @@ def test_fully_configured_production_boots(env):
     assert get_settings().unsafe_defaults() == []
 
 
+def test_consumer_role_does_not_require_attachment_settings(env):
+    env(
+        ATTACHMENT_STORAGE="local",
+        ATTACHMENT_SIGNING_SECRET="",
+        ATTACHMENT_PUBLIC_BASE_URL="http://localhost:8000/api/v1",
+    )
+    get_settings.cache_clear()
+    settings = get_settings("consumer")
+    assert settings.app_role == "consumer"
+    assert settings.attachment_storage == "local"
+
+    get_settings.cache_clear()
+    with pytest.raises(ValueError, match="ALLOW_LOCAL_ATTACHMENTS"):
+        get_settings()
+
+
 @pytest.mark.parametrize(
     "overrides,fragment",
     [

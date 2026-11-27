@@ -118,6 +118,9 @@ class Settings:
     # Deployment indicator (`APP_ENV`). In production the fake Seguridad is
     # refused unless `ALLOW_FAKE_SECURITY=true` opts in (e.g. a demo deploy).
     app_env: str = "development"
+    # `api` validates every production guard; `consumer` only needs the outbox/broker
+    # configuration and must not depend on attachment storage (backend #222).
+    app_role: str = "api"
     allow_fake_security: bool = False
     allow_public_products: bool = False
     # Per-module timeouts in seconds (DoD: exact timeouts per integration).
@@ -203,10 +206,11 @@ class Settings:
                 raise ValueError("RABBITMQ_URL must use the amqp:// or amqps:// scheme")
         if self.rabbitmq_prefetch < 1:
             raise ValueError("RABBITMQ_PREFETCH must be >= 1")
-        if self.attachment_storage not in ("local", "supabase"):
-            raise ValueError("ATTACHMENT_STORAGE must be one of local, supabase")
-        if self.attachment_storage == "supabase" and not (self.supabase_url and self.supabase_service_key):
-            raise ValueError("ATTACHMENT_STORAGE=supabase requires SUPABASE_URL and SUPABASE_SERVICE_KEY")
+        if self.app_role != "consumer":
+            if self.attachment_storage not in ("local", "supabase"):
+                raise ValueError("ATTACHMENT_STORAGE must be one of local, supabase")
+            if self.attachment_storage == "supabase" and not (self.supabase_url and self.supabase_service_key):
+                raise ValueError("ATTACHMENT_STORAGE=supabase requires SUPABASE_URL and SUPABASE_SERVICE_KEY")
         if self.products_auth_mode not in ("service", "public"):
             raise ValueError("PRODUCTS_AUTH_MODE must be one of service, public")
         if (
@@ -229,7 +233,8 @@ class Settings:
                 "to run a demo on purpose."
             )
         if (
-            self.app_env in PRODUCTION_ENVIRONMENTS
+            self.app_role != "consumer"
+            and self.app_env in PRODUCTION_ENVIRONMENTS
             and self.attachment_storage == "local"
             and not self.allow_local_attachments
         ):
@@ -260,7 +265,7 @@ class Settings:
             problems.append("MODO_QA=true returns the OTP in the HTTP response")
         if self.phone_otp_secret in ("", DEV_PHONE_OTP_SECRET):
             problems.append("PHONE_OTP_SECRET is unset (public dev constant in use)")
-        if self.attachment_signing_secret in ("", DEV_ATTACHMENT_SECRET):
+        if self.app_role != "consumer" and self.attachment_signing_secret in ("", DEV_ATTACHMENT_SECRET):
             problems.append("ATTACHMENT_SIGNING_SECRET is unset (public dev constant in use)")
         if not self.cookie_secure:
             problems.append("COOKIE_SECURE=false")
@@ -271,9 +276,10 @@ class Settings:
             problems.append("SECURITY_EXPECTED_ISSUER is missing (default placeholder in use)")
         urls = {
             "FRONTEND_BASE_URL": self.frontend_base_url,
-            "ATTACHMENT_PUBLIC_BASE_URL": self.attachment_public_base_url,
             **{f"ALLOWED_ORIGINS[{o}]": o for o in self.allowed_origins},
         }
+        if self.app_role != "consumer":
+            urls["ATTACHMENT_PUBLIC_BASE_URL"] = self.attachment_public_base_url
         module_urls = {
             "security": ("SECURITY_BASE_URL", self.security_base_url),
             "products": ("PRODUCTS_BASE_URL", self.products_base_url),
@@ -348,13 +354,13 @@ def _require_production_safe(settings: Settings) -> None:
 
 
 @lru_cache
-def get_settings() -> Settings:
-    settings = _build_settings()
+def get_settings(app_role: str = "api") -> Settings:
+    settings = _build_settings(app_role)
     _require_production_safe(settings)
     return settings
 
 
-def _build_settings() -> Settings:
+def _build_settings(app_role: str = "api") -> Settings:
     app_env = _app_env()
     production = app_env in PRODUCTION_ENVIRONMENTS
     require_phone_verification = _optional_flag("REQUIRE_PHONE_VERIFICATION")
@@ -374,6 +380,7 @@ def _build_settings() -> Settings:
         assistant_name=os.getenv("ASSISTANT_NAME", "Botleta").strip() or "Botleta",
         modules_mode=_modules_mode(),
         app_env=app_env,
+        app_role=app_role,
         allow_fake_security=_flag("ALLOW_FAKE_SECURITY"),
         allow_public_products=_flag("ALLOW_PUBLIC_PRODUCTS"),
         security_mode=_module_mode_override("security"),
