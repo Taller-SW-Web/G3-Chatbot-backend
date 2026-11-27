@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "promotion_id": "PROMO-2026-11",
+      "name": "Cyber Week audio",
+      "status": "ACTIVA",
+      "valid_from": "2026-11-20T00:00:00Z",
+      "valid_until": "2026-11-30T23:59:59Z",
+      "channels": [
+        "CHATBOT",
+        "MARKETPLACE"
+      ]
+    }
+  ]
+}

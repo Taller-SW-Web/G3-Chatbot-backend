@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "sku": "SKU-AUR-01",
+      "status": "DISPONIBLE"
+    },
+    {
+      "sku": "SKU-RUN-42",
+      "status": "STOCK_BAJO"
+    }
+  ]
+}

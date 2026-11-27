@@ -1,0 +1,12 @@
+{
+  "sku": "SKU-AUR-01",
+  "precio_regular": 129.9,
+  "precio_oferta": 109.9,
+  "currency": "PEN",
+  "channel_id": "CHATBOT",
+  "valid_from": "2026-11-01T00:00:00Z",
+  "valid_until": null,
+  "price_version": 3,
+  "vigencia_id": "VIG-2026-1101-AUR",
+  "origen": "SKU_OVERRIDE"
+}

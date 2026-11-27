@@ -1,0 +1,8 @@
+{
+  "type": "https://g6.example.com/errores/producto-no-encontrado",
+  "title": "Producto no encontrado",
+  "status": 404,
+  "code": "PRODUCTO_NO_ENCONTRADO",
+  "detail": "No existe un producto comercial con ese identificador.",
+  "correlationId": "00000000-0000-0000-0000-000000000001"
+}
