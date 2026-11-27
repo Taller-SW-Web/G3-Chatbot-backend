@@ -567,6 +567,22 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
+      - name: Enforce zero new issues (MINOR+)
+        if: steps.token.outputs.available == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        run: |
+          args=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            args+=(--pull-request "${{ github.event.pull_request.number }}")
+          else
+            args+=(--branch "${{ github.ref_name }}")
+          fi
+          python scripts/ci/sonar_gate_report.py \
+            --project-key g3-chatbot-backend "${args[@]}" \
+            --fail-on-severity MINOR \
+            --output sonar-strict-gate.md
       - name: Explain quality gate failure
         if: failure() && steps.token.outputs.available == 'true'
         env:
@@ -582,12 +598,12 @@ jobs:
           python scripts/ci/sonar_gate_report.py \
             --project-key g3-chatbot-backend "${args[@]}" \
             --output sonar-gate-report.md
-      - name: Upload Sonar gate report
+      - name: Upload Sonar gate reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: sonar-gate-report
-          path: sonar-gate-report.md
+          name: sonar-gate-reports
+          path: sonar-*.md
           if-no-files-found: ignore
           retention-days: 30
 

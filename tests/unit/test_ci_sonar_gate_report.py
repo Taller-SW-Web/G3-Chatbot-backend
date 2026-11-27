@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from scripts.ci.sonar_gate_report import format_report
+from scripts.ci.sonar_gate_report import blocking_issues, format_report
 
 GATE = {
     "status": "ERROR",
@@ -57,3 +57,23 @@ def test_format_report_without_issues() -> None:
     )
     assert "rama `development`" in report
     assert "Sin issues abiertos" in report
+
+
+def test_blocking_issues_respects_the_severity_threshold() -> None:
+    issues = [
+        {"severity": "INFO", "rule": "python:S1"},
+        {"severity": "MINOR", "rule": "python:S2"},
+        {"severity": "MAJOR", "rule": "python:S3"},
+        {"severity": "BLOCKER", "rule": "python:S4"},
+    ]
+    assert [issue["severity"] for issue in blocking_issues(issues, "MINOR")] == [
+        "MINOR",
+        "MAJOR",
+        "BLOCKER",
+    ]
+    assert [issue["severity"] for issue in blocking_issues(issues, "MAJOR")] == [
+        "MAJOR",
+        "BLOCKER",
+    ]
+    assert blocking_issues(issues, "BLOCKER") == [issues[3]]
+    assert blocking_issues([], "INFO") == []

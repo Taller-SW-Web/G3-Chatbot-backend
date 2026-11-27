@@ -16,6 +16,14 @@ from typing import Any, Mapping
 
 DEFAULT_HOST = "https://sonarcloud.io"
 MAX_ISSUES = 50
+MAX_PAGES = 5
+SEVERITY_ORDER = {
+    "INFO": 0,
+    "MINOR": 1,
+    "MAJOR": 2,
+    "CRITICAL": 3,
+    "BLOCKER": 4,
+}
 
 
 def _api_get(
@@ -54,20 +62,43 @@ def fetch_issues(
     pull_request: str | None = None,
     branch: str | None = None,
     limit: int = MAX_ISSUES,
+    fetch_all: bool = False,
 ) -> list[dict[str, Any]]:
-    params: dict[str, str] = {
-        "componentKeys": project_key,
-        "resolved": "false",
-        "ps": str(limit),
-        "s": "SEVERITY",
-        "asc": "false",
-    }
-    if pull_request:
-        params["pullRequest"] = pull_request
-    elif branch:
-        params["branch"] = branch
-    payload = _api_get(host, "/api/issues/search", params, token)
-    return list(payload.get("issues", []))
+    issues: list[dict[str, Any]] = []
+    for page in range(1, MAX_PAGES + 1):
+        params: dict[str, str] = {
+            "componentKeys": project_key,
+            "resolved": "false",
+            "p": str(page),
+            "ps": "100",
+            "s": "SEVERITY",
+            "asc": "false",
+        }
+        if pull_request:
+            params["pullRequest"] = pull_request
+        elif branch:
+            params["branch"] = branch
+            params["inNewCodePeriod"] = "true"
+        payload = _api_get(host, "/api/issues/search", params, token)
+        batch = list(payload.get("issues", []))
+        issues.extend(batch)
+        total = int(payload.get("total", len(issues)))
+        if not fetch_all and len(issues) >= limit:
+            break
+        if not batch or len(issues) >= total:
+            break
+    return issues if fetch_all else issues[:limit]
+
+
+def blocking_issues(
+    issues: list[Mapping[str, Any]], threshold: str
+) -> list[Mapping[str, Any]]:
+    minimum = SEVERITY_ORDER[threshold.upper()]
+    return [
+        issue
+        for issue in issues
+        if SEVERITY_ORDER.get(str(issue.get("severity", "")).upper(), -1) >= minimum
+    ]
 
 
 def _escape(value: object) -> str:
@@ -140,6 +171,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--branch")
     parser.add_argument("--output", type=Path, default=Path("sonar-gate-report.md"))
     parser.add_argument("--max-issues", type=int, default=MAX_ISSUES)
+    parser.add_argument(
+        "--fail-on-severity",
+        choices=tuple(SEVERITY_ORDER),
+        help="Fail when the PR/branch introduces an issue at or above this severity.",
+    )
     args = parser.parse_args(argv)
 
     token = os.getenv("SONAR_TOKEN")
@@ -162,15 +198,19 @@ def main(argv: list[str] | None = None) -> int:
             pull_request=args.pull_request,
             branch=args.branch,
             limit=args.max_issues,
+            fetch_all=bool(args.fail_on_severity),
         )
     except Exception as error:  # noqa: BLE001 - reporting must never mask the real failure
         print(f"::warning::Could not read the SonarCloud gate: {error}")
+        if args.fail_on_severity:
+            print("::error::No se pudo verificar el gate estricto de SonarCloud.")
+            return 1
         return 0
 
     report = format_report(
         project_key=args.project_key,
         gate=gate,
-        issues=issues,
+        issues=issues[: args.max_issues],
         pull_request=args.pull_request,
         branch=args.branch,
     )
@@ -180,6 +220,21 @@ def main(argv: list[str] | None = None) -> int:
     if summary_path:
         with Path(summary_path).open("a", encoding="utf-8") as summary:
             summary.write(report)
+
+    if args.fail_on_severity:
+        blocking = blocking_issues(issues, args.fail_on_severity)
+        if blocking:
+            print(
+                f"::error::SonarCloud reporta {len(blocking)} issue(s) nuevos "
+                f"de severidad {args.fail_on_severity} o superior."
+            )
+            for issue in blocking[:20]:
+                component = str(issue.get("component", "")).split(":", 1)[-1]
+                print(
+                    f"  {component}:{issue.get('line', '—')} "
+                    f"[{issue.get('severity')}] {issue.get('rule')} — {issue.get('message')}"
+                )
+            return 1
     return 0
 
 

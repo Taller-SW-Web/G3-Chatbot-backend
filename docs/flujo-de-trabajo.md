@@ -82,6 +82,17 @@ python scripts/check_modules.py
 python scripts/export_openapi.py --check
 ```
 
+El job `validate` del CI ejecuta esos mismos gates en un solo paso. Para reproducirlo:
+
+```bash
+python scripts/ci/run_validators.py
+python scripts/ci/scope.py --base origin/development --json
+```
+
+Un PR de solo documentación no corre tests, Docker ni Sonar; la etiqueta `ci:full` fuerza el alcance completo. Detalle y comandos de integración en [docs/ci-pipeline.md](https://github.com/Taller-SW-Web/G3-Chatbot-specs/blob/development/docs/ci-pipeline.md).
+
+> **Windows:** `test_consumer_entrypoint.py::test_sigterm_stops_the_consumer_and_returns_cleanly` falla por `asyncio.add_signal_handler`, que no existe en Windows. Usa WSL o deselecciónalo; el CI corre en Ubuntu.
+
 Si tocaste wiring/capacidades/discovery:
 
 ```bash
