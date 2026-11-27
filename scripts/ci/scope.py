@@ -57,6 +57,7 @@ DOCS_PATTERNS = (
     ".github/ISSUE_TEMPLATE/**",
     ".github/pull_request_template.md",
     ".github/CODEOWNERS",
+    ".github/dependabot.yml",
     ".gitignore",
     ".gitattributes",
     ".editorconfig",
