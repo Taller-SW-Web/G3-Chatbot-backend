@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from src.modules.mod_catalog.application.tools import OrderQueryArguments, TrackingArguments
 from src.modules.mod_chat.application.tools.order_handlers import build_order_handlers
 from src.modules.mod_orders.application.orders_service import OrdersService
+from src.modules.mod_orders.domain.tracking_mapper import sanitize_tracking_payload
 from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.module_errors import ModuleRequestError
 from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
@@ -129,7 +130,7 @@ async def test_tracking_adds_the_dispatch_timeline_next_to_the_sales_timeline():
         "recibidoPor": "Ana",
         "detalleDisponible": True,
         "mensaje": None,
-        "hitos": [{"titulo": "En camino", "fecha": "2026-11-30T16:00:00Z", "completado": True}],
+        "hitos": [{"etiqueta": "En camino", "fecha": "2026-11-30T16:00:00Z", "completado": True}],
         "lat": -12.1,
         "driver": "interno",
     })
@@ -149,6 +150,27 @@ async def test_tracking_adds_the_dispatch_timeline_next_to_the_sales_timeline():
     ]
     assert block["datos"]["hitos"][0]["titulo"] == "Pendiente de pago"
     assert "lat" not in str(block) and "driver" not in str(block)
+
+
+def test_tracking_milestones_read_the_g2_etiqueta_field():
+    """G2 publishes the milestone label as `etiqueta`; the BFF exposes `titulo`."""
+    raw = {
+        "pedidoId": "PED-2026-00001",
+        "estado": "EN_CAMINO",
+        "hitos": [
+            {
+                "estado": "EN_CAMINO",
+                "etiqueta": "En camino",
+                "fecha": "2026-11-30T16:00:00Z",
+            }
+        ],
+    }
+
+    seguimiento = sanitize_tracking_payload(raw)
+
+    assert seguimiento["hitos"] == [
+        {"titulo": "En camino", "fecha": "2026-11-30T16:00:00Z", "completado": True}
+    ]
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@
 import base64
 import json
 import uuid
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import FastAPI
@@ -40,10 +41,10 @@ def _snapshot() -> dict[str, Any]:
     }
 
 
-def _client(sales: FakeSalesPort) -> TestClient:
+def _client(sales: FakeSalesPort, order_refs: Any = None) -> TestClient:
     app = FastAPI()
     register_problem_handlers(app)
-    service = OrdersService(notifications=None, sales_client=sales)  # type: ignore[arg-type]
+    service = OrdersService(notifications=None, sales_client=sales, order_refs=order_refs)  # type: ignore[arg-type]
     app.include_router(create_orders_router(lambda: service), prefix="/api/v1")
     app.dependency_overrides[get_caller_identity] = lambda: CallerIdentity(customer_id=CUSTOMER_ID)
     return TestClient(app, raise_server_exceptions=False)
@@ -80,6 +81,25 @@ def test_order_detail_with_fake_sales_returns_labelled_history() -> None:
     body = response.json()
     assert body["estadoEtiqueta"]
     assert body["historial"][0]["etiqueta"]
+    assert body["csatEnviado"] is False
+
+
+def test_order_detail_exposes_csat_enviado_from_the_local_order_ref() -> None:
+    import asyncio
+
+    class CsatRefs:
+        async def obtener_por_order_id(self, order_id: str) -> SimpleNamespace:
+            return SimpleNamespace(csat_sent=True)
+
+    sales = FakeSalesPort()
+    order_id = asyncio.run(_create(sales))
+
+    response = _client(sales, order_refs=CsatRefs()).get(
+        f"/api/v1/pedidos/{order_id}", headers=HEADERS
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["csatEnviado"] is True
 
 
 def test_order_missing_from_restarted_fake_is_404() -> None:

@@ -96,7 +96,7 @@ def test_tracking_uses_dispatch_after_verifying_ownership():
                 "estadoEtiqueta": "En camino",
                 "hitos": [
                     {
-                        "titulo": "Recibido en centro de despacho",
+                        "etiqueta": "Recibido en centro de despacho",
                         "fecha": "2026-11-11T10:00:00-05:00",
                         "completado": True,
                     }
