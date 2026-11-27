@@ -145,7 +145,7 @@ class InterpretAndRespondUseCase:
         self._tools = tools
         self._assistant_name = assistant_name
         self._timeout = llm_timeout_seconds
-        self._sanitize = sanitize_text or (lambda text: text)
+        self._sanitize: Callable[..., str] = sanitize_text or (lambda text, **_kw: text)
         self._output_validator = output_validator or OutputValidator()
         self._degraded_mode = degraded_mode or DegradedMode()
         self._attachments = attachments
