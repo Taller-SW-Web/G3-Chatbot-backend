@@ -14,7 +14,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # 1. Buyer identity document rules (SPEC-12 Req. 1, agreement A14 with Ventas)
@@ -222,7 +222,12 @@ class SavedAddressDTO(BaseModel):
     distrito: str
     direccion: str
     referencia: str | None = None
-    predeterminada: bool = False
+    # G7 returns `esPredeterminada`; the BFF public contract keeps
+    # `predeterminada` for the frontend and tolerates the old alias.
+    predeterminada: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("predeterminada", "esPredeterminada"),
+    )
 
 
 class SavedAddressesResponse(BaseModel):
@@ -439,6 +444,7 @@ class OrderDetailResponse(BaseModel):
     envio: dict[str, Any] | None = None
     historial: list[OrderHistoryMilestoneDTO] = Field(default_factory=list)
     seguimientoDisponible: bool = False
+    csatEnviado: bool = False
 
 
 class TrackingMilestoneDTO(BaseModel):
