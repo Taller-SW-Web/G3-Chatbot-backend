@@ -511,21 +511,26 @@ jobs:
               .env.template > .env
           alembic upgrade head
       - name: Start backend
+        env:
+          GATEWAY_SHARED_SECRET: ci-gateway-secret-256
         run: |
           nohup uvicorn src.infrastructure.main:app --host 127.0.0.1 --port 8000 --env-file .env \
             > uvicorn.log 2>&1 &
           for _ in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:8000/health && exit 0
+            curl -fsS -H "X-Gateway-Secret: ${GATEWAY_SHARED_SECRET}" http://127.0.0.1:8000/health && exit 0
             sleep 2
           done
           cat uvicorn.log
           exit 1
       - name: Build and start Kong OSS gateway
+        env:
+          GATEWAY_SHARED_SECRET: ci-gateway-secret-256
         run: |
           docker build --file gateway/Dockerfile --tag g3-chatbot-gateway:ci gateway
           docker run -d --name kong-ci --network host \
             -e PORT=8080 \
             -e BACKEND_UPSTREAM_URL=http://127.0.0.1:8000 \
+            -e GATEWAY_SHARED_SECRET="${GATEWAY_SHARED_SECRET}" \
             g3-chatbot-gateway:ci
           for _ in $(seq 1 30); do
             curl -fsS http://127.0.0.1:8080/health && exit 0
@@ -537,6 +542,7 @@ jobs:
       - name: Run gateway integration tests
         env:
           GATEWAY_TEST_URL: http://127.0.0.1:8080
+          BACKEND_DIRECT_URL: http://127.0.0.1:8000
         run: python -m pytest tests/integration/test_gateway_kong.py -v
       - name: Dump logs on failure
         if: failure()

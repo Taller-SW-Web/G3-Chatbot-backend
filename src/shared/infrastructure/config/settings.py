@@ -78,6 +78,8 @@ class Settings:
     cookie_secure: bool = True
     # Exact origins allowed to call the mutating session endpoints (CSRF check, ADR-0023).
     allowed_origins: tuple[str, ...] = ("http://localhost:3000",)
+    # Shared secret injected by Kong (X-Gateway-Secret) to block direct public backend access (#256).
+    gateway_shared_secret: str = ""
     # LLM (ADR-0005). The key may be empty: the provider fails lazily, with LLMUnavailableError, when used.
     llm_provider: str = "openai"
     llm_model: str = "gpt-6-luna"
@@ -486,4 +488,5 @@ def _build_settings(app_role: str = "api") -> Settings:
         attachment_cleanup_interval_seconds=_number(
             "ATTACHMENT_CLEANUP_INTERVAL_SECONDS", "3600", float, minimum=60
         ),
+        gateway_shared_secret=os.getenv("GATEWAY_SHARED_SECRET", "").strip(),
     )
