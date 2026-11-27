@@ -63,8 +63,13 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           BEFORE_SHA: ${{ github.event.before }}
           EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF_NAME" != "development" ]; then
+            echo "::error::workflow_dispatch solo se permite en development para no ejecutar helpers con token desde una rama no revisada."
+            exit 1
+          fi
           args=(--event "$EVENT_NAME")
           if [ "$EVENT_NAME" = "pull_request" ]; then
             git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
@@ -286,6 +291,15 @@ jobs:
           format: table
       - name: Build image
         run: docker build --tag g3-chatbot-backend:ci .
+      - name: Trivy (backend image)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: g3-chatbot-backend:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          format: table
       - name: Build gateway image
         run: docker build --file gateway/Dockerfile --tag g3-chatbot-gateway:ci gateway
       - name: Trivy (gateway image)
@@ -578,7 +592,8 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          if git diff --name-only --no-renames "$BASE_SHA...HEAD" | grep -qx 'sonar-project.properties'; then
+          changed=$(git diff --name-only --no-renames "$BASE_SHA...HEAD")
+          if printf '%s\n' "$changed" | grep -qx 'sonar-project.properties'; then
             echo "::error::sonar-project.properties no puede cambiar en este PR sin la etiqueta ci:sonar-config."
             echo "::error::Un owner debe revisar el cambio y añadir la etiqueta, o moverlo a un PR separado."
             exit 1
@@ -601,7 +616,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
-      - name: "Enforce zero new issues (PR: MINOR+, main: CRITICAL+)"
+      - name: "Enforce zero new issues (PR: MINOR+, non-PR: CRITICAL+)"
         if: steps.token.outputs.available == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -609,7 +624,7 @@ jobs:
         run: |
           args=()
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # El PR bloquea todo lo nuevo relevante; main solo bloquea
+            # El PR bloquea todo lo nuevo relevante; non-PR solo bloquea
             # CRITICAL/BLOCKER para no tumbar el deploy por deuda heredada.
             args+=(--pull-request "${{ github.event.pull_request.number }}")
             threshold=MINOR

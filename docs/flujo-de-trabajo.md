@@ -86,6 +86,8 @@ El job `validate` agrupa `ruff`, `mypy`, `check_modules` y la comprobación/vali
 
 ```bash
 python scripts/ci/run_validators.py
+pip install openapi-spec-validator==0.9.0
+openapi-spec-validator docs/openapi.json
 python scripts/ci/scope.py --base origin/development --event pull_request --json
 ```
 

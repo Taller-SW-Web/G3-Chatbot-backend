@@ -38,6 +38,8 @@ FULL_SCOPE_PATTERNS = (
     "mypy.ini",
     "ruff.toml",
     "alembic.ini",
+    "pyproject.toml",
+    "sonar-project.properties",
     "src/shared/**",
     "src/infrastructure/**",
     "tests/conftest.py",
@@ -285,7 +287,7 @@ def build_scope(
         mode = "deps"
     elif has_ci:
         mode = "ci"
-    elif has_docker and not has_code:
+    elif has_docker and not has_code and not full_scope:
         mode = "infra"
     else:
         mode = "code"

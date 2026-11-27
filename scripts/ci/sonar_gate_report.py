@@ -17,7 +17,10 @@ from typing import Any, Mapping
 DEFAULT_HOST = "https://sonarcloud.io"
 MAX_ISSUES = 50
 MAX_PAGES = 5
-MEASURE_KEYS = "new_lines,new_coverage,new_duplicated_lines_density,new_violations"
+MEASURE_KEYS = (
+    "new_lines,new_lines_to_cover,new_coverage,"
+    "new_duplicated_lines_density,new_violations"
+)
 SEVERITY_ORDER = {
     "INFO": 0,
     "MINOR": 1,
@@ -110,9 +113,17 @@ def fetch_measures(
     payload = _api_get(host, "/api/measures/component", params, token)
     measures = payload.get("component", {}).get("measures", [])
     return {
-        str(measure.get("metric")): str(measure.get("value", ""))
+        str(measure.get("metric")): _measure_value(measure)
         for measure in measures
     }
+
+
+def _measure_value(measure: Mapping[str, Any]) -> str:
+    """SonarCloud returns new-code metrics under ``periods``, not ``value``."""
+    periods = measure.get("periods") or []
+    if periods:
+        return str(periods[-1].get("value", ""))
+    return str(measure.get("value", ""))
 
 
 def _as_float(value: str | None) -> float | None:
@@ -122,6 +133,40 @@ def _as_float(value: str | None) -> float | None:
         return float(value)
     except ValueError:
         return None
+
+
+def measure_failures(
+    measures: Mapping[str, str],
+    *,
+    min_new_coverage: float,
+    max_new_duplication: float,
+) -> list[str]:
+    """Return the new-code metric violations, failing closed when a measure is missing."""
+    failures: list[str] = []
+    new_lines = _as_float(measures.get("new_lines"))
+    lines_to_cover = _as_float(measures.get("new_lines_to_cover"))
+    new_coverage = _as_float(measures.get("new_coverage"))
+    new_duplication = _as_float(measures.get("new_duplicated_lines_density"))
+
+    if lines_to_cover is not None and lines_to_cover > 0:
+        if new_coverage is None:
+            failures.append(
+                "new code tiene líneas que cubrir pero Sonar no publicó new_coverage"
+            )
+        elif new_coverage < min_new_coverage:
+            failures.append(
+                f"cobertura de new code {new_coverage}% < {min_new_coverage}%"
+            )
+    if new_lines is not None and new_lines > 0:
+        if new_duplication is None:
+            failures.append(
+                "new code tiene líneas pero Sonar no publicó new_duplicated_lines_density"
+            )
+        elif new_duplication > max_new_duplication:
+            failures.append(
+                f"duplicación de new code {new_duplication}% > {max_new_duplication}%"
+            )
+    return failures
 
 
 def blocking_issues(
@@ -257,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
                 pull_request=args.pull_request,
                 branch=args.branch,
             )
-            if args.fail_on_severity
+            if args.fail_on_severity and args.pull_request
             else {}
         )
     except Exception as error:  # noqa: BLE001 - reporting must never mask the real failure
@@ -282,31 +327,26 @@ def main(argv: list[str] | None = None) -> int:
             summary.write(report)
 
     if args.fail_on_severity:
-        new_lines = _as_float(measures.get("new_lines"))
-        new_coverage = _as_float(measures.get("new_coverage"))
-        new_duplication = _as_float(measures.get("new_duplicated_lines_density"))
         print(
             "New code: "
-            f"lines={new_lines if new_lines is not None else 'n/a'}, "
-            f"coverage={new_coverage if new_coverage is not None else 'n/a'}, "
-            f"duplication={new_duplication if new_duplication is not None else 'n/a'}"
+            f"lines={measures.get('new_lines') or 'n/a'}, "
+            f"lines_to_cover={measures.get('new_lines_to_cover') or 'n/a'}, "
+            f"coverage={measures.get('new_coverage') or 'n/a'}, "
+            f"duplication={measures.get('new_duplicated_lines_density') or 'n/a'}"
         )
-        if new_lines is not None and new_lines > 0:
-            if new_coverage is not None and new_coverage < args.min_new_coverage:
-                print(
-                    f"::error::Cobertura de new code {new_coverage}% "
-                    f"< {args.min_new_coverage}%."
-                )
-                return 1
-            if (
-                new_duplication is not None
-                and new_duplication > args.max_new_duplication
-            ):
-                print(
-                    f"::error::Duplicación de new code {new_duplication}% "
-                    f"> {args.max_new_duplication}%."
-                )
-                return 1
+        metric_failures = (
+            measure_failures(
+                measures,
+                min_new_coverage=args.min_new_coverage,
+                max_new_duplication=args.max_new_duplication,
+            )
+            if args.pull_request
+            else []
+        )
+        if metric_failures:
+            for failure in metric_failures:
+                print(f"::error::{failure}.")
+            return 1
 
         blocking = blocking_issues(issues, args.fail_on_severity)
         if blocking:

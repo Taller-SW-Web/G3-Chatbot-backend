@@ -106,6 +106,41 @@ def test_shared_code_forces_full_scope() -> None:
     }
 
 
+def test_infra_only_skips_code_jobs() -> None:
+    scope = build_scope(
+        ["Dockerfile", ".dockerignore"],
+        graph=GRAPH,
+        event="pull_request",
+        labels=[],
+        full=False,
+    )
+    assert scope["mode"] == "infra"
+    assert scope["run_docker"] is True
+    assert scope["run_validate"] is False
+    assert scope["run_sonar"] is False
+
+
+def test_infra_plus_config_does_not_hide_code_gates() -> None:
+    for extra in (
+        "modules.manifest.json",
+        "docs/openapi.json",
+        "sonar-project.properties",
+        "pytest.ini",
+        "alembic.ini",
+    ):
+        scope = build_scope(
+            ["Dockerfile", extra],
+            graph=GRAPH,
+            event="pull_request",
+            labels=[],
+            full=False,
+        )
+        assert scope["mode"] == "code", extra
+        assert scope["run_validate"] is True, extra
+        assert scope["run_unit"] is True, extra
+        assert scope["run_sonar"] is True, extra
+
+
 def test_dependency_change_runs_audit_and_full_suite() -> None:
     scope = build_scope(
         ["requirements.txt"],

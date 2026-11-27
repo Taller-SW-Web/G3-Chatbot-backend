@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from scripts.ci.sonar_gate_report import blocking_issues, format_report
+from scripts.ci.sonar_gate_report import (
+    _measure_value,
+    blocking_issues,
+    format_report,
+    measure_failures,
+)
 
 GATE = {
     "status": "ERROR",
@@ -57,6 +62,40 @@ def test_format_report_without_issues() -> None:
     )
     assert "rama `development`" in report
     assert "Sin issues abiertos" in report
+
+
+def test_measure_value_reads_periods_and_falls_back_to_value() -> None:
+    assert (
+        _measure_value(
+            {"metric": "new_coverage", "periods": [{"index": 1, "value": "100.0"}]}
+        )
+        == "100.0"
+    )
+    assert _measure_value({"metric": "coverage", "value": "85.1"}) == "85.1"
+    assert _measure_value({"metric": "new_lines", "periods": []}) == ""
+
+
+def test_measure_failures_fail_closed_on_missing_new_code_measures() -> None:
+    assert measure_failures(
+        {"new_lines": "52", "new_lines_to_cover": "9", "new_coverage": "100.0", "new_duplicated_lines_density": "0.0"},
+        min_new_coverage=80,
+        max_new_duplication=3,
+    ) == []
+    assert measure_failures(
+        {"new_lines": "52", "new_lines_to_cover": "9", "new_duplicated_lines_density": "0.0"},
+        min_new_coverage=80,
+        max_new_duplication=3,
+    ) == ["new code tiene líneas que cubrir pero Sonar no publicó new_coverage"]
+    assert measure_failures(
+        {"new_lines": "52", "new_lines_to_cover": "9", "new_coverage": "75.0", "new_duplicated_lines_density": "1.0"},
+        min_new_coverage=80,
+        max_new_duplication=3,
+    ) == ["cobertura de new code 75.0% < 80%"]
+    assert measure_failures(
+        {"new_lines": "52", "new_lines_to_cover": "9", "new_coverage": "90.0", "new_duplicated_lines_density": "4.5"},
+        min_new_coverage=80,
+        max_new_duplication=3,
+    ) == ["duplicación de new code 4.5% > 3%"]
 
 
 def test_blocking_issues_respects_the_severity_threshold() -> None:
