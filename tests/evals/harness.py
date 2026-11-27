@@ -148,6 +148,7 @@ class FakeConversationContext:
 
     def __init__(self, conversations: FakeConversations) -> None:
         self._conversations = conversations
+        self.audits: list[dict[str, Any]] = []
 
     async def find_owned(self, conversation_id: uuid.UUID, caller: CallerIdentity) -> Conversation | None:
         return await self._conversations.find_owned(conversation_id, caller)
@@ -163,6 +164,9 @@ class FakeConversationContext:
 
     async def touch(self, conversation_id: uuid.UUID) -> None:
         await self._conversations.touch(conversation_id)
+
+    async def add_tool_audit(self, conversation_id: uuid.UUID, *, tool: str, code: str, text: str) -> None:
+        self.audits.append({"conversation_id": conversation_id, "tool": tool, "code": code, "text": text})
 
 
 class RecordingLLMProvider:
