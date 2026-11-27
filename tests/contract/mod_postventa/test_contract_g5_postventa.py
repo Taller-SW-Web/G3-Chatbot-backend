@@ -2,8 +2,8 @@
 
 Pinned contract: `postventa.yaml` 1.6.0 at G5-Ventas-Postventas-Backend#41516ef.
 
-CSAT only exercises the documented 201 (no body). The 403/404 cases stay out of
-scope until issue #84 is resolved; see the module README.
+CSAT covers the documented 201 (no body), 403 ACCESO_DENEGADO and
+404 PEDIDO_NO_ENCONTRADO, per the closed issue #84 decision.
 """
 import json
 
@@ -189,3 +189,33 @@ async def test_csat_201_without_body_returns_empty_dict(load_fixture):
     assert json.loads(request.content) == payload
     assert payload["puntuacion"] == 5
     assert result == {}
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_csat_403_maps_acceso_denegado(load_fixture):
+    payload = load_fixture("g5_csat_request.json")
+    respx.post(f"{BASE_URL}/api/v2/csat").mock(
+        return_value=httpx.Response(403, json={"code": "ACCESO_DENEGADO"})
+    )
+
+    with pytest.raises(ModuleRequestError) as exc:
+        await make_client().create_csat(payload, holder_token="holder-token")
+
+    assert exc.value.status == 403
+    assert exc.value.code == "ACCESO_DENEGADO"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_csat_404_maps_pedido_no_encontrado(load_fixture):
+    payload = load_fixture("g5_csat_request.json")
+    respx.post(f"{BASE_URL}/api/v2/csat").mock(
+        return_value=httpx.Response(404, json={"code": "PEDIDO_NO_ENCONTRADO"})
+    )
+
+    with pytest.raises(ModuleRequestError) as exc:
+        await make_client().create_csat(payload, holder_token="holder-token")
+
+    assert exc.value.status == 404
+    assert exc.value.code == "PEDIDO_NO_ENCONTRADO"

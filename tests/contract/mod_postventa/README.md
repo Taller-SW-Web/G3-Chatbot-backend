@@ -20,13 +20,12 @@ Cubre con `PostventaClient` + `respx`:
 `pagina=0`. Las operaciones usan el Bearer del cliente final (acuerdo
 2026-11-17), no un token de servicio.
 
-## Excepción CSAT 403/404 (issue #84)
+## CSAT 403/404 (issue #84)
 
-Solo se prueba el `201` de CSAT. Los casos `403 ACCESO_DENEGADO` y
-`404 PEDIDO_NO_ENCONTRADO` quedan fuera hasta resolver la ambigüedad de la issue
-#84 de `G3-Chatbot-specs`; fijarlos ahora obligaría a elegir una forma que el
-módulo todavía puede cambiar. El `409 CSAT_ALREADY_SUBMITTED` y el
-`422 ORDER_NOT_DELIVERED` tampoco se fijan en este PR.
+La issue #84 se cerró con la decisión `404 RECURSO_NO_ENCONTRADO`. Los tests
+cubren el `201` sin cuerpo, el `403 ACCESO_DENEGADO` y el
+`404 PEDIDO_NO_ENCONTRADO` de `POST /api/v2/csat`. El `409 CSAT_ALREADY_SUBMITTED`
+y el `422 ORDER_NOT_DELIVERED` siguen fuera de este PR.
 
 El lock de plataforma fija hash/versión; al actualizar el YAML se ejecuta
 `python scripts/check_contract_drift.py --update` desde el PR de plataforma.
