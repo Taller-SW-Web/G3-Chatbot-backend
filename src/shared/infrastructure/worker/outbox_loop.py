@@ -42,19 +42,36 @@ def describe_error(exc: BaseException) -> str:
     return " / ".join(parts)
 
 
+# Must match the default `limit` of `OutboxProcessor.process_pending_batch`: a batch that
+# comes back full means more rows are waiting, so the loop runs the next one at once.
+OUTBOX_BATCH_SIZE = 20
+# Upper bound of back-to-back batches per cycle, so a long backlog still yields to the poll.
+OUTBOX_MAX_BATCHES_PER_CYCLE = 50
+
+
 async def run_outbox_loop(
     session_factory: SessionFactory,
     processor_factory: ProcessorFactory,
     interval_seconds: float,
 ) -> None:
-    """Runs until cancelled. Never raises from a failed iteration."""
+    """Runs until cancelled. Never raises from a failed iteration.
+
+    Each cycle drains the outbox while batches come back full (bounded), then sleeps.
+    Sleeping after every batch capped the relay at 20 rows per poll interval (~4/s with
+    the 5 s default), which fell behind a burst of payments in the H5-P5 k6 run.
+    """
     while True:
         try:
-            async with session_factory() as session:
-                processor = processor_factory(session)
-                processed = await processor.process_pending_batch()
-                if processed:
-                    logger.info("Outbox worker processed %d job(s)", processed)
+            processed = 0
+            for _ in range(OUTBOX_MAX_BATCHES_PER_CYCLE):
+                async with session_factory() as session:
+                    processor = processor_factory(session)
+                    batch = await processor.process_pending_batch()
+                processed += batch
+                if batch < OUTBOX_BATCH_SIZE:
+                    break
+            if processed:
+                logger.info("Outbox worker processed %d job(s)", processed)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

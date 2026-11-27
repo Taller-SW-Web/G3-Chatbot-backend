@@ -523,7 +523,9 @@ class ManageCheckoutUseCase:
 
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(minutes=15)
-        order_id = f"PED-{now.year}-{uuid.uuid4().hex[:6].upper()}"
+        # Local fallback id (Ventas replaces it); 10 hex chars so a burst of orders cannot
+        # collide on the order_ref primary key.
+        order_id = f"PED-{now.year}-{uuid.uuid4().hex[:10].upper()}"
 
         summary = {
             "lineas": lineas,

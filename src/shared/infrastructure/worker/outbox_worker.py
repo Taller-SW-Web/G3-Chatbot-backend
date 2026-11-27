@@ -33,6 +33,7 @@ from src.shared.domain.module_errors import ModuleRequestError
 from src.shared.infrastructure.db.models.outbox import Outbox
 from src.shared.infrastructure.persistence.order_ref_postgres_adapter import OrderRefPostgresAdapter
 from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
+from src.shared.infrastructure.worker.outbox_handler import HandlerUnavailableError, OutboxTaskHandler
 
 logger = logging.getLogger(__name__)
 
@@ -77,40 +78,21 @@ class OutboxProcessor:
         # Set only in broker mode; None keeps the direct dispatch below untouched.
         self.publisher = publisher
         self._broker_unavailable = False
+        # The per-type dispatch is shared with the broker consumer (ADR-0030).
+        self.handler = OutboxTaskHandler(
+            outbox_repo, order_ref_repo, sales_client, notification_service, feedback_notifier
+        )
 
     async def process_one(self, job: Outbox) -> bool:
         """Processes a single outbox record. Returns True if processed, False if retry scheduled/failed."""
         try:
             if self.publisher is not None:
                 return await self._relay_to_broker(job, self.publisher)
-            if job.type == "NOTIFY_SALES_PAYMENT":
-                await self._process_notify_sales_payment(job.payload)
-                await self.outbox_repo.marcar_procesado(job.id)
-                return True
-            elif job.type == "REQUEST_CANCELLATION":
-                await self._process_request_cancellation(job.payload)
-                await self.outbox_repo.marcar_procesado(job.id)
-                return True
-            elif job.type == "SEND_EMAIL":
-                if self.notification_service:
-                    from src.shared.application.ports.notification_repository_port import EmailTask
-                    task = EmailTask(id=job.id, payload=job.payload)
-                    await self.notification_service.handle_send_email_task(task)
-                    return True
-                logger.info("SEND_EMAIL dispatched for payload: %s", job.payload)
-                await self.outbox_repo.marcar_procesado(job.id)
-                return True
-            elif job.type == "SEND_FEEDBACK_EMAIL":
-                if self.feedback_notifier is None:
-                    logger.error("SEND_FEEDBACK_EMAIL without a notifier; keeping the job PENDING")
-                    return await self._handle_retry(job, "feedback notifier unavailable")
-                await self.feedback_notifier.send(job.payload)
-                await self.outbox_repo.marcar_procesado(job.id)
-                return True
-            else:
-                logger.warning("Unknown outbox type %s, marking processed", job.type)
-                await self.outbox_repo.marcar_procesado(job.id)
-                return True
+            await self.handler.dispatch(job.id, job.type, job.payload)
+            return True
+
+        except HandlerUnavailableError as exc:
+            return await self._handle_retry(job, str(exc))
 
         except ModuleRequestError as exc:
             # 400 or 409 are permanent/inconsistent errors (SPEC-15 Req. 2 & 3).
@@ -162,32 +144,6 @@ class OutboxProcessor:
     async def _rollback(self) -> None:
         if self.uow is not None:
             await self.uow.rollback()
-
-    async def _process_notify_sales_payment(self, payload: dict[str, Any]) -> None:
-        order_id = str(payload["order_id"])
-        payment_data = payload.get("payment_data", {})
-        correlation_id = payload.get("correlation_id")
-
-        await self.sales_client.notify_payment(
-            order_id,
-            payment_data,
-            correlation_id=correlation_id,
-        )
-        await self.order_ref_repo.actualizar_estado(order_id, "PAID_NOTIFIED")
-
-    async def _process_request_cancellation(self, payload: dict[str, Any]) -> None:
-        order_id = str(payload["order_id"])
-        motivo = payload.get("motivo", "PAGO_NO_COMPLETADO")
-        comentario = payload.get("comentario", "Tiempo límite de espera agotado; cancelado por el canal")
-        correlation_id = payload.get("correlation_id")
-
-        await self.sales_client.cancel_order(
-            order_id,
-            motivo=motivo,
-            comentario=comentario,
-            correlation_id=correlation_id,
-        )
-        await self.order_ref_repo.actualizar_estado(order_id, "CANCELLED")
 
     async def _relay_to_broker(self, job: Outbox, publisher: OutboxPublisherPort) -> bool:
         # `attempts` counts completed retries; the broker header is 1-based. A row that

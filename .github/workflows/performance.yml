@@ -4,6 +4,8 @@ name: Performance (k6)
 # producción ni CloudAMQP (G3-Chatbot-specs/odd/tasks/hito-5.md, restricciones).
 # El backend corre con todos los módulos en fake y LLM_PROVIDER=fake; los SLO
 # están en G3-Chatbot-specs/docs/slo-performance.md y son thresholds de k6.
+# H5-P5: el outbox publica en un RabbitMQ en Docker (OUTBOX_DISPATCH_MODE=broker)
+# y el consumidor de H5-M3 corre como proceso aparte (ADR-0030).
 on:
   workflow_dispatch:
     inputs:
@@ -42,6 +44,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      rabbitmq:
+        image: rabbitmq:4.1-management
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -52,14 +63,34 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Prepare environment (fake modules and scripted LLM)
-        # La plantilla ya trae todos los módulos en fake; solo se cambian la base
-        # de datos y el LLM. No hace falta ningún secreto.
+      - name: Prepare environment (fake modules, scripted LLM and local broker)
+        # La plantilla ya trae todos los módulos en fake; se cambian la base de
+        # datos y el LLM, y el outbox pasa a modo broker contra el RabbitMQ local.
+        # No hace falta ningún secreto.
         run: |
           sed -e 's#^DATABASE_URL=.*#DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/chatbot_perf#' \
               -e 's#^LLM_PROVIDER=.*#LLM_PROVIDER=fake#' \
+              -e '/^OUTBOX_WORKER_ENABLED=/d' \
+              -e '/^OUTBOX_DISPATCH_MODE=/d' \
+              -e '/^RABBITMQ_URL=/d' \
               .env.template > .env
+          {
+            echo 'OUTBOX_WORKER_ENABLED=true'
+            echo 'OUTBOX_DISPATCH_MODE=broker'
+            echo 'RABBITMQ_URL=amqp://guest:guest@localhost:5672/'
+          } >> .env
           alembic upgrade head
+      - name: Start outbox consumer
+        # Proceso separado del API (H5-M3), con su healthcheck en el puerto 8001.
+        run: |
+          nohup env PORT=8001 python -c "from dotenv import load_dotenv; load_dotenv('.env'); import runpy; runpy.run_module('src.infrastructure.consumer', run_name='__main__')" \
+            > consumer.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8001/health && exit 0
+            sleep 2
+          done
+          cat consumer.log
+          exit 1
       - name: Start backend
         run: |
           nohup uvicorn src.infrastructure.main:app --host 127.0.0.1 --port 8000 --env-file .env \
@@ -85,6 +116,16 @@ jobs:
               "$K6_IMAGE" run --quiet "$scenario.js" || status=1
           done
           echo "status=$status" >> "$GITHUB_ENV"
+      - name: Check broker consumption
+        # El checkout publica sus eventos en RabbitMQ y el consumidor los procesa.
+        if: always()
+        run: |
+          sleep 10
+          health=$(curl -fsS http://127.0.0.1:8001/health || echo '{}')
+          echo "consumer health: $health"
+          consumed=$(echo "$health" | python -c "import json,sys; print(json.load(sys.stdin).get('counters', {}).get('consumed', 0))")
+          echo "consumed=$consumed" >> "$GITHUB_ENV"
+          test "$consumed" -gt 0
       - name: Publish report
         if: always()
         run: |
@@ -94,6 +135,8 @@ jobs:
             echo "SLO: [docs/slo-performance.md](https://github.com/Taller-SW-Web/G3-Chatbot-specs/blob/main/docs/slo-performance.md) · ventana: ${{ inputs.duration }} · commit: ${GITHUB_SHA::7}"
             echo
             cat tests/performance/k6/results/*-report.md
+            echo
+            echo "Broker: RabbitMQ en Docker; eventos consumidos por el consumidor separado: ${consumed:-0}"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload k6 results
         if: always()
@@ -103,6 +146,7 @@ jobs:
           path: |
             tests/performance/k6/results/
             uvicorn.log
+            consumer.log
           if-no-files-found: error
       - name: Fail if a SLO was missed
         if: always()
