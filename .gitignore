@@ -23,3 +23,6 @@ ci-failure.md
 
 # Resultados locales de k6 (H5-P2); en CI se publican como artefacto.
 tests/performance/k6/results/
+
+# Reporte de evals (H5-E1); en CI se publica como artefacto.
+evals-report.json

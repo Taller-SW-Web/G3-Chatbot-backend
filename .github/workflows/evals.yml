@@ -1,0 +1,89 @@
+name: Evals (LLM real)
+
+# H5-E1: conversaciones de referencia contra el LLM real con todos los módulos
+# en fake. Se ejecuta a mano o de noche; nunca en PRs ni contra producción.
+# El reporte `evals-report.json` se publica como artefacto y en el resumen del job.
+# Requiere el secreto LLM_API_KEY en el environment `evals`: sin él, el job falla
+# a propósito en vez de pasar con todos los casos omitidos.
+on:
+  workflow_dispatch:
+    inputs:
+      llm_model:
+        description: "Modelo de OpenAI para las evals"
+        required: false
+        default: "gpt-4o-mini"
+  schedule:
+    # Diario 03:00 America/Lima (08:00 UTC).
+    - cron: "0 8 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    name: Evals del chatbot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: evals
+    env:
+      APP_ENV: development
+      MODULES_MODE: fake
+      LLM_PROVIDER: openai
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_MODEL: ${{ inputs.llm_model || vars.LLM_MODEL || 'gpt-4o-mini' }}
+      LLM_TEMPERATURE: "0"
+      LLM_MAX_TOKENS: "1024"
+      LLM_TIMEOUT_SECONDS: "60"
+      EVALS_REPORT_PATH: evals-report.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Require LLM_API_KEY
+        if: ${{ env.LLM_API_KEY == '' }}
+        run: |
+          echo "::error::Falta LLM_API_KEY en el environment evals; las evals no pueden correr."
+          exit 1
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run evals
+        run: python -m pytest tests/evals -m evals -q
+      - name: Summarize report
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import pathlib
+
+          path = pathlib.Path("evals-report.json")
+          if not path.exists():
+              print("No se generó evals-report.json.")
+              raise SystemExit(0)
+
+          report = json.loads(path.read_text(encoding="utf-8"))
+          summary = report["summary"]
+          print(f"## Evals H5-E1 — {summary['passed']}/{summary['total']} aprobados")
+          print()
+          print(f"Modelo: `{report['model']}` · commit: `${{ github.sha }}`")
+          print()
+          print("| Caso | Estado | Herramientas |")
+          print("|---|---|---|")
+          for case in report["cases"]:
+              tools = ", ".join(call["name"] for call in case["tool_calls"]) or "—"
+              print(f"| {case['name']} | {case['status']} | {tools} |")
+          PY
+      - name: Upload evals report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evals-report
+          path: evals-report.json
+          if-no-files-found: warn
