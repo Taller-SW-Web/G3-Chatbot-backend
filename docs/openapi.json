@@ -1145,9 +1145,31 @@
             "title": "Moneda",
             "type": "string"
           },
+          "motivoAnulacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivoanulacion"
+          },
           "pedidoId": {
             "title": "Pedidoid",
             "type": "string"
+          },
+          "reembolso": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reembolso"
           },
           "seguimientoDisponible": {
             "default": false,
@@ -1187,6 +1209,17 @@
           "fecha": {
             "title": "Fecha",
             "type": "string"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
           }
         },
         "required": [
@@ -1365,6 +1398,17 @@
             ],
             "title": "Mensaje"
           },
+          "motivoAnulacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivoanulacion"
+          },
           "pedidoId": {
             "title": "Pedidoid",
             "type": "string"
@@ -1379,6 +1423,17 @@
               }
             ],
             "title": "Recibidopor"
+          },
+          "reembolso": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reembolso"
           }
         },
         "required": [

@@ -60,6 +60,11 @@ def sanitize_tracking_payload(
         "mensaje": raw.get("mensaje"),
     }
 
+    # Cancellation explanation computed by `OrdersService` (backend#182).
+    for key in ("motivoAnulacion", "reembolso"):
+        if raw.get(key):
+            clean[key] = raw[key]
+
     if not for_llm:
         clean["recibidoPor"] = raw.get("recibidoPor")
 

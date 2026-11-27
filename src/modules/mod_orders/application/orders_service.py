@@ -11,9 +11,19 @@ from src.modules.mod_orders.application.notification_service import (
     NotificationError,
     NotificationService,
 )
+from src.modules.mod_orders.domain.cancellation import (
+    cancellation_message,
+    cancellation_reason,
+    refund_message,
+)
 from src.modules.mod_orders.domain.status_mapper import map_order_status_label
 from src.shared.application.ports.order_repository_port import SalesOrderPort
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
+
+
+def _order_history(order: dict[str, Any]) -> list[Any]:
+    """Status history of a Ventas order (`historial` mock alias or G5 `historialEstados`)."""
+    return order.get("historial") or order.get("historialEstados") or []
 
 
 def _with_status_label(payload: dict, key: str = "estadoEtiqueta") -> dict:
@@ -82,9 +92,12 @@ class OrdersService:
             payment: dict[str, Any] = payment_raw if isinstance(payment_raw, dict) else {}
             total = raw.get("total", payment.get("total", 0))
             moneda = raw.get("moneda", payment.get("moneda", "PEN"))
-            history = raw.get("historial") or raw.get("historialEstados") or []
+            history = _order_history(raw)
+            reason = cancellation_reason(history)
             detail = {
                 **_with_status_label({**raw, "total": total, "moneda": moneda}),
+                "motivoAnulacion": reason if str(raw.get("estado") or "").upper() == "ANULADO" else None,
+                "reembolso": refund_message(str(raw.get("estado") or ""), reason, payment, history),
                 "historial": [
                     {**_with_status_label(m, key="etiqueta"), "completado": m.get("completado", True)}
                     for m in history
@@ -121,6 +134,7 @@ class OrdersService:
         estado = str(order.get("estado") or "").strip().upper()
         envio_raw = order.get("envio")
         envio: dict[str, Any] = envio_raw if isinstance(envio_raw, dict) else {}
+        history = _order_history(order)
         fallback: dict[str, Any] = {
             "pedidoId": order_id,
             "estado": estado,
@@ -135,11 +149,19 @@ class OrdersService:
                 else "Tu pedido aún se está preparando; te mostraremos el seguimiento "
                 "cuando salga del centro de despacho."
                 if estado in {"PAGADO", "EN_PREPARACION"}
-                else "Tu pedido fue anulado."
-                if estado == "ANULADO"
                 else "El detalle del envío no está disponible ahora."
             ),
         }
+        if estado == "ANULADO":
+            payment_raw = order.get("pago")
+            payment: dict[str, Any] = payment_raw if isinstance(payment_raw, dict) else {}
+            reason = cancellation_reason(history)
+            refund = refund_message(estado, reason, payment, history)
+            fallback.update(
+                mensaje=cancellation_message(reason, refund),
+                motivoAnulacion=reason,
+                reembolso=refund,
+            )
         # Ventas is the source of truth. Despacho only adds detail once the
         # order is actually dispatched (or delivered); a paid order still in
         # preparation must not show a synthetic "on the way" milestone.
@@ -169,7 +191,7 @@ class OrdersService:
                 delivered_at = next(
                     (
                         str(item.get("fecha"))
-                        for item in order.get("historial") or []
+                        for item in history
                         if isinstance(item, dict) and item.get("estado") == "ENTREGADO"
                     ),
                     "",
@@ -181,9 +203,6 @@ class OrdersService:
                         "completado": True,
                     }
                 )
-        elif estado == "ANULADO":
-            tracking["estado"] = "ANULADO"
-            tracking["estadoEtiqueta"] = map_order_status_label("ANULADO")
         tracking.setdefault("pedidoId", order_id)
         tracking.setdefault("distrito", envio.get("distrito"))
         tracking.setdefault("fechaProgramada", envio.get("fechaEstimadaEntrega"))
