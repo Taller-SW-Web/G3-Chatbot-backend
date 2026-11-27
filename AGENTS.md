@@ -13,9 +13,9 @@ Antes de tocar código, lee:
 
 - No implementes comportamiento que no esté en la spec del módulo.
 - Si el cambio **no está** en la spec, no implementes: abre una issue en
-  `G3-Chatbot-specs` asignada a `@Ankarmin` y `@MathiasTL`. Solo `@MathiasTL`,
-  `@Ankarmin` y `@nikaaat` abren PRs en specs; el resto no crea ramas ni PRs.
-  El PR de código espera a que la spec esté en `development`. Si falta una
+  `G3-Chatbot-specs` asignada a `@Ankarmin` y `@MathiasTL`. Solo `@MathiasTL` y
+  `@Ankarmin` abren PRs en specs; el resto no crea ramas ni PRs. El PR de código
+  espera a que la spec esté en `development`. Si falta una
   decisión de producto, detente y repórtalo con la evidencia; no la inventes.
 - Si la spec y el código se contradicen, gana la spec y el PR debe explicar la
   corrección.
