@@ -191,7 +191,7 @@ def build_contract_schema(app: FastAPI) -> dict[str, Any]:
         if not isinstance(route.original_route, APIRoute) or not route.include_in_schema:
             continue
         path_item = schema["paths"].get(route.path_format, {})
-        for method in route.methods:
+        for method in route.methods or ():
             operation = path_item.get(method.lower())
             if operation is not None:
                 _decorate_operation(operation, route)
