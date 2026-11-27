@@ -28,8 +28,27 @@ def test_it_does_not_depend_on_the_dispatch_mode(mode):
     )
 
 
+def test_consumer_role_skips_attachment_storage_guards():
+    """#222: the outbox worker does not use AttachmentStorage."""
+    consumer = Settings(
+        app_env="production",
+        app_role="consumer",
+        modules_mode="http",
+        attachment_storage="local",
+    )
+    assert consumer.attachment_storage == "local"
+
+    with pytest.raises(ValueError, match="ALLOW_LOCAL_ATTACHMENTS"):
+        Settings(
+            app_env="production",
+            app_role="api",
+            modules_mode="http",
+            attachment_storage="local",
+        )
+
+
 def test_main_exits_2_when_the_url_is_missing(monkeypatch, caplog):
-    monkeypatch.setattr(entrypoint, "get_settings", lambda: Settings(rabbitmq_url=""))
+    monkeypatch.setattr(entrypoint, "get_settings", lambda app_role="api": Settings(rabbitmq_url=""))
     assert entrypoint.main() == 2
     assert "RABBITMQ_URL" in caplog.text
 

@@ -91,7 +91,9 @@ async def run(settings: Settings, port: int) -> int:
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    settings = get_settings()
+    # The worker only processes the outbox: it must not depend on attachment
+    # storage configuration (backend #222). Keep the API's fail-closed default.
+    settings = get_settings("consumer")
     try:
         validate_settings(settings)
     except ConsumerConfigError as exc:
