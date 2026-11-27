@@ -25,7 +25,7 @@ class FakeSessions:
         self.script = script or {}
         self.calls = []
 
-    async def login(self, email, password, *, canal=None):
+    async def login(self, email, password, *, canal=None, anonymous_sid=None):
         self.calls.append(("login", email, canal))
         result = self.script.get("login")
         if isinstance(result, Exception):
@@ -39,7 +39,7 @@ class FakeSessions:
             raise result
         return result or {"ok": True}
 
-    async def verify_mfa_code(self, challenge, code):
+    async def verify_mfa_code(self, challenge, code, *, anonymous_sid=None):
         self.calls.append(("verify_mfa", challenge, code))
         result = self.script.get("verify_mfa")
         if isinstance(result, Exception):

@@ -11,6 +11,7 @@ import logging
 import time
 import uuid
 
+from src.shared.application.ports.cart_merger_port import CartMergerPort
 from src.shared.application.ports.checkout_document_port import CheckoutDocumentPort
 from src.shared.application.ports.phone_verification_port import PhoneVerificationPort
 from src.shared.application.ports.security_port import SecurityPort
@@ -80,12 +81,14 @@ class ManageSessionUseCase:
         *,
         phone_verifications: PhoneVerificationPort | None = None,
         checkouts: CheckoutDocumentPort | None = None,
+        cart_merger: CartMergerPort | None = None,
         clock=time.monotonic,
     ):
         self._security = security
         self._validator = validator
         self._phone_verifications = phone_verifications
         self._checkouts = checkouts
+        self._cart_merger = cart_merger
         self._clock = clock
         self._password_policy: dict | None = None
         self._password_policy_at = 0.0
@@ -137,7 +140,14 @@ class ManageSessionUseCase:
         """Neutral re-send: the answer never reveals whether the account exists (SPEC-02 Req. 2)."""
         return await self._security.resend_verification(email)
 
-    async def login(self, email: str, password: str, *, canal: str | None = None) -> dict:
+    async def login(
+        self,
+        email: str,
+        password: str,
+        *,
+        canal: str | None = None,
+        anonymous_sid: str | None = None,
+    ) -> dict:
         """Returns the Seguridad answer: opened tokens or `{mfaRequerido, challengeToken, canal}`.
 
         When MFA is required, the OTP is requested here (SPEC-03 Req. 2); the
@@ -154,12 +164,18 @@ class ManageSessionUseCase:
             if challenge:
                 await self._security.request_mfa(challenge, canal or answer.get("canal"))
             return answer
-        return await self._validated_session(answer)
+        return await self._validated_session(answer, anonymous_sid=anonymous_sid)
 
     async def request_mfa_code(self, challenge_token: str, canal: str | None = None) -> dict:
         return await self._security.request_mfa(challenge_token, canal)
 
-    async def verify_mfa_code(self, challenge_token: str, code: str) -> dict:
+    async def verify_mfa_code(
+        self,
+        challenge_token: str,
+        code: str,
+        *,
+        anonymous_sid: str | None = None,
+    ) -> dict:
         try:
             answer = await self._security.verify_mfa(challenge_token, code)
         except ModuleRequestError as exc:
@@ -169,23 +185,46 @@ class ManageSessionUseCase:
             if exc.status == 401:
                 raise InvalidCredentialsError(exc.intentos_restantes) from None
             raise
-        return await self._validated_session(answer)
+        return await self._validated_session(answer, anonymous_sid=anonymous_sid)
 
-    async def _validated_session(self, answer: dict) -> dict:
+    async def _validated_session(
+        self,
+        answer: dict,
+        *,
+        anonymous_sid: str | None = None,
+    ) -> dict:
         """Validates the emitted access token before opening the session (SPEC-03 Req. 1).
 
         A token without the `CLIENTE` role (or an invalid token) discards the
         session in Seguridad and aborts, so no cookie/token reaches the client.
+        When `anonymous_sid` is present, merges any open anonymous cart into the
+        customer's cart (SPEC-03 Req. 4).
         """
         token = answer.get("accessToken")
         try:
             if not token:
                 raise InvalidTokenError("Seguridad returned no access token.")
-            await self._validator.validate_customer(token)
+            claims = await self._validator.validate_customer(token)
         except (AccountNotAllowedError, InvalidTokenError):
             await self.logout(answer.get("refreshToken"))
             raise
-        return answer
+
+        result = dict(answer)
+        if anonymous_sid and self._cart_merger is not None:
+            raw_sub = (claims or {}).get("sub") or (result.get("usuario") or {}).get("id")
+            if raw_sub:
+                try:
+                    merge_result = await self._cart_merger.merge_anonymous_cart(
+                        anonymous_sid=anonymous_sid,
+                        customer_id=uuid.UUID(str(raw_sub)),
+                    )
+                    if merge_result.merged:
+                        result["carritoFusionado"] = True
+                        result["avisoCarrito"] = merge_result.message
+                        result["ajustesCarrito"] = merge_result.adjustments
+                except Exception:
+                    logger.warning("Anonymous cart merge failed on login; continuing session open")
+        return result
 
     async def refresh(self, refresh_token: str) -> dict:
         try:

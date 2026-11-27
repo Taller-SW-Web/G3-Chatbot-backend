@@ -21,6 +21,7 @@ from src.modules.mod_cart.ports.cart_repository_port import (
     StaleCartError,
 )
 from src.shared.infrastructure.db.models.cart import Cart
+from src.shared.infrastructure.db.models.conversation import Conversation
 
 OPEN_STATUSES = ("ACTIVE", "IN_CHECKOUT")
 
@@ -62,6 +63,21 @@ class CartPostgresAdapter:
         ).limit(1)
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
+
+    async def listar_abiertos_por_sid(self, anonymous_sid: str) -> list[Cart]:
+        """Return open anonymous carts linked to conversations of `anonymous_sid`."""
+        stmt = (
+            select(Cart)
+            .join(Conversation, Cart.conversation_id == Conversation.id)
+            .where(
+                Conversation.anonymous_sid == anonymous_sid,
+                Cart.customer_id.is_(None),
+                Cart.status.in_(OPEN_STATUSES),
+            )
+            .order_by(Cart.updated_at.desc())
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
 
     async def crear_para_cliente(self, customer_id: uuid.UUID) -> Cart:
         row = Cart(customer_id=customer_id)

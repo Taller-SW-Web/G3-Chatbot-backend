@@ -35,6 +35,10 @@ from src.modules.mod_catalog.public import (
     resolve_product_id,
     sellable_skus,
 )
+from src.shared.application.ports.cart_merger_port import (
+    CART_MERGED_MESSAGE,
+    CartMergeResult,
+)
 from src.shared.application.tools.tool_registry import ExecutionContext
 from src.shared.domain.module_errors import (
     GENERIC_UNAVAILABLE_TEXT,
@@ -308,6 +312,189 @@ class ManageCartUseCase:
         except BaseException:
             await self._uow.rollback()
             raise
+
+    async def merge_anonymous_cart(
+        self,
+        *,
+        anonymous_sid: str,
+        customer_id: uuid.UUID,
+    ) -> CartMergeResult:
+        """Merge open anonymous carts for `anonymous_sid` into `customer_id`'s cart (SPEC-03 Req. 4).
+
+        Idempotent: every processed anonymous cart transitions to `MERGED` in the
+        same transaction, so a subsequent login never merges the same lines twice.
+        """
+        if not anonymous_sid:
+            return CartMergeResult(merged=False)
+
+        anon_carts = await self._carts.listar_abiertos_por_sid(anonymous_sid)
+        if not anon_carts:
+            return CartMergeResult(merged=False)
+
+        anon_by_sku: dict[str, dict[str, Any]] = {}
+        for anon_cart in anon_carts:
+            for row in await self._items.listar_por_cart(anon_cart.id):
+                qty = max(int(row.quantity), 0)
+                if qty <= 0:
+                    continue
+                if row.sku in anon_by_sku:
+                    anon_by_sku[row.sku]["quantity"] += qty
+                else:
+                    anon_by_sku[row.sku] = {
+                        "sku": row.sku,
+                        "product_id": row.product_id,
+                        "name": row.name,
+                        "variant_description": row.variant_description,
+                        "image_url": row.image_url,
+                        "unit_price_ref": float(row.unit_price_ref),
+                        "quantity": qty,
+                    }
+
+        try:
+            if not anon_by_sku:
+                for anon_cart in anon_carts:
+                    await self._carts.cambiar_estado(anon_cart.id, "MERGED")
+                await self._uow.commit()
+                return CartMergeResult(merged=False)
+
+            customer_cart = await self._carts.obtener_abierto_por_cliente(customer_id)
+            if customer_cart is None:
+                customer_cart = await self._carts.crear_para_cliente(customer_id)
+
+            customer_rows = await self._items.listar_por_cart(customer_cart.id)
+            by_sku = {row.sku: row for row in customer_rows}
+            line_count = len(by_sku)
+
+            desired_lines = [
+                {
+                    "sku": sku,
+                    "quantity": min(
+                        MAX_PER_LINE,
+                        (int(by_sku[sku].quantity) if sku in by_sku else 0) + item["quantity"],
+                    ),
+                }
+                for sku, item in anon_by_sku.items()
+            ]
+            availability_map = await self._lookup_merge_availability(desired_lines)
+
+            adjustments: list[dict[str, Any]] = []
+            for sku, item in anon_by_sku.items():
+                existing = by_sku.get(sku)
+                if existing is None and line_count >= MAX_LINES:
+                    adjustments.append(
+                        {
+                            "sku": sku,
+                            "nombre": item["name"],
+                            "cantidadSolicitada": item["quantity"],
+                            "cantidadFinal": 0,
+                            "motivo": "LIMITE_LINEAS",
+                        }
+                    )
+                    continue
+
+                prev_qty = int(existing.quantity) if existing is not None else 0
+                requested = prev_qty + item["quantity"]
+                capped = min(MAX_PER_LINE, requested)
+                available = availability_map.get(sku)
+
+                reason: str | None = None
+                final_qty = capped
+                if capped < requested:
+                    reason = "LIMITE_CANTIDAD"
+                if available is not None and final_qty > available:
+                    final_qty = max(0, available)
+                    reason = "STOCK_INSUFICIENTE"
+
+                if existing is not None:
+                    if final_qty <= 0:
+                        await self._items.eliminar(existing.id)
+                        line_count = max(0, line_count - 1)
+                    elif final_qty != prev_qty:
+                        await self._items.set_quantity(
+                            existing.id,
+                            quantity=final_qty,
+                            unit_price_ref=float(existing.unit_price_ref),
+                        )
+                elif final_qty > 0:
+                    await self._items.agregar(
+                        cart_id=customer_cart.id,
+                        product_id=item["product_id"],
+                        sku=sku,
+                        name=item["name"],
+                        variant_description=item["variant_description"],
+                        image_url=item["image_url"],
+                        quantity=final_qty,
+                        unit_price_ref=item["unit_price_ref"],
+                    )
+                    line_count += 1
+
+                if reason is not None:
+                    adjustments.append(
+                        {
+                            "sku": sku,
+                            "nombre": item["name"],
+                            "cantidadSolicitada": requested,
+                            "cantidadFinal": final_qty,
+                            "motivo": reason,
+                        }
+                    )
+
+            for anon_cart in anon_carts:
+                await self._carts.cambiar_estado(anon_cart.id, "MERGED")
+            await self._carts.set_totals(customer_cart.id, None)
+            await self._uow.commit()
+        except BaseException:
+            await self._uow.rollback()
+            raise
+
+        return CartMergeResult(
+            merged=True,
+            message=CART_MERGED_MESSAGE,
+            adjustments=adjustments,
+        )
+
+    async def _lookup_merge_availability(
+        self,
+        desired_lines: list[dict[str, Any]],
+    ) -> dict[str, int]:
+        """Best-effort live stock lookup for cart merge; returns known upper bounds per SKU."""
+        if not desired_lines or self._inventory is None:
+            return {}
+        skus = [line["sku"] for line in desired_lines]
+        try:
+            statuses = {
+                row.get("sku"): row
+                for row in await self._inventory.get_availability(skus)
+            }
+            verdicts = {
+                v.get("sku"): v
+                for v in await self._inventory.verify_quantities(desired_lines)
+            }
+        except Exception:
+            logger.warning(
+                "inventory unavailable during login cart merge; keeping capped quantities correlation_id=%s",
+                correlation_id_var.get(),
+            )
+            return {}
+
+        bounds: dict[str, int] = {}
+        for line in desired_lines:
+            sku = line["sku"]
+            status_row = statuses.get(sku) or {}
+            verdict_row = verdicts.get(sku) or {}
+            projection = self._stock.check_row(status_row)
+            if not projection.ok and projection.code in {"SIN_STOCK", "AGOTADO", "SKU_AGOTADO"}:
+                bounds[sku] = 0
+                continue
+            for source in (verdict_row, status_row):
+                for key in ("disponible", "stockDisponible", "cantidadDisponible", "available", "stock"):
+                    raw = source.get(key)
+                    if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0:
+                        bounds[sku] = raw
+                        break
+                if sku in bounds:
+                    break
+        return bounds
 
     # -- mutation frame -------------------------------------------------------
 

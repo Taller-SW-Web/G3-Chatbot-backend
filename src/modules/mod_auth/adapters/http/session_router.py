@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 REFRESH_COOKIE = "chat_rt"
 CHALLENGE_COOKIE = "chat_chg"
+ANONYMOUS_SID_COOKIE = "chat_sid"
 SESSION_COOKIE_PATH = "/api/v1/sesion"
 CHALLENGE_MAX_AGE_SECONDS = 5 * 60
 REFRESH_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
@@ -133,6 +134,9 @@ class OpenedSession(BaseModel):
     accessToken: str
     expiresIn: int = 900
     usuario: dict = Field(default_factory=dict)
+    carritoFusionado: bool = False
+    avisoCarrito: str | None = None
+    ajustesCarrito: list[dict] = Field(default_factory=list)
 
 
 class MfaChallenge(BaseModel):
@@ -232,6 +236,9 @@ def create_session_router(
             accessToken=str(answer.get("accessToken")),
             expiresIn=int(answer.get("expiresIn", 900)),
             usuario=dict(answer.get("usuario", {})),
+            carritoFusionado=bool(answer.get("carritoFusionado", False)),
+            avisoCarrito=answer.get("avisoCarrito"),
+            ajustesCarrito=list(answer.get("ajustesCarrito") or []),
         )
 
     @router.post("/login", response_model=OpenedSession | MfaChallenge)
@@ -250,7 +257,12 @@ def create_session_router(
                 retry_after,
             )
         try:
-            answer = await sessions.login(body.email, body.password, canal=body.canal)
+            answer = await sessions.login(
+                body.email,
+                body.password,
+                canal=body.canal,
+                anonymous_sid=request.cookies.get(ANONYMOUS_SID_COOKIE),
+            )
         except InvalidCredentialsError:
             raise ProblemError(401, "CREDENCIALES_INVALIDAS", "Invalid credentials",
                                "Correo o contraseña incorrectos") from None
@@ -305,7 +317,11 @@ def create_session_router(
         if not challenge:
             raise ProblemError(410, "CODIGO_VENCIDO", "Code expired", "Pide un código nuevo")
         try:
-            answer = await sessions.verify_mfa_code(challenge, body.code)
+            answer = await sessions.verify_mfa_code(
+                challenge,
+                body.code,
+                anonymous_sid=request.cookies.get(ANONYMOUS_SID_COOKIE),
+            )
         except InvalidCredentialsError as exc:
             extra = ({"intentosRestantes": exc.intentos_restantes}
                      if exc.intentos_restantes is not None else None)

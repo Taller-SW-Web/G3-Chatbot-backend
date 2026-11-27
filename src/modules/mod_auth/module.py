@@ -14,13 +14,14 @@ from src.modules.mod_auth.application.manage_phone_verification_use_case import 
     ManagePhoneVerificationUseCase,
 )
 from src.modules.mod_auth.application.manage_session_use_case import ManageSessionUseCase
+from src.shared.application.ports.cart_merger_port import CartMergeResult
 from src.shared.infrastructure.auth.providers import (
     provide_access_token_validator,
     provide_security_port,
 )
 from src.shared.infrastructure.config.settings import get_settings
 from src.shared.infrastructure.db.connection import get_session
-from src.shared.infrastructure.di.capabilities import CHECKOUT_DOCUMENT
+from src.shared.infrastructure.di.capabilities import CART_MERGER, CHECKOUT_DOCUMENT
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
 from src.shared.infrastructure.http.router_options import RouterOptions
@@ -33,7 +34,7 @@ from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfW
 # Capability registered by `mod-checkout`; optional because auth is the base of
 # the dependency graph and must still serve the profile without a checkout
 # document. The composition root logs it and `/health` reports it (H-08).
-OPTIONAL_CAPABILITIES = (CHECKOUT_DOCUMENT,)
+OPTIONAL_CAPABILITIES = (CHECKOUT_DOCUMENT, CART_MERGER)
 
 
 class _NoCheckoutDocument:
@@ -43,11 +44,19 @@ class _NoCheckoutDocument:
         return None
 
 
+class _NoCartMerger:
+    """Explicit null object: login succeeds without merging when `mod-cart` is absent."""
+
+    async def merge_anonymous_cart(self, *, anonymous_sid: str, customer_id):
+        return CartMergeResult(merged=False)
+
+
 def provide_manage_session(session: AsyncSession = Depends(get_session)) -> ManageSessionUseCase:
     """Customer session service (SPEC-03): orchestration over the Seguridad port.
 
     The local token validator enforces the `CLIENTE` role before a session is
-    opened; the persistence ports feed `celularVerificado` / `ultimoDocumento`.
+    opened; the persistence ports feed `celularVerificado` / `ultimoDocumento`
+    and `cart_merger` fuses any open anonymous cart on login (SPEC-03 Req. 4).
     """
     settings = get_settings()
     checkouts = (
@@ -55,11 +64,17 @@ def provide_manage_session(session: AsyncSession = Depends(get_session)) -> Mana
         if registry.is_registered(CHECKOUT_DOCUMENT)
         else _NoCheckoutDocument()
     )
+    cart_merger = (
+        registry.resolve(CART_MERGER, session)
+        if registry.is_registered(CART_MERGER)
+        else _NoCartMerger()
+    )
     return ManageSessionUseCase(
         security=provide_security_port(settings),
         validator=provide_access_token_validator(settings),
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
         checkouts=checkouts,
+        cart_merger=cart_merger,
     )
 
 

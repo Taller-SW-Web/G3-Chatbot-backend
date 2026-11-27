@@ -1073,6 +1073,30 @@
             "title": "Accesstoken",
             "type": "string"
           },
+          "ajustesCarrito": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Ajustescarrito",
+            "type": "array"
+          },
+          "avisoCarrito": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avisocarrito"
+          },
+          "carritoFusionado": {
+            "default": false,
+            "title": "Carritofusionado",
+            "type": "boolean"
+          },
           "expiresIn": {
             "default": 900,
             "title": "Expiresin",

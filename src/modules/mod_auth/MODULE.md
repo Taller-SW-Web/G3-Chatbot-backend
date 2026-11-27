@@ -62,6 +62,10 @@ Ningún módulo importa `domain/`, `application/` ni `adapters/` de este paquete
 - Capacidad `checkout_document` (registrada por `mod-checkout`) para
   `ultimoDocumento` sin importar el interior de checkout. Es opcional: si falta,
   el perfil usa un null object y `/health` reporta `degraded`.
+- Capacidad `cart_merger` (registrada por `mod-cart`) para fusionar el carrito
+  anónimo (`chat_sid`) al abrir sesión en `POST /sesion/login` y
+  `POST /sesion/mfa/verificar` (SPEC-03 Req. 4) sin romper el DAG. Es opcional:
+  si falta, el login usa un null object y continúa normalmente.
 
 ## Pruebas
 
