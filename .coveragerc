@@ -1,5 +1,8 @@
 [run]
 source = src
+# Required to combine the coverage data of the integration shards, which run in
+# different runners and therefore different absolute workspace paths.
+relative_files = True
 
 [report]
 # Baseline measured on 2026-11-07 (88 %). It is a floor, not a target: raise it
