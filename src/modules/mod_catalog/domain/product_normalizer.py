@@ -28,6 +28,14 @@ DEFAULT_SYNONYMS = {
     "canguro": "Mochilas y morrales",
 }
 
+# G6 searches literal substrings over Spanish product descriptions, which use
+# "running" instead of "correr". These are search-vocabulary aliases, not
+# category synonyms: they translate the term but never resolve a category.
+SEARCH_ALIASES = {
+    "correr": "running",
+    "trotar": "running",
+}
+
 
 def _fold(text: str) -> str:
     folded = unicodedata.normalize("NFKD", text.strip().lower())
@@ -123,7 +131,7 @@ class ProductNormalizer:
         )
 
     def _normalize_query(self, q: str | None) -> tuple[str | None, str | None]:
-        """Fold, collapse whitespace and drop Spanish connectors from free text.
+        """Fold, collapse whitespace, drop connectors and translate search aliases.
 
         The first token that names a known category (directly or through a
         synonym) becomes `category_id`; the remaining tokens stay as the
@@ -132,7 +140,8 @@ class ProductNormalizer:
         if not q:
             return None, None
         tokens = [
-            token for token in _fold(q).split()
+            SEARCH_ALIASES.get(token, token)
+            for token in _fold(q).split()
             if token not in SPANISH_STOPWORDS
         ]
         category_id = None

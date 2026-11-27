@@ -41,9 +41,12 @@ async def test_local_filter_that_empties_the_page_returns_no_carousel():
     ("query", "expected_q", "expected_category"),
     [
         ("zapatillas de running", "running", "cat-zapatillas"),
-        ("zapatillas para correr", "correr", "cat-zapatillas"),
+        ("zapatillas para correr", "running", "cat-zapatillas"),
         ("zapatillas", None, "cat-zapatillas"),
         ("running", "running", None),
+        ("correr", "running", None),
+        ("CORRER", "running", None),
+        ("trotar", "running", None),
         ("ZAPATILLAS DE RUNNING", "running", "cat-zapatillas"),
         ("polo de algodón", "algodon", "cat-polos"),
     ],
