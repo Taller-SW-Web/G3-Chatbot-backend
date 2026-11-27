@@ -1,0 +1,14 @@
+{
+  "accessToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjIwMjYtMTAifQ.eyJzdWIiOiIxMTExMTExMSJ9.firma",
+  "refreshToken": "d0f3a1c8-7b2e-4a91-9c5d-8e6f0a1b2c3d",
+  "tokenType": "Bearer",
+  "expiresIn": 900,
+  "usuario": {
+    "id": "11111111-1111-1111-1111-111111111111",
+    "nombreCompleto": "María Quispe Rojas",
+    "correo": "maria@ejemplo.com",
+    "roles": [
+      "CLIENTE"
+    ]
+  }
+}

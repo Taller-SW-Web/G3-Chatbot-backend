@@ -1,0 +1,29 @@
+name: Contract drift
+
+# H5-I1: revisa que los contratos upstream (G7, G6, G2 y G5) sigan coincidiendo
+# con `tests/contract/contracts.lock.json`. No corre en PRs y no participa del
+# required check `test`: un cambio upstream se investiga y se actualiza el lock
+# en un PR normal, sin bloquear el trabajo de los demás módulos.
+on:
+  workflow_dispatch:
+  schedule:
+    # Lunes 06:00 UTC.
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Upstream contract drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Compare upstream contracts with the lock
+        run: python scripts/check_contract_drift.py

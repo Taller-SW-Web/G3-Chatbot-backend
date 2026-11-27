@@ -1,0 +1,7 @@
+{
+  "type": "https://g7.unmsm.pe/errores/credenciales-invalidas",
+  "title": "Credenciales inválidas",
+  "status": 401,
+  "code": "CREDENCIALES_INVALIDAS",
+  "detail": "El correo o la contraseña no son correctos."
+}

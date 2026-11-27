@@ -1,0 +1,6 @@
+{
+  "mfaRequerido": true,
+  "challengeToken": "chg_8f2a91c4b7e5",
+  "canal": "EMAIL",
+  "expiraEn": 300
+}

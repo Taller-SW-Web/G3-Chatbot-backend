@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "updated_at": "2026-11-26",
+  "contracts": [
+    {
+      "id": "g7-seguridad",
+      "module": "shared",
+      "source": "Taller-SW-Web/Modulo-de-Seguridad",
+      "ref": "fa93a88d03fd9fcd80b63edd025d82eb21234d98",
+      "path": "specs/contrato-api/openapi.yaml",
+      "version": "1.2.0",
+      "state": "revision-local-no-publicada",
+      "sha256": "e8818bc40b470220f58d538ee78b81ce30481cb406eddee85330a28878a1d59d",
+      "fixture": "tests/contract/shared/fixtures/g7_openapi.yaml",
+      "url": "https://raw.githubusercontent.com/Taller-SW-Web/Modulo-de-Seguridad/fa93a88d03fd9fcd80b63edd025d82eb21234d98/specs/contrato-api/openapi.yaml"
+    },
+    {
+      "id": "g6-productos",
+      "module": "mod_catalog",
+      "source": "Taller-SW-Web/G6-Productos-Ofertas-docs",
+      "ref": "f785accbc7c290ba10f873c8f12061405bb2c622",
+      "path": "contratos/http/openapi.yaml",
+      "version": "0.7.0-rc.3",
+      "state": null,
+      "sha256": "e66fbbc2d6837f609eb847be973567ff3e1199a9f638a904162ad154cb691a05",
+      "fixture": "tests/contract/mod_catalog/fixtures/g6_openapi.yaml",
+      "url": "https://raw.githubusercontent.com/Taller-SW-Web/G6-Productos-Ofertas-docs/f785accbc7c290ba10f873c8f12061405bb2c622/contratos/http/openapi.yaml"
+    },
+    {
+      "id": "g2-despacho",
+      "module": "mod_shipping",
+      "source": "Taller-SW-Web/G2-Despacho-Specs",
+      "ref": "2bd99a23df22329d42ca9806b4debe9adcc05999",
+      "path": "integraciones/api-contract.md",
+      "version": null,
+      "state": null,
+      "sha256": "7b267eebb933f746084f857ad0bc3e74006d480267a5023c554b34482711fd6e",
+      "fixture": "tests/contract/mod_shipping/fixtures/g2_api_contract.md",
+      "url": "https://raw.githubusercontent.com/Taller-SW-Web/G2-Despacho-Specs/2bd99a23df22329d42ca9806b4debe9adcc05999/integraciones/api-contract.md"
+    },
+    {
+      "id": "g5-ventas",
+      "module": "shared",
+      "source": "Taller-SW-Web/G5-Ventas-Postventas-Backend",
+      "ref": "41516ef5f9812d5a43f7380ec06cba5fee79ea90",
+      "path": "servicio-ventas/src/main/resources/static/openapi/ventas.yaml",
+      "version": "1.10.0",
+      "state": null,
+      "sha256": "53f6bf94de1ce848cb80c684a1bf980be34cd0ea94ecd9c4bb13fd814fa92879",
+      "fixture": "tests/contract/shared/fixtures/ventas.yaml",
+      "live_url": "https://g5-servicio-ventas.onrender.com/openapi/ventas.yaml",
+      "url": "https://raw.githubusercontent.com/Taller-SW-Web/G5-Ventas-Postventas-Backend/41516ef5f9812d5a43f7380ec06cba5fee79ea90/servicio-ventas/src/main/resources/static/openapi/ventas.yaml"
+    },
+    {
+      "id": "g5-postventa",
+      "module": "mod_postventa",
+      "source": "Taller-SW-Web/G5-Ventas-Postventas-Backend",
+      "ref": "41516ef5f9812d5a43f7380ec06cba5fee79ea90",
+      "path": "servicio-postventa/src/main/resources/static/openapi/postventa.yaml",
+      "version": "1.6.0",
+      "state": null,
+      "sha256": "974cc62629b2ca1fa0ea51632c39d022977eceec52af833152c8de1837d9b706",
+      "fixture": "tests/contract/mod_postventa/fixtures/postventa.yaml",
+      "live_url": "https://g5-ventas-postventas-backend.onrender.com/openapi/postventa.yaml",
+      "url": "https://raw.githubusercontent.com/Taller-SW-Web/G5-Ventas-Postventas-Backend/41516ef5f9812d5a43f7380ec06cba5fee79ea90/servicio-postventa/src/main/resources/static/openapi/postventa.yaml"
+    }
+  ]
+}

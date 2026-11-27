@@ -1,0 +1,11 @@
+{
+  "transaccionId": "SIM-999",
+  "resultado": "APROBADO",
+  "monto": 129.9,
+  "moneda": "PEN",
+  "metodo": "TARJETA_CREDITO",
+  "marcaTarjeta": "VISA",
+  "ultimosCuatroDigitos": "4242",
+  "fechaPago": "2026-11-05T19:05:00Z",
+  "codigoAutorizacion": "AUTH-778899"
+}

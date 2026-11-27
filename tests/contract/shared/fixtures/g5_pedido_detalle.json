@@ -1,0 +1,55 @@
+{
+  "pedidoId": "PED-2026-00981",
+  "canal": "CHATBOT",
+  "estado": "PAGADO",
+  "tipo": "VENTA",
+  "contacto": {
+    "clienteId": "3f9a2b7e-6c1d-4e2a-9b3f-7a1d2c4e5f6a",
+    "nombreCompleto": "Juan Pérez Rodríguez",
+    "tipoDocumento": "DNI",
+    "numeroDocumento": "72458912",
+    "email": "juan.perez@example.com",
+    "telefono": "+51999888777"
+  },
+  "pago": {
+    "total": 129.9,
+    "moneda": "PEN",
+    "metodoPago": "TARJETA_CREDITO",
+    "estado": "CONFIRMADO"
+  },
+  "envio": {
+    "modalidad": "DELIVERY",
+    "direccion": "Av. La Marina 1234, Dpto 401",
+    "distrito": "San Miguel",
+    "tiendaId": null,
+    "departamento": "Lima",
+    "provincia": "Lima",
+    "referencia": "Frente al centro comercial",
+    "fechaEstimadaEntrega": "2026-11-07T18:00:00Z"
+  },
+  "items": [
+    {
+      "productoId": "PROD-101",
+      "sku": "SKU-AUR-01",
+      "descripcion": "Audífonos Inalámbricos Bluetooth",
+      "cantidad": 1,
+      "precioUnitario": 129.9
+    }
+  ],
+  "fechaCreacion": "2026-11-05T19:00:00Z",
+  "ultimaActualizacion": "2026-11-05T19:05:00Z",
+  "historialEstados": [
+    {
+      "estado": "CREADO",
+      "fecha": "2026-11-05T19:00:00Z",
+      "actor": "CANAL_CHATBOT",
+      "motivo": null
+    },
+    {
+      "estado": "PAGADO",
+      "fecha": "2026-11-05T19:05:00Z",
+      "actor": "PASARELA_PAGOS",
+      "motivo": null
+    }
+  ]
+}
