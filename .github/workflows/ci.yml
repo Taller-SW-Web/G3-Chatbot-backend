@@ -242,9 +242,11 @@ jobs:
           path: coverage-data
           merge-multiple: true
       - name: Combine coverage
+        # The global 85% floor belongs to the unit job. This report only feeds
+        # Sonar, which evaluates the combined new-code coverage afterwards.
         run: |
           coverage combine coverage-data
-          coverage xml -o coverage-integration.xml
+          coverage xml --fail-under=0 -o coverage-integration.xml
       - name: Upload integration coverage
         uses: actions/upload-artifact@v7
         with:
