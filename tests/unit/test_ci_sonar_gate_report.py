@@ -96,6 +96,18 @@ def test_measure_failures_fail_closed_on_missing_new_code_measures() -> None:
         min_new_coverage=80,
         max_new_duplication=3,
     ) == ["duplicación de new code 4.5% > 3%"]
+    assert measure_failures(
+        {},
+        min_new_coverage=80,
+        max_new_duplication=3,
+        require_metrics=True,
+    ) == ["el PR toca src/ pero Sonar no publicó new_lines/new_lines_to_cover"]
+    assert measure_failures(
+        {},
+        min_new_coverage=80,
+        max_new_duplication=3,
+        require_metrics=False,
+    ) == []
 
 
 def test_blocking_issues_respects_the_severity_threshold() -> None:

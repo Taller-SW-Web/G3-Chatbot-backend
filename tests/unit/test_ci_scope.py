@@ -261,6 +261,26 @@ def test_write_github_output_serializes_arrays(tmp_path) -> None:
     assert "run_unit=true" in text
 
 
+def test_sonar_sources_signal_only_for_src_changes() -> None:
+    source = build_scope(
+        ["src/modules/mod_catalog/application/search.py"],
+        graph=GRAPH,
+        event="pull_request",
+        labels=[],
+        full=False,
+    )
+    assert source["sonar_sources_changed"] is True
+
+    tooling = build_scope(
+        ["scripts/ci/scope.py"],
+        graph=GRAPH,
+        event="pull_request",
+        labels=[],
+        full=False,
+    )
+    assert tooling["sonar_sources_changed"] is False
+
+
 def test_openapi_contract_is_not_docs_only() -> None:
     scope = build_scope(
         ["docs/openapi.json"],

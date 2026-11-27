@@ -140,6 +140,7 @@ def measure_failures(
     *,
     min_new_coverage: float,
     max_new_duplication: float,
+    require_metrics: bool = False,
 ) -> list[str]:
     """Return the new-code metric violations, failing closed when a measure is missing."""
     failures: list[str] = []
@@ -148,6 +149,11 @@ def measure_failures(
     new_coverage = _as_float(measures.get("new_coverage"))
     new_duplication = _as_float(measures.get("new_duplicated_lines_density"))
 
+    if require_metrics and new_lines is None and lines_to_cover is None:
+        failures.append(
+            "el PR toca src/ pero Sonar no publicó new_lines/new_lines_to_cover"
+        )
+        return failures
     if lines_to_cover is not None and lines_to_cover > 0:
         if new_coverage is None:
             failures.append(
@@ -267,6 +273,11 @@ def main(argv: list[str] | None = None) -> int:
         default=3.0,
         help="Maximum duplicated-lines density of new code.",
     )
+    parser.add_argument(
+        "--require-new-code-metrics",
+        action="store_true",
+        help="Fail closed when a PR that changes src/ has no new-code measures.",
+    )
     args = parser.parse_args(argv)
 
     token = os.getenv("SONAR_TOKEN")
@@ -339,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
                 measures,
                 min_new_coverage=args.min_new_coverage,
                 max_new_duplication=args.max_new_duplication,
+                require_metrics=args.require_new_code_metrics,
             )
             if args.pull_request
             else []

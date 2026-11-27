@@ -352,6 +352,7 @@ def build_scope(
         "run_dast": run_dast,
         "run_gateway": run_gateway,
         "run_sonar": run_sonar,
+        "sonar_sources_changed": any(path.startswith("src/") for path in changed),
         "run_specs": run_specs,
         "run_dependency_review": run_dependency_review,
         "changed_count": len(changed),
