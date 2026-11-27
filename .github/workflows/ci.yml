@@ -528,7 +528,8 @@ jobs:
 
   dependency-review:
     name: Dependency review
-    if: github.event_name == 'pull_request'
+    needs: scope
+    if: needs.scope.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -539,10 +540,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Review dependencies
+        if: github.event_name == 'pull_request'
         uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
+      - name: Dependency review is PR-only
+        if: github.event_name != 'pull_request'
+        run: echo "Dependency review solo aplica a pull requests; push verificado."
 
   sonar:
     name: SonarCloud
@@ -667,7 +672,7 @@ jobs:
   specs:
     name: Specs del PR
     needs: scope
-    if: needs.scope.outputs.run_specs == 'true'
+    if: needs.scope.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -679,6 +684,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validar spec enlazada
+        if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
           git clone --depth 1 --branch development https://github.com/Taller-SW-Web/G3-Chatbot-specs.git specs-repo
@@ -686,9 +692,12 @@ jobs:
           python scripts/check_specs.py --base "origin/${{ github.base_ref }}" --specs-repo specs-repo --body "$RUNNER_TEMP/pr-body.md"
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
+      - name: Specs gate is PR-only
+        if: github.event_name != 'pull_request'
+        run: echo "El gate de specs solo aplica a pull requests; push verificado."
 
   notify:
-    name: Notify failure
+    name: Notify status
     needs:
       - scope
       - validate
@@ -703,9 +712,7 @@ jobs:
       - sonar
       - specs
       - test
-    if: |
-      failure() && github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
