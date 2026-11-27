@@ -342,14 +342,18 @@ class FakeQueue:
     def __init__(self, name):
         self.name = name
         self.cancelled = []
+        self.tracked = False  # True once declared on the (robust) channel
+        self.live = {}  # the channel's registered consumers (aiormq `channel.consumers`)
 
     async def consume(self, callback, no_ack=False):
         self.callback = callback
         assert no_ack is False
+        self.live[f"tag-{self.name}"] = callback
         return f"tag-{self.name}"
 
     async def cancel(self, tag):
         self.cancelled.append(tag)
+        self.live.pop(tag, None)
 
 
 class FakeChannel:
@@ -357,12 +361,24 @@ class FakeChannel:
         self.events = events
         self.queues = queues
         self.qos = None
+        self.channel = SimpleNamespace(consumers={})  # underlying aiormq channel
+        self._channel = SimpleNamespace(channel=self.channel)  # aio-pika UnderlayChannel
+        self.is_closed = False
 
     async def set_qos(self, prefetch_count):
         self.qos = prefetch_count
 
+    async def declare_queue(self, name, **kwargs):
+        queue = self.queues[name]
+        queue.tracked = True
+        queue.live = self.channel.consumers
+        return queue
+
     async def get_queue(self, name, ensure=True):
-        return self.queues[name]
+        # aio-pika returns an instance the robust channel does not track (nothing is restored).
+        queue = self.queues[name]
+        queue.live = self.channel.consumers
+        return queue
 
 
 class FakeConnection:
@@ -373,6 +389,7 @@ class FakeConnection:
         self.connected.set()
         self.channels = []
         self.queues = queues
+        self.reconnect_callbacks = set()
 
     async def channel(self, **kwargs):
         channel = FakeChannel(self.events, self.queues)
@@ -433,8 +450,79 @@ async def test_health_turns_unhealthy_while_the_connection_is_down_or_closed(sta
 
 
 @pytest.mark.asyncio
+async def test_start_consumes_from_queues_tracked_by_the_robust_channel(started):
+    """Only tracked queues are re-declared and re-consumed after a broker restart."""
+    await started.h.consumer.start()
+    assert all(queue.tracked for queue in started.queues.values())
+
+
+@pytest.mark.asyncio
+async def test_health_is_unavailable_while_the_consumers_are_not_registered(started):
+    consumer = started.h.consumer
+    await consumer.start()
+    live = started.connection.channels[0].channel.consumers
+    saved = dict(live)
+
+    live.clear()  # connection restored but consumers not re-registered yet
+    assert consumer.is_healthy is False
+    status = consumer.status()
+    assert status["status"] == "unavailable" and status["consuming"] is False
+
+    tag, callback = next(iter(saved.items()))
+    live[tag] = callback  # only one of the two queues is back
+    assert consumer.is_healthy is False
+
+    live.update(saved)
+    assert consumer.is_healthy is True and consumer.status()["consuming"] is True
+
+
+@pytest.mark.asyncio
+async def test_health_is_unavailable_when_the_broker_cancels_one_consumer(started):
+    consumer = started.h.consumer
+    await consumer.start()
+    started.connection.channels[0].channel.consumers.pop(f"tag-{QUEUE_SALES}")
+    assert consumer.is_healthy is False
+
+
+@pytest.mark.asyncio
+async def test_health_is_unavailable_while_the_channel_is_being_reopened(started):
+    consumer = started.h.consumer
+    await consumer.start()
+
+    started.connection.channels[0]._channel = None  # not initialized yet
+    assert consumer.is_healthy is False
+
+    class Broken:
+        @property
+        def channel(self):
+            raise RuntimeError("channel is not initialized")
+
+    started.connection.channels[0]._channel = Broken()
+    assert consumer.is_healthy is False
+
+
+@pytest.mark.asyncio
+async def test_health_ignores_the_stale_consumers_of_a_closed_channel(started):
+    consumer = started.h.consumer
+    await consumer.start()
+    started.connection.channels[0].is_closed = True  # connection back, channel not restored yet
+    assert consumer.is_healthy is False
+    started.connection.channels[0].is_closed = False
+    assert consumer.is_healthy is True
+
+
+@pytest.mark.asyncio
+async def test_a_reconnect_is_logged(started, caplog):
+    await started.h.consumer.start()
+    (callback,) = started.connection.reconnect_callbacks
+    with caplog.at_level(logging.INFO):
+        callback(started.connection)
+    assert "event=broker_reconnected" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_a_failed_start_closes_the_connection_and_reraises(started, monkeypatch):
-    async def broken_get_queue(name, ensure=True):
+    async def broken_declare_queue(name, **kwargs):
         raise AMQPConnectionError("down")
 
     consumer = started.h.consumer
@@ -442,7 +530,7 @@ async def test_a_failed_start_closes_the_connection_and_reraises(started, monkey
 
     async def channel(**kwargs):
         ch = await original(**kwargs)
-        ch.get_queue = broken_get_queue
+        ch.declare_queue = broken_declare_queue
         return ch
 
     started.connection.channel = channel
@@ -455,19 +543,19 @@ async def test_a_failed_start_closes_the_connection_and_reraises(started, monkey
 async def test_a_start_retried_after_a_partial_subscription_becomes_healthy(started):
     consumer = started.h.consumer
     original = started.connection.channel
-    calls = {"get_queue": 0}
+    calls = {"declare_queue": 0}
 
     async def channel(**kwargs):
         ch = await original(**kwargs)
-        plain_get_queue = ch.get_queue
+        plain_declare_queue = ch.declare_queue
 
-        async def flaky_get_queue(name, ensure=True):
-            calls["get_queue"] += 1
-            if calls["get_queue"] == 2:  # first queue subscribed, second one fails
+        async def flaky_declare_queue(name, **kwargs):
+            calls["declare_queue"] += 1
+            if calls["declare_queue"] == 2:  # first queue subscribed, second one fails
                 raise AMQPConnectionError("down")
-            return await plain_get_queue(name, ensure)
+            return await plain_declare_queue(name, **kwargs)
 
-        ch.get_queue = flaky_get_queue
+        ch.declare_queue = flaky_declare_queue
         return ch
 
     started.connection.channel = channel

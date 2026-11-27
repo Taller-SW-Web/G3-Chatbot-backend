@@ -154,6 +154,7 @@ class OutboxConsumer:
         """Connects, declares the whole topology and subscribes to both queues."""
         try:
             self._connection = await aio_pika.connect_robust(self._url, timeout=self._connect_timeout)
+            self._connection.reconnect_callbacks.add(self._on_reconnected)
             self._consume_channel = await self._connection.channel()
             await self._consume_channel.set_qos(prefetch_count=self._prefetch)
             self._publish_channel = await self._connection.channel(
@@ -161,13 +162,22 @@ class OutboxConsumer:
             )
             await declare_topology(self._consume_channel)
             for spec in QUEUES:
-                queue = await self._consume_channel.get_queue(spec.name, ensure=False)
+                # `declare_queue` (idempotent, same arguments as the topology) returns a queue the
+                # robust channel tracks, so after a reconnect it re-declares the queue, its
+                # bindings and re-registers this consumer. `get_queue(ensure=False)` returns an
+                # untracked instance: nothing would be restored and the consumer would stay silent.
+                queue = await self._consume_channel.declare_queue(spec.name, durable=True)
                 tag = await queue.consume(partial(self._on_message, spec), no_ack=False)
                 self._subscriptions.append((queue, tag))
         except BaseException:
             await self._close_connection()
             raise
         _log(logging.INFO, "consumer_started", queues=",".join(s.name for s in QUEUES), prefetch=self._prefetch)
+
+    def _on_reconnected(self, *_args: Any) -> None:
+        # The robust channels restore queues and consumers right after this; /health stays
+        # `unavailable` until they are registered again.
+        _log(logging.INFO, "broker_reconnected", queues=",".join(s.name for s in QUEUES))
 
     async def stop(self) -> None:
         """Stops consuming, lets the in-flight messages finish, then closes the connection."""
@@ -195,9 +205,31 @@ class OutboxConsumer:
 
     # -- health ----------------------------------------------------------------
 
+    def _live_consumer_count(self) -> int:
+        """Consumers the broker channel currently has registered (not the local bookkeeping).
+
+        The underlying channel drops a consumer when it closes or the broker cancels it, and the
+        robust channel registers it again once the reconnect completes.
+        """
+        channel = self._consume_channel
+        if channel is None:
+            return 0
+        try:
+            if channel.is_closed:  # still the pre-reconnect channel: its consumers are stale
+                return 0
+            # `channel.channel` is deprecated and `get_underlay_channel()` is async; the property
+            # must stay synchronous for the healthcheck, hence the private attribute.
+            underlay = getattr(channel, "_channel", None)
+            if underlay is None:
+                return 0
+            live = underlay.channel.consumers
+        except Exception:  # channel closed or being reopened by the robust connection
+            return 0
+        return sum(1 for _queue, tag in self._subscriptions if tag in live)
+
     @property
     def is_healthy(self) -> bool:
-        """True only while the connection is open and both queues have an active consumer."""
+        """True only while the connection is open and every queue has a live consumer."""
         connection = self._connection
         if connection is None or self._stopping:
             return False
@@ -205,14 +237,14 @@ class OutboxConsumer:
         return (
             not connection.is_closed
             and (connected is None or connected.is_set())
-            and len(self._subscriptions) == len(QUEUES)
+            and self._live_consumer_count() == len(QUEUES)
         )
 
     def status(self) -> dict[str, Any]:
         return {
             "status": "ok" if self.is_healthy else "unavailable",
             "connected": self._connection is not None and not self._connection.is_closed,
-            "consuming": len(self._subscriptions) == len(QUEUES),
+            "consuming": self._live_consumer_count() == len(QUEUES),
             "queues": [spec.name for spec in QUEUES],
             "inFlight": self._in_flight,
             "counters": self.stats.as_dict(),
