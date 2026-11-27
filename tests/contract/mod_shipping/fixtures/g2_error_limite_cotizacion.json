@@ -1,0 +1,10 @@
+{
+  "type": "https://despacho.example.com/problemas/limite-cotizacion",
+  "title": "Límite de cotizaciones excedido",
+  "status": 429,
+  "code": "DESP_ERROR_LIMITE_COTIZACION",
+  "detail": "El canal superó su límite de cotizaciones.",
+  "instance": "/api/v1/cotizaciones",
+  "correlationId": "35ac19fa-4b25-4a98-bbdd-882234ec1a2c",
+  "timestamp": "2026-09-23T18:30:00Z"
+}
