@@ -567,7 +567,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
-      - name: Enforce zero new issues (MINOR+)
+      - name: Enforce zero new issues (PR: MINOR+, main: CRITICAL+)
         if: steps.token.outputs.available == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -575,13 +575,17 @@ jobs:
         run: |
           args=()
           if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # El PR bloquea todo lo nuevo relevante; main solo bloquea
+            # CRITICAL/BLOCKER para no tumbar el deploy por deuda heredada.
             args+=(--pull-request "${{ github.event.pull_request.number }}")
+            threshold=MINOR
           else
             args+=(--branch "${{ github.ref_name }}")
+            threshold=CRITICAL
           fi
           python scripts/ci/sonar_gate_report.py \
             --project-key g3-chatbot-backend "${args[@]}" \
-            --fail-on-severity MINOR \
+            --fail-on-severity "$threshold" \
             --output sonar-strict-gate.md
       - name: Explain quality gate failure
         if: failure() && steps.token.outputs.available == 'true'
