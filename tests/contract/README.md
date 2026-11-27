@@ -106,17 +106,14 @@ completa del documento y los JSON de `mod_shipping/fixtures/` son los ejemplos
 de las secciones 5.1 (cotización) y 6.1 (seguimiento) transcritos a mano. Esta
 limitación se repite en `tests/contract/mod_shipping/README.md`.
 
-### Casos que dependen de #213
+### Casos de #213
 
-`#213` alinea el contrato de direcciones (`esPredeterminada`) y el indicador
-`csatEnviado` de los pedidos. Mientras siga abierta, estas pruebas de contrato
-**no** cubren esos campos para no fijar una forma que el código todavía puede
-cambiar. Cuando #213 mergee, se agregan los fixtures y casos correspondientes en
-`shared/` (direcciones G7) y en los tests de pedidos G5.
+`#213` ya está en `development`. Los fixtures de G7 incluyen
+`esPredeterminada` y los tests de pedidos cubren la forma actual del contrato;
+`csatEnviado` no aparece en `ventas.yaml`, así que no se fija en `shared/`.
 
 ### CSAT 403/404 (issue #84)
 
-En `mod_postventa` solo se prueba el `201` sin cuerpo de `POST /api/v2/csat`.
-Los casos `403 ACCESO_DENEGADO` y `404 PEDIDO_NO_ENCONTRADO` quedan fuera por la
-ambigüedad reportada en la issue #84 de `G3-Chatbot-specs`; ver el README del
-módulo.
+La issue #84 se cerró con la decisión `404 RECURSO_NO_ENCONTRADO`. Los casos
+`403 ACCESO_DENEGADO` y `404 PEDIDO_NO_ENCONTRADO` se agregan en el PR de
+`mod_postventa` (#229), no en `shared/`; ver el README del módulo.
