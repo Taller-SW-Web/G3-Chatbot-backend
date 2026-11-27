@@ -70,7 +70,7 @@ Reglas de capa:
 | Unitario | reglas, casos de uso, fakes | `tests/unit/mod_<x>/` |
 | Router | status, `problem+json`, auth, validación | `tests/unit/mod_<x>/test_*_router.py` |
 | Integración | PostgreSQL 18 real (`TEST_DATABASE_URL`) | `tests/integration/mod_<x>/` |
-| Gate | fronteras y contrato | `tests/unit/test_check_modules.py`, `test_openapi_export.py` |
+| Gate | fronteras y contrato | `tests/unit/test_check_modules.py`, `tests/unit/shared/test_openapi_export.py` |
 
 Comandos obligatorios:
 
@@ -81,6 +81,19 @@ mypy src
 python scripts/check_modules.py
 python scripts/export_openapi.py --check
 ```
+
+El job `validate` agrupa `ruff`, `mypy`, `check_modules` y la comprobación/validación del OpenAPI; `pytest` corre en el job `unit-tests`. Para reproducir `validate`:
+
+```bash
+python scripts/ci/run_validators.py
+pip install openapi-spec-validator==0.9.0
+openapi-spec-validator docs/openapi.json
+python scripts/ci/scope.py --base origin/development --event pull_request --json
+```
+
+Un PR de solo documentación no corre tests, Docker ni Sonar. La etiqueta `ci:full` fuerza el alcance completo, los jobs caros y la auditoría; añadirla relanza el workflow. Detalle y comandos de integración en [docs/ci-pipeline.md](https://github.com/Taller-SW-Web/G3-Chatbot-specs/blob/development/docs/ci-pipeline.md).
+
+> **Windows:** `test_consumer_entrypoint.py::test_sigterm_stops_the_consumer_and_returns_cleanly` falla por `asyncio.add_signal_handler`, que no existe en Windows. Usa WSL o deselecciónalo; el CI corre en Ubuntu.
 
 Si tocaste wiring/capacidades/discovery:
 

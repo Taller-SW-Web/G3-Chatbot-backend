@@ -5,62 +5,130 @@ on:
     branches: [development]
   pull_request:
     branches: [development]
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
+  schedule:
+    # Full weekly run: catches CVEs and drift that a diff-scoped PR cannot see.
+    - cron: "0 8 * * 1"
   workflow_dispatch:
 
-# Least privilege: the workflow only reads the repository.
+# Least privilege: the workflow only reads the repository. The notify job
+# elevates pull-requests/actions permissions for its own scope.
 permissions:
   contents: read
 
-# A newer push on the same ref cancels the previous run.
+# A newer push on the same ref cancels the previous PR run. Push/schedule runs
+# are not cancelled: a weekly security run must finish even if a push arrives.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PYTHONPATH: .
 
 jobs:
-  lint:
-    name: Lint
+  # Cheap job that decides what the expensive jobs must do. GitHub has no
+  # `changes` filter per job, so the scope is computed once and consumed with
+  # `needs.scope.outputs.*`.
+  scope:
+    name: Scope
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.scope.outputs.mode }}
+      full: ${{ steps.scope.outputs.full }}
+      modules: ${{ steps.scope.outputs.modules }}
+      integration_shards: ${{ steps.scope.outputs.integration_shards }}
+      run_validate: ${{ steps.scope.outputs.run_validate }}
+      run_unit: ${{ steps.scope.outputs.run_unit }}
+      run_integration: ${{ steps.scope.outputs.run_integration }}
+      run_docker: ${{ steps.scope.outputs.run_docker }}
+      run_security: ${{ steps.scope.outputs.run_security }}
+      run_dast: ${{ steps.scope.outputs.run_dast }}
+      run_gateway: ${{ steps.scope.outputs.run_gateway }}
+      run_sonar: ${{ steps.scope.outputs.run_sonar }}
+      sonar_sources_changed: ${{ steps.scope.outputs.sonar_sources_changed }}
+      run_specs: ${{ steps.scope.outputs.run_specs }}
+      run_dependency_review: ${{ steps.scope.outputs.run_dependency_review }}
+      reason: ${{ steps.scope.outputs.reason }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
-      - name: Install ruff
-        run: pip install ruff==0.17.2
-      - name: Lint
-        run: ruff check .
+      - name: Compute scope
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF" != "refs/heads/development" ]; then
+            echo "::error::workflow_dispatch solo se permite en development para no ejecutar helpers con token desde una rama no revisada."
+            exit 1
+          fi
+          args=(--event "$EVENT_NAME")
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+            args+=(--base "origin/$BASE_REF")
+          elif [ "$EVENT_NAME" = "push" ]; then
+            args+=(--before "$BEFORE_SHA")
+          else
+            args+=(--full)
+          fi
+          if printf '%s' ",$LABELS," | grep -q ',ci:full,'; then
+            args+=(--full)
+          fi
+          python scripts/ci/scope.py "${args[@]}" --labels "$LABELS" --github-output "$GITHUB_OUTPUT"
 
-  types:
-    name: Type check
+  # One job for every blocking validator: the developer sees all errors at once
+  # and the runner pays the setup once. The report is kept as evidence for 90 days.
+  validate:
+    name: Validate
+    needs: scope
+    if: needs.scope.outputs.run_validate == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
-      - name: Install mypy
-        run: pip install mypy
-      - name: Type check
-        run: mypy src
+          cache: pip
+      - name: Install validators
+        run: pip install -r requirements.txt ruff==0.17.2 mypy==2.4.1 openapi-spec-validator==0.9.0
+      - name: Run validators
+        run: python scripts/ci/run_validators.py --report validation-report.txt
+      - name: Validate OpenAPI schema
+        run: openapi-spec-validator docs/openapi.json
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: validation-report
+          path: validation-report.txt
+          retention-days: 90
+          if-no-files-found: warn
 
   unit-tests:
     name: Unit tests
+    needs: [scope, validate]
+    if: |
+      always() && needs.scope.outputs.run_unit == 'true' &&
+      needs.validate.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
           cache: pip
@@ -68,49 +136,31 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run unit tests
         run: python -m pytest tests/unit --cov=src --cov-report=xml --cov-report=term
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v7
+      - name: Upload unit coverage
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: coverage-backend
+          name: coverage-unit
           path: coverage.xml
+          retention-days: 7
           if-no-files-found: error
 
-  openapi:
-    name: Export OpenAPI
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-          cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Verify committed OpenAPI is up to date
-        run: python scripts/export_openapi.py --check
-      - name: Export OpenAPI schema
-        run: python scripts/export_openapi.py --output docs/openapi.json
-      - name: Validate OpenAPI schema
-        run: |
-          pip install openapi-spec-validator
-          openapi-spec-validator docs/openapi.json
-      - name: Upload OpenAPI schema artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: openapi-spec
-          path: docs/openapi.json
-          if-no-files-found: error
-
+  # Dynamic matrix: only the shards with something to run are created. Each leg
+  # owns its services (Postgres + RabbitMQ); there is no shared state.
   integration-tests:
-    name: Migrations and integration tests
+    name: Integration (${{ matrix.shard }})
+    needs: [scope, validate, unit-tests]
+    if: |
+      always() && needs.scope.outputs.run_integration == 'true' &&
+      needs.validate.result == 'success' &&
+      needs.unit-tests.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.scope.outputs.integration_shards) }}
     services:
       postgres:
-        # PostgreSQL 18 for native uuidv7(), as the integration tests require.
         image: postgres:18
         env:
           POSTGRES_USER: postgres
@@ -123,8 +173,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-      # Broker for the outbox relay tests (ADR-0030). Never CloudAMQP: load and CI runs
-      # would burn its monthly quota.
       rabbitmq:
         image: rabbitmq:4
         ports:
@@ -138,92 +186,102 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/chatbot_test
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/chatbot_test
       RABBITMQ_TEST_URL: amqp://guest:guest@localhost:5672/
+      COVERAGE_FILE: .coverage.${{ matrix.shard }}
+      SHARD: ${{ matrix.shard }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Check migrations (upgrade, downgrade, upgrade)
+      - name: Prepare database
         run: |
           alembic upgrade head
-          alembic downgrade base
-          alembic upgrade head
+          if [ "$SHARD" = "core" ]; then
+            # The up/down/up gate runs once, not once per shard.
+            alembic downgrade base
+            alembic upgrade head
+          fi
       - name: Run integration tests
-        # `--cov-fail-under=0`: este reporte no se evalúa solo. Sonar combina la
-        # cobertura de integración con la de unitarias y el umbral se aplica una
-        # vez sobre el total del proyecto.
         run: |
-          python -m pytest tests/integration \
-            --cov=src --cov-report=xml:coverage-integration.xml --cov-fail-under=0
-      - name: Upload integration coverage report
-        uses: actions/upload-artifact@v7
+          if [ "$SHARD" = "core" ]; then
+            # Every root-level integration test, so a new file does not need a
+            # workflow edit. Gateway tests skip themselves without a URL.
+            python -m pytest tests/integration/test_*.py \
+              --cov=src --cov-report= --cov-fail-under=0
+          else
+            python -m pytest "tests/integration/$SHARD" \
+              --cov=src --cov-report= --cov-fail-under=0
+          fi
+      - name: Upload shard coverage
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: coverage-integration
-          path: coverage-integration.xml
+          name: integration-coverage-${{ matrix.shard }}
+          path: .coverage.${{ matrix.shard }}
+          include-hidden-files: true
           if-no-files-found: error
 
-  # Fase 4 de ADR-0024: el checker es bloqueante. Si falla, hay imports
-  # cruzados entre módulos o falta la estructura obligatoria.
-  modules:
-    name: Module boundaries
+  coverage-merge:
+    name: Merge integration coverage
+    needs: integration-tests
+    if: needs.integration-tests.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
-      - name: Check modules manifest, MODULE.md, MODULE_ID and import boundaries
-        run: python scripts/check_modules.py
-
-  security:
-    name: Dependency audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
+      - name: Install coverage
+        run: pip install "coverage[toml]==7.17.2"
+      - name: Download shard coverage
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          persist-credentials: false
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      # Gate bloqueante (H5-C1): una vulnerabilidad conocida en requirements.txt
-      # tumba el job. No hay excepciones vigentes: si se necesitara una, se
-      # documenta en docs/seguridad/pip-audit-exceptions.md y se ignora por ID,
-      # nunca por paquete.
-      - name: Audit requirements (blocking)
+          pattern: integration-coverage-*
+          path: coverage-data
+          merge-multiple: true
+      - name: Combine coverage
+        # The global 85% floor belongs to the unit job. This report only feeds
+        # Sonar, which evaluates the combined new-code coverage afterwards.
         run: |
-          pip install pip-audit
-          pip-audit --strict -r requirements.txt
+          coverage combine coverage-data
+          coverage xml --fail-under=0 -o coverage-integration.xml
+      - name: Upload integration coverage
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: coverage-integration
+          path: coverage-integration.xml
+          retention-days: 7
+          if-no-files-found: error
 
   docker:
     name: Dockerfile + Trivy
+    needs: scope
+    if: needs.scope.outputs.run_docker == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - name: hadolint
-        uses: hadolint/hadolint-action@v3.5.0
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: Dockerfile
-          # Solo bloquea errores; los estilos se revisan sin frenar el gate.
           failure-threshold: error
       - name: hadolint (gateway)
-        uses: hadolint/hadolint-action@v3.5.0
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: gateway/Dockerfile
           failure-threshold: error
       - name: Trivy (vulnerabilidades y configuración)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -232,12 +290,21 @@ jobs:
           ignore-unfixed: true
           exit-code: 1
           format: table
-      - name: Build image (equivalente al build del frontend)
+      - name: Build image
         run: docker build --tag g3-chatbot-backend:ci .
+      - name: Trivy (backend image)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: g3-chatbot-backend:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          format: table
       - name: Build gateway image
         run: docker build --file gateway/Dockerfile --tag g3-chatbot-gateway:ci gateway
       - name: Trivy (gateway image)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: g3-chatbot-gateway:ci
@@ -246,12 +313,33 @@ jobs:
           exit-code: 1
           format: table
 
-  # H5-C2: DAST pasivo con OWASP ZAP contra el stack levantado en CI con módulos
-  # fake y LLM_PROVIDER=fake (sin datos reales ni secretos). Falla solo ante
-  # alertas High (`riskcode == 3`) sin excepción en `.zap/rules.tsv` y
-  # `docs/seguridad/zap-exceptions.md`.
+  security:
+    name: Dependency audit
+    needs: scope
+    if: needs.scope.outputs.run_security == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.12'
+      - name: Audit requirements (blocking)
+        run: |
+          pip install pip-audit==2.10.1
+          pip-audit --strict -r requirements.txt
+
+  # Expensive runtime checks do not run on every PR: they run on development,
+  # the weekly schedule, or when the PR carries the `ci:full` label.
   dast:
     name: DAST (OWASP ZAP)
+    needs: [scope, validate, unit-tests]
+    if: |
+      always() && needs.scope.outputs.run_dast == 'true' &&
+      (needs.validate.result == 'success' || needs.validate.result == 'skipped') &&
+      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -269,10 +357,10 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
           cache: pip
@@ -326,7 +414,6 @@ jobs:
           set -e
           echo "ZAP API exit=$api_status; ZAP baseline exit=$health_status"
           for status in "$api_status" "$health_status"; do
-            # 0=ok, 1=FAIL, 2=WARN are evaluated by the gate; anything else is a scan failure.
             if [ "$status" -gt 2 ]; then
               echo "::error::OWASP ZAP no pudo completar el escaneo (exit $status)"
               exit 1
@@ -351,21 +438,25 @@ jobs:
           fi
       - name: Upload ZAP DAST reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dast-zap-report
           path: |
             zap-reports/
             uvicorn.log
+          retention-days: 7
           if-no-files-found: error
       - name: Enforce High-severity gate
         if: always()
         run: test "${{ steps.zap_gate.outputs.exit_code }}" = "0"
 
-  # H5-G2 (ADR-0031): verifica el enrutamiento real de /health, /api/v1 y SSE
-  # a través del contenedor Kong OSS DB-less delante de FastAPI.
   gateway-integration:
     name: Gateway integration (Kong OSS)
+    needs: [scope, validate, unit-tests]
+    if: |
+      always() && needs.scope.outputs.run_gateway == 'true' &&
+      (needs.validate.result == 'success' || needs.validate.result == 'skipped') &&
+      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -383,10 +474,10 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
           cache: pip
@@ -435,86 +526,159 @@ jobs:
         if: always()
         run: docker rm -f kong-ci || true
 
-  # Revisa las dependencias que el PR agrega/cambia contra el Dependency Graph.
-  # El job corre siempre (aunque en `push` no revisa nada) para no romper el
-  # chequeo de `skipped` del gate.
   dependency-review:
     name: Dependency review
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - name: Review dependencies
-        if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@v5.0.1
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
 
-  # Análisis de SonarCloud con la cobertura de unitarias e integración. El proyecto
-  # espera el Quality Gate (`sonar.qualitygate.wait`), así que un gate rojo tumba el job.
-  #
-  # Los PRs de Dependabot se ejecutan como si vinieran de un fork: no reciben
-  # secretos. Sin token el escaneo no puede autenticarse, así que se omite y el job
-  # queda verde; la cobertura y el resto del gate siguen intactos.
   sonar:
     name: SonarCloud
+    needs: [scope, validate, unit-tests, integration-tests, coverage-merge]
+    if: |
+      always() && needs.scope.outputs.run_sonar == 'true' &&
+      needs.validate.result == 'success' &&
+      needs.unit-tests.result == 'success' &&
+      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
+      (needs.coverage-merge.result == 'success' || needs.coverage-merge.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [unit-tests, integration-tests]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Detect SONAR_TOKEN
+      - name: Checkout base CI helpers
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - name: Select Sonar helper
+        id: helper
+        run: |
+          if [ -f base/scripts/ci/sonar_gate_report.py ]; then
+            echo "path=base/scripts/ci/sonar_gate_report.py" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=scripts/ci/sonar_gate_report.py" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Require SONAR_TOKEN
         id: token
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          if [ -n "$SONAR_TOKEN" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Sin SONAR_TOKEN (PR de Dependabot): se omite SonarCloud."
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::SONAR_TOKEN no está disponible para este PR."
+            echo "::error::Los PRs de fork/Dependabot no reciben secretos. Configura el Dependabot secret SONAR_TOKEN o ejecuta el análisis en una rama del repo base antes de mergear."
+            exit 1
+          fi
+          echo "available=true" >> "$GITHUB_OUTPUT"
+      - name: Reject unreviewed sonar-project.properties changes
+        if: |
+          github.event_name == 'pull_request' &&
+          !contains(github.event.pull_request.labels.*.name, 'ci:sonar-config')
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          changed=$(git diff --name-only --no-renames "$BASE_SHA...HEAD")
+          if printf '%s\n' "$changed" | grep -qx 'sonar-project.properties'; then
+            echo "::error::sonar-project.properties no puede cambiar en este PR sin la etiqueta ci:sonar-config."
+            echo "::error::Un owner debe revisar el cambio y añadir la etiqueta, o moverlo a un PR separado."
+            exit 1
           fi
       - name: Download coverage reports
         if: steps.token.outputs.available == 'true'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          # `coverage-backend` (unitarias) y `coverage-integration` aterrizan en la
-          # raíz: Sonar los lee juntos y suma las líneas cubiertas por cualquiera.
           pattern: coverage-*
           merge-multiple: true
       - name: SonarCloud scan
         if: steps.token.outputs.available == 'true'
-        uses: SonarSource/sonarqube-scan-action@v8.5.1
+        uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
+        with:
+          # Workflow-controlled: a PR cannot disable the wait by editing the
+          # project properties.
+          args: >-
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=600
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
+      - name: "Enforce zero new issues (PR: MINOR+, non-PR: CRITICAL+)"
+        if: steps.token.outputs.available == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        run: |
+          args=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # El PR bloquea todo lo nuevo relevante; non-PR solo bloquea
+            # CRITICAL/BLOCKER para no tumbar el deploy por deuda heredada.
+            args+=(--pull-request "${{ github.event.pull_request.number }}")
+            threshold=MINOR
+          else
+            args+=(--branch "${{ github.ref_name }}")
+            threshold=CRITICAL
+          fi
+          if [ "${{ needs.scope.outputs.sonar_sources_changed }}" = "true" ]; then
+            args+=(--require-new-code-metrics)
+          fi
+          python "${{ steps.helper.outputs.path }}" \
+            --project-key g3-chatbot-backend "${args[@]}" \
+            --fail-on-severity "$threshold" \
+            --output sonar-strict-gate.md
+      - name: Explain quality gate failure
+        if: failure() && steps.token.outputs.available == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        run: |
+          args=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            args+=(--pull-request "${{ github.event.pull_request.number }}")
+          else
+            args+=(--branch "${{ github.ref_name }}")
+          fi
+          python "${{ steps.helper.outputs.path }}" \
+            --project-key g3-chatbot-backend "${args[@]}" \
+            --output sonar-gate-report.md
+      - name: Upload Sonar gate reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: sonar-gate-reports
+          path: sonar-*.md
+          if-no-files-found: ignore
+          retention-days: 30
 
-  # `test` is the required status check of the protected branches, so it stays as the
-  # single gate. It runs even when a job fails, because a skipped required check counts as passed.
   specs:
     name: Specs del PR
+    needs: scope
+    if: needs.scope.outputs.run_specs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v7
-        if: github.event_name == 'pull_request'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
       - name: Validar spec enlazada
-        if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
           git clone --depth 1 --branch development https://github.com/Taller-SW-Web/G3-Chatbot-specs.git specs-repo
@@ -523,14 +687,146 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
 
-  test:
-    name: test
+  notify:
+    name: Notify failure
+    needs:
+      - scope
+      - validate
+      - unit-tests
+      - integration-tests
+      - coverage-merge
+      - docker
+      - security
+      - dast
+      - gateway-integration
+      - dependency-review
+      - sonar
+      - specs
+      - test
+    if: |
+      failure() && github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [lint, types, unit-tests, openapi, integration-tests, modules, specs, security, dependency-review, docker, dast, gateway-integration, sonar]
-    if: always()
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
     steps:
-      - name: Require every job to succeed
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
-        run: exit 1
-      - run: echo "All CI jobs passed."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Checkout base CI helpers
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - name: Select notify helper
+        id: helper
+        run: |
+          if [ -f base/scripts/ci/notify_failure.py ]; then
+            echo "path=base/scripts/ci/notify_failure.py" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=scripts/ci/notify_failure.py" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Comment the failure on the pull request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          SCOPE_REASON: ${{ needs.scope.outputs.reason }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python "${{ steps.helper.outputs.path }}"
+      - name: Upload notification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ci-failure-report
+          path: ci-failure.md
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # `test` is the required status check. It runs even when a job fails so a
+  # skipped required check cannot count as passed, and it verifies that every
+  # job the scope asked for actually succeeded.
+  test:
+    name: test
+    needs:
+      - scope
+      - validate
+      - unit-tests
+      - integration-tests
+      - coverage-merge
+      - docker
+      - security
+      - dast
+      - gateway-integration
+      - dependency-review
+      - sonar
+      - specs
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every expected job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          RUN_VALIDATE: ${{ needs.scope.outputs.run_validate }}
+          RUN_UNIT: ${{ needs.scope.outputs.run_unit }}
+          RUN_INTEGRATION: ${{ needs.scope.outputs.run_integration }}
+          RUN_DOCKER: ${{ needs.scope.outputs.run_docker }}
+          RUN_SECURITY: ${{ needs.scope.outputs.run_security }}
+          RUN_DAST: ${{ needs.scope.outputs.run_dast }}
+          RUN_GATEWAY: ${{ needs.scope.outputs.run_gateway }}
+          RUN_SONAR: ${{ needs.scope.outputs.run_sonar }}
+          RUN_SPECS: ${{ needs.scope.outputs.run_specs }}
+          RUN_DEPENDENCY_REVIEW: ${{ needs.scope.outputs.run_dependency_review }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS"])
+          failed = [
+              name
+              for name, payload in needs.items()
+              if payload.get("result") in {"failure", "cancelled"}
+          ]
+          if failed:
+              print("Failed jobs: " + ", ".join(sorted(failed)))
+              sys.exit(1)
+
+          expected = {
+              "validate": os.environ.get("RUN_VALIDATE"),
+              "unit-tests": os.environ.get("RUN_UNIT"),
+              "integration-tests": os.environ.get("RUN_INTEGRATION"),
+              "coverage-merge": os.environ.get("RUN_INTEGRATION"),
+              "docker": os.environ.get("RUN_DOCKER"),
+              "security": os.environ.get("RUN_SECURITY"),
+              "dast": os.environ.get("RUN_DAST"),
+              "gateway-integration": os.environ.get("RUN_GATEWAY"),
+              "sonar": os.environ.get("RUN_SONAR"),
+              "specs": os.environ.get("RUN_SPECS"),
+              "dependency-review": os.environ.get("RUN_DEPENDENCY_REVIEW"),
+          }
+          missing = [
+              name
+              for name, should_run in expected.items()
+              if should_run not in {"true", "false"}
+          ]
+          if missing:
+              print("Scope did not publish a boolean for: " + ", ".join(missing))
+              sys.exit(1)
+
+          mismatched = [
+              name
+              for name, should_run in expected.items()
+              if should_run == "true" and needs.get(name, {}).get("result") != "success"
+          ]
+          if mismatched:
+              print("Jobs that should have run did not succeed: " + ", ".join(mismatched))
+              sys.exit(1)
+          print("All CI jobs passed or were intentionally skipped.")
+          PY

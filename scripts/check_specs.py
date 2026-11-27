@@ -64,7 +64,11 @@ def main() -> int:
         if not declared:
             errors.append(f"{module_id}: no declara specs en modules.manifest.json")
             continue
-        linked = [spec for spec in declared if f"openspec/specs/{spec}" in body]
+        linked = [
+            spec
+            for spec in declared
+            if re.search(rf"openspec/specs/{re.escape(spec)}(?![a-z0-9-])", body)
+        ]
         if not linked:
             errors.append(
                 f"{module_id}: el PR no enlaza ninguna de sus specs "
