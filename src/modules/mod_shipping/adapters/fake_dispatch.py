@@ -79,10 +79,10 @@ class FakeDispatchPort:
             "fechaProgramada": (date.today() + timedelta(days=PLAZO_DIAS)).isoformat(),
             "hitos": [
                 {
-                    "titulo": "Recibido en centro de despacho",
+                    "etiqueta": "Recibido en centro de despacho",
                     "fecha": ahora,
                     "completado": True,
                 },
-                {"titulo": "En camino", "fecha": ahora, "completado": True},
+                {"etiqueta": "En camino", "fecha": ahora, "completado": True},
             ],
         }
