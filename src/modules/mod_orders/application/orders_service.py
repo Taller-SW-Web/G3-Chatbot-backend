@@ -161,7 +161,8 @@ class OrdersService:
             tracking["estadoEtiqueta"] = map_order_status_label("ENTREGADO")
             hitos = tracking.get("hitos")
             if isinstance(hitos, list) and not any(
-                str(hito.get("titulo", "")).strip().casefold() == "entregado"
+                str(hito.get("etiqueta") or hito.get("titulo") or "").strip().casefold()
+                == "entregado"
                 for hito in hitos
                 if isinstance(hito, dict)
             ):

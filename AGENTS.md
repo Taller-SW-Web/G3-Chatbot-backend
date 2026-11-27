@@ -12,9 +12,11 @@ Antes de tocar código, lee:
 ## Regla 1 — La spec manda
 
 - No implementes comportamiento que no esté en la spec del módulo.
-- Si el cambio **no está** en la spec, actualízala en el **mismo PR** (spec y
-  código viajan juntos). Si falta una decisión de producto, detente y repórtalo
-  con la evidencia; no la inventes.
+- Si el cambio **no está** en la spec, no implementes: abre una issue en
+  `G3-Chatbot-specs` asignada a `@Ankarmin` y `@MathiasTL`. Solo `@MathiasTL` y
+  `@Ankarmin` abren PRs en specs; el resto no crea ramas ni PRs. El PR de código
+  espera a que la spec esté en `development`. Si falta una
+  decisión de producto, detente y repórtalo con la evidencia; no la inventes.
 - Si la spec y el código se contradicen, gana la spec y el PR debe explicar la
   corrección.
 
@@ -38,7 +40,8 @@ Antes de tocar código, lee:
   `docs/adr/ADR-0024-modularizacion.md` y en `arquitectura-backend.md` en el
   mismo PR.
 - No toques `G3-Chatbot-frontend` ni `G3-Chatbot-specs` desde este repo; los
-  cambios de spec se reportan/coordinan en su repo.
+  cambios de spec se reportan con una issue en specs asignada a `@Ankarmin` y
+  `@MathiasTL`. No abras ramas ni PRs en specs.
 
 ## Regla 4 — Fronteras
 
@@ -91,8 +94,8 @@ Además:
   despliegues desde `main`.
 - **Incoherencia con la spec:** si una issue contradice la spec o pide algo no
   definido, no la implementes; abre una issue en `G3-Chatbot-specs` asignada a
-  `@Ankarmin`, enlaza la original y espera la decisión. Regla completa:
-  `G3-Chatbot-specs/AGENTS.md` §8.
+  `@Ankarmin` y `@MathiasTL`, enlaza la original y espera la decisión. Regla
+  completa: `G3-Chatbot-specs/AGENTS.md` §8.
 - **Higiene:** no reescribas la historia compartida de `development`, no borres
   tags o ramas sin coordinar y no pegues secretos en issues o PRs.
 

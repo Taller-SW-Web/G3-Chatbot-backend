@@ -90,6 +90,19 @@ async def test_seguimiento_de_un_pedido_conocido(fake):
 
 
 @pytest.mark.asyncio
+async def test_seguimiento_emite_la_etiqueta_de_g2(fake):
+    seguimiento = await fake.get_order_tracking("PED-2026-00891")
+
+    assert seguimiento is not None
+    hitos = seguimiento["hitos"]
+    assert [hito["etiqueta"] for hito in hitos] == [
+        "Recibido en centro de despacho",
+        "En camino",
+    ]
+    assert all("titulo" not in hito for hito in hitos)
+
+
+@pytest.mark.asyncio
 async def test_seguimiento_desconocido_es_none(fake):
     assert await fake.get_order_tracking("OTRO-123") is None
 

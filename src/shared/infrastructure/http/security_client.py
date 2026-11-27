@@ -344,7 +344,7 @@ class SecurityClient(SecurityBaseClient):
             "distrito": address.get("distrito") or "",
             "direccion": address.get("direccion") or address.get("direccionExacta") or "",
             "referencia": address.get("referencia"),
-            "predeterminada": bool(address.get("predeterminada", False)),
+            "esPredeterminada": bool(address.get("esPredeterminada", address.get("predeterminada", False))),
         }
         response = await self._request(
             "POST",

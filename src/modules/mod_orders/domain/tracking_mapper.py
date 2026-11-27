@@ -33,7 +33,11 @@ def sanitize_tracking_payload(
         for item in raw_milestones:
             if not isinstance(item, dict):
                 continue
-            titulo = str(item.get("titulo") or item.get("etapa") or "").strip()
+            # G2 publishes the milestone label as `etiqueta`; `titulo`/`etapa`
+            # are kept as tolerated aliases of older mocks and payloads.
+            titulo = str(
+                item.get("etiqueta") or item.get("titulo") or item.get("etapa") or ""
+            ).strip()
             fecha = str(item.get("fecha") or item.get("timestamp") or "").strip()
             if not titulo:
                 continue
