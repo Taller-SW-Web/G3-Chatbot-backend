@@ -92,7 +92,7 @@ def _number(value: Any) -> float | None:
 
 @pytest.mark.asyncio
 async def test_search_reference_conversation(eval_case: EvalCase):
-    """Búsqueda: el modelo usa buscar_productos con palabras clave y la talla, y recibe el carrusel."""
+    """busqueda-filtrado · Búsqueda: el modelo usa buscar_productos con palabras clave y la talla, y recibe el carrusel."""
     world = _real_world()
 
     events = await run_reference_turn(eval_case, world, "Busco zapatillas para correr talla 42")
@@ -134,7 +134,7 @@ async def test_search_reference_conversation(eval_case: EvalCase):
 
 @pytest.mark.asyncio
 async def test_recommendation_reference_conversation(eval_case: EvalCase):
-    """Recomendación: usa recomendar_productos con actividad y presupuesto, sin inventar datos."""
+    """recomendacion · Recomendación: usa recomendar_productos con actividad y presupuesto, sin inventar datos."""
     world = _real_world()
 
     events = await run_reference_turn(
@@ -185,7 +185,7 @@ async def test_recommendation_reference_conversation(eval_case: EvalCase):
 
 @pytest.mark.asyncio
 async def test_offers_reference_conversation(eval_case: EvalCase):
-    """Ofertas: consulta promociones vigentes y no inventa códigos de cupón."""
+    """ofertas-promociones · Ofertas: consulta promociones vigentes y no inventa códigos de cupón."""
     world = _real_world()
 
     events = await run_reference_turn(eval_case, world, "¿Qué ofertas hay hoy?")
@@ -213,7 +213,7 @@ async def test_offers_reference_conversation(eval_case: EvalCase):
 
 @pytest.mark.asyncio
 async def test_cart_reference_conversation(eval_case: EvalCase):
-    """Carrito: ver_carrito devuelve la línea sembrada y sus totales reales."""
+    """gestion-carrito · Carrito: ver_carrito devuelve la línea sembrada y sus totales reales."""
     world = _real_world()
     await world.seed_cart()
 
@@ -255,7 +255,7 @@ async def test_cart_reference_conversation(eval_case: EvalCase):
 
 @pytest.mark.asyncio
 async def test_prices_are_only_quoted_from_tool_data(eval_case: EvalCase):
-    """Precios: el detalle devuelve el precio y el texto no introduce importes ajenos a la herramienta."""
+    """tarjetas-detalle-producto · Precios: el detalle devuelve el precio y el texto no introduce importes ajenos a la herramienta."""
     world = _real_world()
 
     events = await run_reference_turn(eval_case, world, "¿Cuánto cuesta la Nike Revolution 7?")
@@ -295,7 +295,7 @@ async def test_prices_are_only_quoted_from_tool_data(eval_case: EvalCase):
 
 @pytest.mark.asyncio
 async def test_out_of_domain_request_uses_no_tools(eval_case: EvalCase):
-    """Fuera de dominio: una tarea ajena no dispara herramientas ni datos comerciales."""
+    """motor-conversacion · Fuera de dominio: una tarea ajena no dispara herramientas ni datos comerciales."""
     world = _real_world()
 
     events = await run_reference_turn(
@@ -310,7 +310,7 @@ async def test_out_of_domain_request_uses_no_tools(eval_case: EvalCase):
 
 @pytest.mark.asyncio
 async def test_sensitive_data_is_redacted_before_the_llm(eval_case: EvalCase):
-    """Datos sensibles: tarjeta y contraseña se redactan antes de persistir y de llamar al LLM."""
+    """motor-conversacion · Datos sensibles: tarjeta y contraseña se redactan antes de persistir y de llamar al LLM."""
     world = _real_world()
 
     events = await run_reference_turn(
@@ -347,7 +347,7 @@ async def test_sensitive_data_is_redacted_before_the_llm(eval_case: EvalCase):
 
 @pytest.mark.asyncio
 async def test_degraded_mode_searches_without_the_llm(eval_case: EvalCase):
-    """Modo degradado: sin LLM, el menú seguro busca por palabra clave y no inventa importes."""
+    """motor-conversacion · Modo degradado: sin LLM, el menú seguro busca por palabra clave y no inventa importes."""
     world = ShoppingWorld(FakeLLMProvider([LLMUnavailableError("simulated outage")]), timeout_seconds=5.0)
 
     events = await run_reference_turn(eval_case, world, "busco zapatillas")
@@ -380,7 +380,7 @@ async def test_degraded_mode_searches_without_the_llm(eval_case: EvalCase):
 
 @pytest.mark.asyncio
 async def test_harness_smoke_with_fake_provider(eval_case: EvalCase):
-    """Humo: el harness registra herramienta, bloque, texto y aserciones sin LLM_API_KEY."""
+    """Harness · Humo: el harness registra herramienta, bloque, texto y aserciones sin LLM_API_KEY."""
     block = {"id": "p1", "tipo": "CARRUSEL_PRODUCTOS", "datos": {"productos": []}}
     tools = FakeToolExecutor({"buscar_productos": ToolResult("OK", {"texto": "Dos opciones"}, blocks=(block,))})
     llm = FakeLLMProvider([
