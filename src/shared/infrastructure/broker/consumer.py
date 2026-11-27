@@ -219,7 +219,7 @@ class OutboxConsumer:
                 return 0
             # `channel.channel` is deprecated and `get_underlay_channel()` is async; the property
             # must stay synchronous for the healthcheck, hence the private attribute.
-            underlay = channel._channel  # type: ignore[attr-defined]
+            underlay = getattr(channel, "_channel", None)
             if underlay is None:
                 return 0
             live = underlay.channel.consumers
