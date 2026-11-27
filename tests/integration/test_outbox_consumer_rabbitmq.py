@@ -10,6 +10,7 @@ import uuid
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from urllib.parse import urlsplit
 
 import aio_pika
 import pytest
@@ -232,6 +233,79 @@ async def test_the_topology_is_recreated_when_the_consumer_starts(rabbitmq_url, 
     async with running_consumer(rabbitmq_url, _null_session, lambda s: Recorder()):
         for name in ALL_QUEUES:
             await channel.get_queue(name)  # passive declare: raises if missing
+
+
+class FlakyProxy:
+    """TCP proxy in front of the broker; `drop_connections()` simulates a broker restart.
+
+    Works wherever the test can reach RabbitMQ (no docker, rabbitmqctl or management API).
+    """
+
+    def __init__(self, target_host: str, target_port: int):
+        self._target = (target_host, target_port)
+        self._writers: list[asyncio.StreamWriter] = []
+        self._server: asyncio.AbstractServer | None = None
+        self.port = 0
+
+    async def start(self) -> None:
+        self._server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
+        self.port = self._server.sockets[0].getsockname()[1]
+
+    async def _handle(self, client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter) -> None:
+        upstream_r, upstream_w = await asyncio.open_connection(*self._target)
+        self._writers += [client_w, upstream_w]
+
+        async def pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            try:
+                while data := await reader.read(65536):
+                    writer.write(data)
+                    await writer.drain()
+            except OSError:
+                pass
+            finally:
+                writer.close()
+
+        await asyncio.gather(pipe(client_r, upstream_w), pipe(upstream_r, client_w))
+
+    def drop_connections(self) -> None:
+        for writer in self._writers:
+            writer.transport.abort()
+        self._writers.clear()
+
+    async def close(self) -> None:
+        self.drop_connections()
+        if self._server is not None:
+            self._server.close()
+            await self._server.wait_closed()
+
+
+async def test_the_consumer_resumes_consuming_after_the_connection_is_lost(
+    rabbitmq_url, relay, inspector
+):
+    target = urlsplit(rabbitmq_url)
+    proxy = FlakyProxy(target.hostname or "localhost", target.port or 5672)
+    await proxy.start()
+    try:
+        via_proxy = target._replace(
+            netloc=f"{target.username}:{target.password}@127.0.0.1:{proxy.port}"
+        ).geturl()
+        recorder = Recorder()
+        async with running_consumer(via_proxy, _null_session, lambda s: recorder) as consumer:
+            await relay.publish(_message())
+            await eventually(lambda: consumer.stats.consumed == 1)
+            assert consumer.is_healthy is True
+
+            await asyncio.sleep(0.2)  # let the ack of the first message reach the broker
+            proxy.drop_connections()
+            await eventually(lambda: consumer.is_healthy is False)  # reconnecting, not consuming
+            await eventually(lambda: consumer.is_healthy is True, timeout=30)
+
+            after = _message()
+            await relay.publish(after)
+            # At-least-once: a first-message ack lost with the socket may redeliver it.
+            await eventually(lambda: str(after.id) in {call[0] for call in recorder.calls})
+    finally:
+        await proxy.close()
 
 
 # -- relay -> consumer with the real handlers on PostgreSQL ------------------------------
