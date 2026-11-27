@@ -1,0 +1,1401 @@
+openapi: 3.1.0
+
+# Contenido repetido de las respuestas de error (ancla de YAML)
+x-anclas:
+  error: &error
+    application/json:
+      schema:
+        $ref: '#/components/schemas/Error'
+
+info:
+  title: 'API de Ventas (M1): Pedidos y Anulaciones'
+  version: 1.10.0
+  description: |
+    **Módulo D, Ventas y Postventa (G5).** Este servicio es el único dueño del estado del pedido.
+    El detalle de Postventa (devoluciones, reembolsos, reclamos) está en la API de M2.
+
+    ## Cómo encaja con los demás módulos
+
+    - G1 Marketplace, G3 Chatbot y G4 Retail crean pedidos (1.1) y solicitan anulaciones (1.7). Marketplace recibe avisos de envío (webhook 1.10).
+    - La pasarela de pagos (simulador) avisa el resultado del cobro (1.2). M1 le pide el cobro de los pedidos de Marketplace.
+    - G2 Despacho avisa los eventos logísticos (1.5). M1 crea el despacho al sellar el paquete (1.13).
+    - G6 Productos publica por RabbitMQ el resultado de reservas y cupones. M1 reserva, consume y libera stock.
+    - G7 Seguridad emite y firma los tokens, y M1 los valida con su JWKS.
+    - M2 Postventa consulta pedidos (1.3) y pide reemplazos (1.11). M1 le pide reembolsos y le envía eventos del pedido.
+
+    ## Ciclo de vida del pedido
+
+    CREADO → PAGADO → EN_PREPARACION → DESPACHADO → ENTREGADO, con ANULADO como salida.
+
+    - **Retail** nace PAGADO y pasa a ENTREGADO en la misma operación (la venta ya ocurrió en tienda).
+    - **Orden de reemplazo** (cambio de producto): CREADO → EN_PREPARACION, sin pasar por PAGADO, porque no se cobra.
+    - Cada cambio de estado guarda quién lo hizo, el motivo y la fecha, y publica su evento a M2.
+
+    ## Decisiones de diseño
+
+    - **Autenticación:** Authorization con Bearer y el JWT firmado por G7 (RS256). Hay dos tipos de token: usa el botón
+      **Authorize** y mira en cada operación cuál exige.
+      - **Token de servicio:** módulo contra módulo. Se autoriza por scope.
+      - **Token de usuario:** una persona. Se autoriza por rol: CLIENTE o ADMIN_VENTAS (el Gestor).
+    - **Idempotencia:** repetir una operación no la duplica.
+      - 1.1 y 1.5 usan la cabecera Idempotency-Key (UUID v4).
+      - 1.2 usa transaccionId, 1.5 también idEvento y 1.11 usa devolucionId.
+    - **Códigos públicos:** la API expone PED-AAAA-NNNNN y ANUL-NNNN, nunca el id interno de la base de datos.
+    - **Fechas:** ISO-8601 en UTC (2026-09-23T00:05:00Z).
+    - **Paginación:** pagina desde 0 y tamano. Excepción acordada con Marketplace: 1.4b usa page desde 1 y pageSize.
+    - **Errores:** siempre el mismo formato, con un codigo estable para que el consumidor decida sin leer el texto.
+
+    Además de los errores de cada operación, cualquiera puede responder 500 ERROR_INTERNO.
+
+servers:
+  - url: /
+    description: Este mismo servicio
+  - url: https://g5-servicio-ventas.onrender.com
+    description: M1 publicado (Render)
+  - url: https://g5-api-gateway.onrender.com
+    description: API Gateway publicado (entrada para otros módulos)
+  - url: http://localhost:8081
+    description: M1 en local
+
+tags:
+  - name: F1 Pedidos
+    description: Creación, consulta y ciclo de vida del pedido. Responsable Michael.
+  - name: F1 Preparación y despacho
+    description: Botones del Gestor y eventos de Despacho (G2).
+  - name: F2 Anulaciones
+    description: Cancelación de pedidos, con autorización del Gestor si ya está en preparación. Responsable Luis Arroyo.
+  - name: F3 Cambio de producto
+    description: Orden de reemplazo sin cobro que pide M2 al aprobar un cambio. Responsable Joseph.
+  - name: Dashboard
+    description: Montos de venta para el panel del Gestor.
+
+paths:
+  /api/v1/pedidos:
+    post:
+      tags: [F1 Pedidos]
+      operationId: crearPedido
+      summary: 1.1 Crear pedido
+      description: |
+        Registra un pedido de un canal.
+
+        **Permiso:** token de servicio con scope ventas:pedidos:crear (Marketplace, Chatbot y Retail).
+
+        - MARKETPLACE: Estado al responder: CREADO. Qué hace M1: Reserva stock en Productos y pide el cobro al simulador. El resultado llega por 1.2.
+        - CHATBOT: Estado al responder: CREADO. Qué hace M1: Reserva stock. El chatbot cobra y avisa por 1.2.
+        - RETAIL: Estado al responder: ENTREGADO. Qué hace M1: No reserva ni usa 1.2: el cobro ya ocurrió en el POS (acuerdo G4).
+
+        **La reserva de stock es asíncrona.** Responder 201 no garantiza el stock: si Productos la rechaza, el pedido
+        pasa a ANULADO con motivo STOCK_NO_DISPONIBLE. El canal lo ve al consultar el pedido.
+
+        **Idempotencia (acuerdo H-02):**
+
+        - Clave nueva: 201, registra el pedido.
+        - Misma clave y mismo cuerpo: 200, el mismo pedido, sin crear otro.
+        - Misma clave con otro cuerpo: 409 IDEMPOTENCY_KEY_REUSED.
+
+        Un pedido rechazado por validación no consume la clave.
+
+        **Reglas de montos:** subtotal = suma de cantidad × precioUnitario; total = subtotal − descuentoCupon + costoEnvio.
+
+        **Documento:** DNI 8 dígitos; RUC 11 dígitos que inician en 10, 15, 17 o 20; CE 8 a 12 alfanuméricos; PASAPORTE 6 a 12 alfanuméricos.
+      security:
+        - TokenServicio: ['ventas:pedidos:crear']
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearPedidoRequest'
+            examples:
+              marketplace:
+                summary: Marketplace con envío a domicilio
+                value:
+                  canal: MARKETPLACE
+                  contacto:
+                    clienteId: 3f9a2b7e-6c1d-4e2a-9b3f-7a1d2c4e5f6a
+                    nombreCompleto: Juan Pérez Rodríguez
+                    tipoDocumento: DNI
+                    numeroDocumento: '72458912'
+                    telefono: '+51999888777'
+                    email: juan.perez@example.com
+                  items:
+                    - productoId: PROD-101
+                      sku: SKU-AUR-01
+                      descripcion: Audífonos Inalámbricos Bluetooth
+                      cantidad: 1
+                      precioUnitario: 129.90
+                  envio:
+                    modalidad: DELIVERY
+                    costo: 0
+                    destinatario: Juan Pérez
+                    departamento: Lima
+                    provincia: Lima
+                    distrito: San Miguel
+                    direccion: Av. La Marina 1234, Dpto 401
+                    referencia: Frente al centro comercial
+                  pago:
+                    metodoPago: TARJETA_CREDITO
+                    moneda: PEN
+                    subtotal: 129.90
+                    descuentoCupon: 0
+                    costoEnvio: 0
+                    total: 129.90
+              retail:
+                summary: Retail con pago mixto (acuerdo G4)
+                value:
+                  canal: RETAIL
+                  contacto:
+                    clienteId: 11111111-1111-1111-1111-111111111111
+                    nombreCompleto: Ana Díaz
+                    tipoDocumento: DNI
+                    numeroDocumento: '40123456'
+                    email: ana@example.com
+                  items:
+                    - productoId: PROD-7
+                      sku: SKU-7
+                      cantidad: 2
+                      precioUnitario: 50.00
+                  envio:
+                    tiendaId: TIENDA-MIRAFLORES
+                  pago:
+                    metodoPago: MIXTO
+                    moneda: PEN
+                    subtotal: 100.00
+                    descuentoCupon: 0
+                    costoEnvio: 0
+                    total: 100.00
+                    referenciaOperacion: VOU-778
+                    montoEfectivo: 40.00
+                    montoTarjeta: 60.00
+      responses:
+        '201':
+          description: Pedido creado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrearPedidoResponse'
+        '200':
+          description: Reintento con la misma Idempotency-Key y el mismo cuerpo. Devuelve el pedido ya creado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrearPedidoResponse'
+        '400':
+          description: |
+            CABECERA_FALTANTE: falta Idempotency-Key o no es UUID v4.
+            DATOS_INVALIDOS: campo obligatorio ausente o inválido; detalles indica cuál.
+            DOCUMENTO_INVALIDO: el número no cumple el formato de su tipo.
+            FORMATO_INVALIDO: JSON mal formado o valor fuera de catálogo.
+            MONTOS_INCONSISTENTES: los montos no cuadran.
+            FECHA_VENTA_FUERA_DE_RANGO: Retail con fechaVenta futura o de más de 72 horas.
+          content: *error
+        '409':
+          description: 'IDEMPOTENCY_KEY_REUSED: la clave ya se usó con un pedido distinto.'
+          content: *error
+        '503':
+          description: 'PRODUCTOS_NO_DISPONIBLE: Productos no admitió la reserva. El pedido no se guarda y la clave no se consume.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+    get:
+      tags: [F1 Pedidos]
+      operationId: listarPedidos
+      summary: 1.4 Bandeja de pedidos del Gestor
+      description: |
+        Listado paginado de todos los pedidos.
+
+        **Permiso:** token de usuario con rol ADMIN_VENTAS. Un canal que quiera mostrar "mis pedidos" usa 1.4b.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: clienteId
+          in: query
+          description: UUID del cliente en Seguridad.
+          schema: { type: string, format: uuid }
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoPedido' }
+        - name: canal
+          in: query
+          schema: { $ref: '#/components/schemas/CanalVenta' }
+        - name: buscar
+          in: query
+          description: Un código PED-AAAA-NNNNN filtra por ese pedido. Otro texto busca por documento exacto o parte del nombre.
+          schema: { type: string }
+        - name: desde
+          in: query
+          description: Día de creación inicial (UTC, inclusive).
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          description: Día de creación final (UTC, inclusive). No puede ser anterior a desde.
+          schema: { type: string, format: date }
+        - name: orden
+          in: query
+          schema: { type: string, enum: [RECIENTES, ANTIGUOS], default: RECIENTES }
+        - $ref: '#/components/parameters/Pagina'
+        - name: tamano
+          in: query
+          description: Registros por página (1 a 50).
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: Página de pedidos. clienteId es null si no se filtró por un cliente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListadoPedidos'
+        '400':
+          description: 'PAGINACION_INVALIDA, PARAMETRO_INVALIDO (desde posterior a hasta) o FORMATO_INVALIDO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/me:
+    get:
+      tags: [F1 Pedidos]
+      operationId: listarMisPedidos
+      summary: 1.4b Mis pedidos (cliente autenticado)
+      description: |
+        Pedidos del propio cliente (acuerdos H-03 y H-06 con Marketplace). La identidad sale del claim sub del token;
+        no se acepta clienteId, para que nadie consulte pedidos ajenos.
+
+        **Permiso:** token de usuario con rol CLIENTE.
+
+        **Zona horaria:** desde y hasta se cuentan en hora de Perú (UTC−5), el mismo día que ve el cliente.
+      security:
+        - TokenUsuario: [CLIENTE]
+      parameters:
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoPedido' }
+        - name: desde
+          in: query
+          description: Incluye los pedidos creados desde las 00:00 de ese día.
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          description: Incluye los pedidos creados hasta el final de ese día.
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          description: Página, desde 1 (excepción acordada con Marketplace).
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          description: Registros por página (1 a 50).
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: Página de pedidos del cliente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MisPedidos'
+        '400':
+          description: 'PAGINACION_INVALIDA, RANGO_FECHAS_INVALIDO o FORMATO_INVALIDO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/kpis:
+    get:
+      tags: [Dashboard]
+      operationId: kpisVentas
+      summary: 1.14 KPIs de ventas
+      description: |
+        Montos de venta del periodo ya sumados, para que el frontend no tenga que paginar toda la bandeja.
+
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        - **Vendido:** pedidos de venta (no reemplazos) en PAGADO, EN_PREPARACION, DESPACHADO o ENTREGADO.
+        - pedidosTotal no cuenta los que siguen en CREADO; es la base de la tasa de anulación.
+        - ticketPromedio es null si no hubo ventas.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: desde
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          required: true
+          description: No anterior a desde. Rango máximo de 366 días.
+          schema: { type: string, format: date }
+        - name: canal
+          in: query
+          schema: { $ref: '#/components/schemas/CanalVenta' }
+      responses:
+        '200':
+          description: KPIs del periodo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpisVentas'
+        '400':
+          description: 'PARAMETRO_INVALIDO (falta una fecha, rango invertido o mayor a 366 días) o FORMATO_INVALIDO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/pickup:
+    get:
+      tags: [F1 Pedidos]
+      operationId: listarPedidosPickup
+      summary: 1.15 Bandeja de pedidos para retiro en tienda (Pickup)
+      description: |
+        Lista de pedidos asignados a una tienda física listos para retiro presencial (RF-18 de Retail).
+
+        **Permiso:** token de servicio de Retail con scope ventas:pedidos:consultar o usuario con rol ADMIN_VENTAS.
+      security:
+        - TokenServicio: [ventas:pedidos:consultar]
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: tiendaId
+          in: query
+          required: true
+          description: Código identificador de la tienda física (ej. TIENDA-MIRAFLORES).
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lista de pedidos pickup listos para entrega.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PedidoPickup'
+        '400':
+          description: 'PARAMETRO_REQUERIDO si falta tiendaId.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/{pedidoId}:
+    get:
+      tags: [F1 Pedidos]
+      operationId: consultarPedido
+      summary: 1.3 Consultar pedido
+      description: |
+        Estado completo del pedido, sus datos y su historial. M2 lo usa para validar que esté ENTREGADO antes de
+        aceptar una devolución o una calificación.
+
+        - Usuario CLIENTE: Solo sus propios pedidos.
+        - Usuario ADMIN_VENTAS: Cualquier pedido.
+        - Servicio con scope ventas:pedidos:consultar: Cualquier pedido (modulo-postventa).
+
+        Un token de servicio de canal no tiene acceso: para mostrarle el estado al cliente, usa el token del cliente.
+      security:
+        - TokenUsuario: [CLIENTE, ADMIN_VENTAS]
+        - TokenServicio: ['ventas:pedidos:consultar']
+      parameters:
+        - $ref: '#/components/parameters/PedidoId'
+      responses:
+        '200':
+          description: Detalle del pedido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PedidoDetalle'
+        '403':
+          description: 'ACCESO_DENEGADO: sin rol ni scope permitido, o el cliente no es el titular.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+
+  /api/v1/pedidos/{pedidoId}/pagos/notificacion:
+    post:
+      tags: [F1 Pedidos]
+      operationId: notificarPago
+      summary: 1.2 Notificación de pago
+      description: |
+        Webhook con el resultado del cobro.
+
+        **Permiso:** token de servicio con scope ventas:pagos:webhook (simulador de pasarela y Chatbot).
+
+        - APROBADO: Pago: CONFIRMADO. Pedido: CREADO → PAGADO.
+        - RECHAZADO: Pago: RECHAZADO. Pedido: CREADO → ANULADO (PAGO_NO_COMPLETADO), libera la reserva y no reembolsa.
+        - APROBADO sobre un pedido ANULADO: Pago: CONFIRMADO. Pedido: Sigue ANULADO; M1 solicita el reembolso a M2.
+
+        **Idempotencia:** la misma transaccionId con los mismos datos responde 200 con lo ya registrado, sin repetir
+        el cambio ni el reembolso.
+
+        **Concurrencia:** el pago y la anulación bloquean la fila del pedido, así que se aplican de a uno. Gane quien gane,
+        el pedido termina ANULADO con un solo reembolso.
+      security:
+        - TokenServicio: ['ventas:pagos:webhook']
+      parameters:
+        - $ref: '#/components/parameters/PedidoId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificacionPagoRequest'
+      responses:
+        '200':
+          description: Notificación aplicada, o reintento reconocido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificacionPagoResponse'
+        '400':
+          description: 'DATOS_INVALIDOS, FORMATO_INVALIDO, MONTOS_INCONSISTENTES (no coincide con el pedido; no guarda nada) o CODIGO_INVALIDO.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '409':
+          description: |
+            ESTADO_NO_PERMITE_PAGO: el pedido no admite este resultado, o es una orden de reemplazo, que no se cobra.
+            PAGO_YA_CONFIRMADO: ya tiene otro cobro confirmado.
+            NOTIFICACION_INCOMPATIBLE: la transaccionId ya existe con otros datos.
+            TRANSACCION_DE_OTRO_PEDIDO: la transaccionId pertenece a otro pedido o a un pago reemplazado.
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/{pedidoId}/entrega-pickup:
+    post:
+      tags: [F1 Pedidos]
+      operationId: entregarPedidoPickup
+      summary: 1.16 Confirmación de entrega física en mostrador (Pickup)
+      description: |
+        Registra la entrega física del paquete en mostrador y transiciona a ENTREGADO (RF-19).
+
+        **Permiso:** token de servicio de Retail con scope ventas:pedidos:estado o usuario con rol ADMIN_VENTAS.
+      security:
+        - TokenServicio: [ventas:pedidos:estado]
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - $ref: '#/components/parameters/PedidoId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntregaPickupRequest'
+      responses:
+        '200':
+          description: Constancia digital de entrega emitida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntregaPickupResponse'
+        '400':
+          description: 'DATOS_INVALIDOS si los campos requeridos son inválidos.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO si no existe el pedido.'
+          content: *error
+        '409':
+          description: 'PEDIDO_NO_LISTO_PARA_RECOJO si no está listo para entrega.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/{pedidoId}/preparacion:
+    post:
+      tags: [F1 Preparación y despacho]
+      operationId: iniciarPreparacion
+      summary: 1.12 Iniciar preparación
+      description: |
+        Botón del Gestor: PAGADO → EN_PREPARACION.
+
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        **Idempotente:** si ya está EN_PREPARACION responde 200 sin error.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - $ref: '#/components/parameters/PedidoId'
+      responses:
+        '200':
+          description: Pedido en preparación.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DespachoPedidoResponse'
+        '400':
+          description: 'CODIGO_INVALIDO: el código del pedido no termina en un número.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '409':
+          description: 'TRANSICION_NO_PERMITIDA (no está PAGADO) o DESPACHO_NO_APLICA (es RETAIL).'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/{pedidoId}/despacho:
+    post:
+      tags: [F1 Preparación y despacho]
+      operationId: paqueteSellado
+      summary: 1.13 Paquete sellado
+      description: |
+        Botón del Gestor: crea el despacho en G2. El estado no cambia aquí: pasa a DESPACHADO cuando G2 avisa que salió (1.5).
+
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        **Orden de reemplazo:** como nunca pasó por PAGADO, antes de crear el despacho se consume su reserva en Productos.
+        Si venció, el reemplazo se anula y M2 reabre la devolución.
+
+        **Idempotente:** usa la misma clave hacia Despacho y Productos en cada intento, así que reintentar es seguro.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - $ref: '#/components/parameters/PedidoId'
+      responses:
+        '200':
+          description: Despacho solicitado, o ya existía. El pedido sigue EN_PREPARACION.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DespachoPedidoResponse'
+        '400':
+          description: 'CODIGO_INVALIDO: el código del pedido no termina en un número.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '409':
+          description: |
+            ESTADO_NO_PERMITE_DESPACHO: no está EN_PREPARACION.
+            DATOS_ENVIO_INCOMPLETOS: falta direccion o distrito.
+            DESPACHO_NO_APLICA: es RETAIL.
+            RESERVA_EXPIRADA: solo reemplazos; la reserva venció.
+            DESPACHO_RECHAZADO: G2 lo rechazó por otro motivo de negocio.
+          content: *error
+        '422':
+          description: 'DESP_ERROR_SIN_COBERTURA: Despacho no cubre el destino.'
+          content: *error
+        '503':
+          description: 'DESPACHO_NO_DISPONIBLE o PRODUCTOS_NO_DISPONIBLE: el pedido sigue EN_PREPARACION y se puede reintentar.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/integraciones/despachos/eventos:
+    post:
+      tags: [F1 Preparación y despacho]
+      operationId: recibirEventoDespacho
+      summary: 1.5 Webhook de eventos de Despacho
+      description: |
+        Un solo endpoint recibe todos los eventos logísticos de G2.
+
+        **Permiso:** token de servicio con scope ventas:pedidos:estado (modulo-despacho).
+
+        - DESPACHO_ASIGNADO: Ninguno.
+        - DESPACHO_EN_CAMINO: EN_PREPARACION → DESPACHADO.
+        - DESPACHO_ENTREGADO: DESPACHADO → ENTREGADO.
+        - DESPACHO_FALLIDO: Ninguno; intento no definitivo.
+        - DESPACHO_DEVUELTO_A_ORIGEN: DESPACHADO → ANULADO y solicitud de reembolso a M2 si hubo cobro.
+        - DESPACHO_REPROGRAMADO: Actualiza la fecha estimada con datos.nuevaFechaProgramada.
+        - DESPACHO_CANCELADO: Ninguno; acuse de una cancelación nuestra.
+
+        **Idempotencia:** el mismo idEvento responde 200 con repetido: true y no cambia nada. Si el pedido ya está en
+        el estado al que llevaría el evento, tampoco cambia nada.
+
+        EN_CAMINO, ENTREGADO y REPROGRAMADO generan además el aviso a Marketplace (webhook 1.10).
+      security:
+        - TokenServicio: ['ventas:pedidos:estado']
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventoDespachoRequest'
+      responses:
+        '200':
+          description: Evento procesado, o repetido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventoDespachoResponse'
+        '400':
+          description: 'CABECERA_FALTANTE, DATOS_INVALIDOS, FORMATO_INVALIDO o CODIGO_INVALIDO.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '409':
+          description: 'TRANSICION_NO_PERMITIDA: el pedido no está en el estado que exige el evento.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/reemplazos:
+    post:
+      tags: [F3 Cambio de producto]
+      operationId: crearReemplazo
+      summary: 1.11 Solicitar orden de reemplazo
+      description: |
+        M2 la pide al aprobar un CAMBIO. M1 crea un pedido nuevo **sin cobro** (total 0 y sin registro de pago),
+        vinculado al pedido original y a la devolución, con la dirección y el contacto del original.
+
+        **Permiso:** token de servicio con scope ventas:pedidos:reemplazar (modulo-postventa).
+
+        **Idempotente por devolucionId:** mientras el reemplazo no esté ANULADO, repetir devuelve el mismo pedido con 200.
+
+        **Ciclo de vida:**
+
+        1. Productos confirma la reserva: CREADO → EN_PREPARACION.
+        2. El Gestor sella el paquete (1.13), que consume la reserva y crea el despacho.
+        3. Al entregarse, M1 publica pedido.entregado con datos.devolucionId y M2 cierra el lado logístico del cambio.
+
+        **Si falla:** si Productos rechaza la reserva (STOCK_NO_DISPONIBLE) o vence (RESERVA_EXPIRADA), el reemplazo pasa a
+        ANULADO, sin reembolso. M1 publica pedido.anulado con datos.devolucionId y M2 reabre la devolución a EN_EVALUACION.
+        Al aprobarla otra vez se crea otro reemplazo con una reserva nueva.
+      security:
+        - TokenServicio: ['ventas:pedidos:reemplazar']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearReemplazoRequest'
+      responses:
+        '201':
+          description: Reemplazo creado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrearReemplazoResponse'
+        '200':
+          description: La devolución ya tenía un reemplazo vigente; se devuelve el mismo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrearReemplazoResponse'
+        '400':
+          description: 'DATOS_INVALIDOS, ITEM_NO_PERTENECE_AL_PEDIDO o CANTIDAD_EXCEDE_COMPRADA.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO: pedidoOrigenId no existe.'
+          content: *error
+        '409':
+          description: |
+            PEDIDO_NO_ENTREGADO: el original no está ENTREGADO.
+            REEMPLAZO_NO_APLICA: el original es RETAIL (el cambio se hace en tienda).
+            REEMPLAZO_YA_EXISTE: la devolución ya tiene un reemplazo de otro pedido.
+          content: *error
+        '503':
+          description: 'PRODUCTOS_NO_DISPONIBLE: Productos no admitió la reserva; el reemplazo no se guarda.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/{pedidoId}/anulaciones:
+    post:
+      tags: [F2 Anulaciones]
+      operationId: solicitarAnulacion
+      summary: 1.7 Solicitar anulación
+      description: |
+        **Permiso:** token de servicio con scope ventas:pedidos:anular (canales) o token de usuario ADMIN_VENTAS.
+
+        - CREADO o PAGADO: 200, anulación directa. Si estaba PAGADO, M1 solicita el reembolso a M2.
+        - EN_PREPARACION: 202, queda pendiente de autorización del Gestor (1.9).
+        - DESPACHADO o ENTREGADO: 409; corresponde una devolución en M2.
+
+        Cada motivo aplica solo a ciertos estados; el código lo valida contra su catálogo.
+      security:
+        - TokenServicio: ['ventas:pedidos:anular']
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - $ref: '#/components/parameters/PedidoId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitarAnulacionRequest'
+      responses:
+        '200':
+          description: Anulación directa ejecutada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitarAnulacionResponse'
+        '202':
+          description: Requiere autorización del Gestor. Devuelve solicitudAnulacionId.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitarAnulacionResponse'
+        '400':
+          description: 'MOTIVO_INVALIDO: ausente, fuera de catálogo o no aplica al estado actual.'
+          content: *error
+        '404':
+          description: 'PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '409':
+          description: 'PEDIDO_NO_ANULABLE o SOLICITUD_DUPLICADA (ya hay una pendiente).'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/anulaciones:
+    get:
+      tags: [F2 Anulaciones]
+      operationId: listarAnulaciones
+      summary: 1.8 Bandeja de anulaciones
+      description: |
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        Por compatibilidad, cada filtro acepta dos nombres; se documentan ambos.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoAnulacion' }
+        - name: canal
+          in: query
+          schema: { $ref: '#/components/schemas/CanalVenta' }
+        - name: busqueda
+          in: query
+          description: Código de pedido o nombre del cliente.
+          schema: { type: string }
+        - name: buscar
+          in: query
+          description: Alias de busqueda.
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema: { type: string, enum: ['fecha,desc', 'fecha,asc'], default: 'fecha,desc' }
+        - name: orden
+          in: query
+          description: Alias de sort.
+          schema: { type: string }
+        - $ref: '#/components/parameters/Pagina'
+        - name: page
+          in: query
+          description: Alias de pagina.
+          schema: { type: integer, minimum: 0 }
+        - name: tamano
+          in: query
+          schema: { type: integer, minimum: 1, default: 10 }
+        - name: size
+          in: query
+          description: Alias de tamano.
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Página de anulaciones.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListadoAnulaciones'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/anulaciones/pendientes:
+    get:
+      tags: [F2 Anulaciones]
+      operationId: listarAnulacionesPendientes
+      summary: 1.8 Anulaciones pendientes (ruta anterior)
+      deprecated: true
+      description: Se mantiene por compatibilidad. Usar GET /api/v1/pedidos/anulaciones?estado=PENDIENTE_AUTORIZACION. Sin estado, lista las pendientes.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoAnulacion' }
+        - name: canal
+          in: query
+          schema: { $ref: '#/components/schemas/CanalVenta' }
+        - name: busqueda
+          in: query
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema: { type: string, enum: ['fecha,desc', 'fecha,asc'], default: 'fecha,desc' }
+        - $ref: '#/components/parameters/Pagina'
+        - name: page
+          in: query
+          description: Alias de pagina.
+          schema: { type: integer, minimum: 0 }
+        - name: tamano
+          in: query
+          schema: { type: integer, minimum: 1, default: 10 }
+        - name: size
+          in: query
+          description: Alias de tamano.
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Página de anulaciones pendientes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListadoAnulaciones'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /api/v1/pedidos/{pedidoId}/anulaciones/{anulacionId}:
+    patch:
+      tags: [F2 Anulaciones]
+      operationId: resolverAnulacion
+      summary: 1.9 Aprobar o rechazar una anulación
+      description: |
+        **Permiso:** token de usuario con rol ADMIN_VENTAS.
+
+        - **Aprobar:** EN_PREPARACION → ANULADO, libera la reserva y solicita el reembolso si hubo cobro. Si Despacho responde
+          que el paquete ya salió, la anulación queda RECHAZADA (409 PEDIDO_EN_CAMINO).
+        - **Rechazar:** el pedido conserva su estado.
+
+        comentario es obligatorio en ambas decisiones. Si dos decisiones llegan a la vez se aplican de una en una, y la
+        segunda recibe ANULACION_NO_PENDIENTE.
+      security:
+        - TokenUsuario: [ADMIN_VENTAS]
+      parameters:
+        - $ref: '#/components/parameters/PedidoId'
+        - name: anulacionId
+          in: path
+          required: true
+          schema: { type: string, examples: [ANUL-0012] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolverAnulacionRequest'
+      responses:
+        '200':
+          description: Decisión aplicada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolverAnulacionResponse'
+        '400':
+          description: 'DATOS_INVALIDOS, DECISION_INVALIDA, DATOS_INCONSISTENTES (no pertenece a ese pedido) o CODIGO_INVALIDO.'
+          content: *error
+        '404':
+          description: 'ANULACION_NO_ENCONTRADA o PEDIDO_NO_ENCONTRADO.'
+          content: *error
+        '409':
+          description: 'ANULACION_NO_PENDIENTE, PEDIDO_YA_NO_EN_PREPARACION o PEDIDO_EN_CAMINO.'
+          content: *error
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+webhooks:
+  pedidos.envio.estado_actualizado:
+    post:
+      tags: [F1 Preparación y despacho]
+      operationId: avisoEstadoEnvio
+      summary: 1.10 Aviso de estado de envío a Marketplace
+      description: |
+        **Lo envía M1 a Marketplace (acuerdo H-05)**, para que Marketplace no dependa de los eventos internos de Despacho.
+        Solo para pedidos MARKETPLACE que no son reemplazos.
+
+        **Entrega:** el aviso se guarda en la misma transacción que el cambio de estado (patrón outbox), así nunca se avisa
+        algo que no se guardó. Un proceso lo envía cada 5 segundos.
+
+        - 2xx: enviado.
+        - 400, 409 o 422: no se reintenta y queda en el log.
+        - Red, 5xx, 401, 403 o 404: se reintenta, hasta 10 intentos.
+
+        Marketplace deduplica por eventId. El cuerpo no lleva datos sensibles ni dirección.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EstadoEnvioEvento'
+      responses:
+        '200':
+          description: Marketplace recibió el aviso.
+
+components:
+  responses:
+    NoAutenticado:
+      description: 'TOKEN_INVALIDO: token ausente, vencido o inválido.'
+      content: *error
+    SinPermiso:
+      description: 'ACCESO_DENEGADO: el token no tiene el rol o scope que exige esta operación.'
+      content: *error
+
+  securitySchemes:
+    TokenServicio:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de módulo (tipo servicio, aud incluye api-ventas), obtenido de G7 con client_credentials. Se autoriza por scope.
+    TokenUsuario:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de persona (tipo acceso), emitido por G7 al iniciar sesión. Se autoriza por el rol en el claim roles.
+
+  parameters:
+    PedidoId:
+      name: pedidoId
+      in: path
+      required: true
+      description: Código público del pedido.
+      schema: { type: string, examples: [PED-2026-00981] }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: UUID v4 generado por quien llama. Reutilízalo al reintentar la misma operación.
+      schema: { type: string, format: uuid, maxLength: 128 }
+    Pagina:
+      name: pagina
+      in: query
+      description: Página, desde 0.
+      schema: { type: integer, minimum: 0, default: 0 }
+
+  schemas:
+    Error:
+      type: object
+      description: Formato único de error.
+      required: [codigo, mensaje, timestamp]
+      properties:
+        codigo: { type: string, description: Código estable para decidir por programa., examples: [PEDIDO_NO_ENCONTRADO] }
+        mensaje: { type: string, description: Texto legible. }
+        timestamp: { type: string, format: date-time }
+        detalles:
+          type: array
+          items:
+            type: object
+            properties:
+              campo: { type: string, examples: [contacto.numeroDocumento] }
+              error: { type: string }
+
+    CanalVenta:
+      type: string
+      enum: [MARKETPLACE, CHATBOT, RETAIL]
+    EstadoPedido:
+      type: string
+      enum: [CREADO, PAGADO, EN_PREPARACION, DESPACHADO, ENTREGADO, ANULADO]
+    EstadoPago:
+      type: string
+      enum: [PENDIENTE, CONFIRMADO, RECHAZADO]
+    EstadoAnulacion:
+      type: string
+      enum: [PENDIENTE_AUTORIZACION, EJECUTADA, RECHAZADA]
+    MotivoAnulacion:
+      type: string
+      description: |
+        PAGO_NO_COMPLETADO (solo CREADO); ERROR_SELECCION_PRODUCTO, ARREPENTIMIENTO_COMPRA y DUPLICADO (CREADO o PAGADO);
+        SOLICITUD_CLIENTE y ERROR_DATOS_ENVIO (CREADO, PAGADO o EN_PREPARACION).
+      enum: [PAGO_NO_COMPLETADO, ERROR_SELECCION_PRODUCTO, ARREPENTIMIENTO_COMPRA, SOLICITUD_CLIENTE, ERROR_DATOS_ENVIO, DUPLICADO]
+    ActorHistorial:
+      type: string
+      enum: [CLIENTE, CANAL_CHATBOT, PASARELA_PAGOS, SISTEMA_LOGISTICA, GESTOR, SISTEMA_PRODUCTOS]
+
+    CrearPedidoRequest:
+      type: object
+      required: [canal, contacto, items, pago]
+      properties:
+        canal: { $ref: '#/components/schemas/CanalVenta' }
+        contacto:
+          type: object
+          description: Se exige telefono o email (al menos uno).
+          required: [clienteId, nombreCompleto, tipoDocumento, numeroDocumento]
+          properties:
+            clienteId: { type: string, format: uuid, description: UUID del cliente en Seguridad (claim sub). }
+            nombreCompleto: { type: string, maxLength: 150 }
+            tipoDocumento: { type: string, enum: [DNI, RUC, CE, PASAPORTE] }
+            numeroDocumento: { type: string }
+            telefono: { type: string, maxLength: 20 }
+            email: { type: string, format: email, maxLength: 150 }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productoId, sku, cantidad, precioUnitario]
+            properties:
+              productoId: { type: string }
+              sku: { type: string, maxLength: 50 }
+              descripcion: { type: string, maxLength: 255 }
+              cantidad: { type: integer, minimum: 1 }
+              precioUnitario: { type: number, minimum: 0 }
+        cupon:
+          type: object
+          required: [codigo, descuento]
+          properties:
+            codigo: { type: string, maxLength: 40 }
+            descuento: { type: number, minimum: 0 }
+            aplicado: { type: boolean }
+        envio:
+          type: object
+          description: Obligatorio salvo Retail, donde solo se envía tiendaId.
+          properties:
+            modalidad: { type: string, maxLength: 30, examples: [DELIVERY] }
+            costo: { type: number, minimum: 0 }
+            destinatario: { type: string, maxLength: 150 }
+            departamento: { type: string, maxLength: 80 }
+            provincia: { type: string, maxLength: 80 }
+            distrito: { type: string, maxLength: 80 }
+            direccion: { type: string, maxLength: 255 }
+            referencia: { type: string, maxLength: 255 }
+            tiendaId: { type: string, maxLength: 60, description: Solo Retail. }
+        pago:
+          type: object
+          required: [metodoPago, moneda, subtotal, total]
+          properties:
+            metodoPago: { type: string, maxLength: 30, description: 'En Retail: EFECTIVO, TARJETA_POS o MIXTO.' }
+            moneda: { type: string, enum: [PEN, USD] }
+            subtotal: { type: number, minimum: 0 }
+            descuentoCupon: { type: number, minimum: 0 }
+            costoEnvio: { type: number, minimum: 0 }
+            total: { type: number, minimum: 0 }
+            referenciaOperacion: { type: string, maxLength: 100, description: 'Retail con TARJETA_POS o MIXTO: número de voucher.' }
+            comprobanteReferencia: { type: string, maxLength: 100, description: 'Retail: correlativo de la boleta o factura. Solo informativo; el comprobante lo emite Retail. Sirve como referencia si no se envía referenciaOperacion.' }
+            montoEfectivo: { type: number, minimum: 0, description: Retail con MIXTO. }
+            montoTarjeta: { type: number, minimum: 0, description: Retail con MIXTO. }
+            fechaVenta: { type: string, format: date-time, description: Retail sin conexión. No futura y hasta 72 horas antes. }
+    CrearPedidoResponse:
+      type: object
+      required: [pedidoId, estado, total, moneda, canal, fechaCreacion]
+      properties:
+        pedidoId: { type: string, examples: [PED-2026-00981] }
+        estado: { $ref: '#/components/schemas/EstadoPedido' }
+        total: { type: number }
+        moneda: { type: string }
+        canal: { $ref: '#/components/schemas/CanalVenta' }
+        fechaCreacion: { type: string, format: date-time }
+
+    NotificacionPagoRequest:
+      type: object
+      required: [transaccionId, resultado, monto, moneda]
+      properties:
+        transaccionId: { type: string, maxLength: 100, description: Clave de idempotencia de la notificación. }
+        resultado: { type: string, enum: [APROBADO, RECHAZADO] }
+        monto: { type: number, minimum: 0 }
+        moneda: { type: string, enum: [PEN, USD] }
+        metodo: { type: string, maxLength: 30 }
+        marcaTarjeta: { type: string, maxLength: 20 }
+        ultimosCuatroDigitos: { type: string, pattern: '^\d{4}$' }
+        fechaPago: { type: string, format: date-time }
+        codigoAutorizacion: { type: string, maxLength: 50 }
+    NotificacionPagoResponse:
+      type: object
+      properties:
+        pedidoId: { type: string }
+        nuevoEstado: { $ref: '#/components/schemas/EstadoPedido' }
+        transaccionId: { type: string }
+        fechaTransicion: { type: string, format: date-time }
+
+    PedidoDetalle:
+      type: object
+      required: [pedidoId, canal, estado]
+      properties:
+        pedidoId: { type: string }
+        canal: { $ref: '#/components/schemas/CanalVenta' }
+        estado: { $ref: '#/components/schemas/EstadoPedido' }
+        tipo: { type: string, enum: [VENTA, REEMPLAZO], description: 'REEMPLAZO es la orden sin cobro de un cambio de producto.' }
+        contacto:
+          type: object
+          properties:
+            clienteId: { type: [string, 'null'], format: uuid }
+            nombreCompleto: { type: [string, 'null'] }
+            tipoDocumento: { type: [string, 'null'] }
+            numeroDocumento: { type: [string, 'null'] }
+            email: { type: [string, 'null'] }
+            telefono: { type: [string, 'null'] }
+        pago:
+          type: object
+          properties:
+            total: { type: number }
+            moneda: { type: string }
+            metodoPago: { type: [string, 'null'], description: 'null en una orden de reemplazo.' }
+            estado:
+              description: Estado real del cobro; null si no hay registro de pago (orden de reemplazo). Es independiente del estado del pedido.
+              oneOf:
+                - $ref: '#/components/schemas/EstadoPago'
+                - type: 'null'
+        envio:
+          type: object
+          properties:
+            modalidad: { type: [string, 'null'] }
+            direccion: { type: [string, 'null'] }
+            distrito: { type: [string, 'null'] }
+            tiendaId: { type: [string, 'null'], description: Solo en Retail. }
+            departamento: { type: [string, 'null'] }
+            provincia: { type: [string, 'null'] }
+            referencia: { type: [string, 'null'] }
+            fechaEstimadaEntrega: { type: [string, 'null'], format: date-time, description: 'null hasta que Despacho reprograma.' }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              productoId: { type: [string, 'null'] }
+              sku: { type: string }
+              descripcion: { type: [string, 'null'] }
+              cantidad: { type: integer }
+              precioUnitario: { type: number }
+        fechaCreacion: { type: string, format: date-time }
+        ultimaActualizacion: { type: [string, 'null'], format: date-time }
+        historialEstados:
+          type: array
+          items:
+            type: object
+            properties:
+              estado: { $ref: '#/components/schemas/EstadoPedido' }
+              fecha: { type: string, format: date-time }
+              actor: { $ref: '#/components/schemas/ActorHistorial' }
+              motivo: { type: [string, 'null'] }
+
+    PedidoResumen:
+      type: object
+      properties:
+        pedidoId: { type: string }
+        canal: { $ref: '#/components/schemas/CanalVenta' }
+        estado: { $ref: '#/components/schemas/EstadoPedido' }
+        total: { type: number }
+        moneda: { type: string }
+        fechaCreacion: { type: string, format: date-time }
+        nombreCliente: { type: [string, 'null'] }
+    ListadoPedidos:
+      type: object
+      properties:
+        clienteId: { type: [string, 'null'], format: uuid }
+        contenido:
+          type: array
+          items: { $ref: '#/components/schemas/PedidoResumen' }
+        pagina: { type: integer }
+        totalPaginas: { type: integer }
+        totalElementos: { type: integer }
+    MisPedidos:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PedidoResumen' }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+
+    KpisVentas:
+      type: object
+      properties:
+        desde: { type: string, format: date }
+        hasta: { type: string, format: date }
+        canal:
+          oneOf:
+            - $ref: '#/components/schemas/CanalVenta'
+            - type: 'null'
+        montoVendido: { type: number }
+        pedidosVendidos: { type: integer }
+        ticketPromedio: { type: [number, 'null'] }
+        pedidosTotal: { type: integer }
+        pedidosEntregados: { type: integer }
+        pedidosAnulados: { type: integer }
+        ventasPorDia:
+          type: array
+          items:
+            type: object
+            properties:
+              fecha: { type: string, format: date }
+              monto: { type: number }
+        ventasPorCanal:
+          type: object
+          additionalProperties: { type: number }
+
+    DespachoPedidoResponse:
+      type: object
+      properties:
+        pedidoId: { type: string }
+        estado: { $ref: '#/components/schemas/EstadoPedido' }
+        idDespacho: { type: [string, 'null'], description: Código del despacho en G2. }
+        mensaje: { type: string }
+
+    EventoDespachoRequest:
+      type: object
+      required: [idEvento, idPedido, tipo]
+      properties:
+        idEvento: { type: string, maxLength: 90, description: Identificador único del evento. }
+        idPedido: { type: string, maxLength: 30 }
+        idDespacho: { type: string, maxLength: 60 }
+        tipo:
+          type: string
+          enum: [DESPACHO_ASIGNADO, DESPACHO_EN_CAMINO, DESPACHO_ENTREGADO, DESPACHO_FALLIDO, DESPACHO_DEVUELTO_A_ORIGEN, DESPACHO_REPROGRAMADO, DESPACHO_CANCELADO]
+        estadoAnterior: { type: string, description: Estado de Despacho; solo informativo. }
+        estadoNuevo: { type: string, description: Estado de Despacho; solo informativo. }
+        ocurridoEn: { type: string, format: date-time }
+        datos:
+          type: object
+          description: 'nuevaFechaProgramada en DESPACHO_REPROGRAMADO; motivoCierre en DESPACHO_DEVUELTO_A_ORIGEN.'
+          additionalProperties: true
+    EventoDespachoResponse:
+      type: object
+      properties:
+        idEvento: { type: string }
+        pedidoId: { type: string }
+        estadoPedido: { $ref: '#/components/schemas/EstadoPedido' }
+        repetido: { type: boolean }
+        mensaje: { type: string }
+
+    CrearReemplazoRequest:
+      type: object
+      required: [devolucionId, pedidoOrigenId, items]
+      properties:
+        devolucionId: { type: string, pattern: '^DEV-\d{4}-\d{4,}$', examples: [DEV-2026-0042] }
+        pedidoOrigenId: { type: string, pattern: '^PED-\d{4}-\d{5,}$', examples: [PED-2026-00981] }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [sku, cantidad]
+            properties:
+              sku: { type: string, maxLength: 50, examples: [SKU-AUR-01] }
+              cantidad: { type: integer, minimum: 1, examples: [1] }
+    CrearReemplazoResponse:
+      type: object
+      properties:
+        pedidoId: { type: string, examples: [PED-2026-01203] }
+        estado: { $ref: '#/components/schemas/EstadoPedido' }
+        devolucionId: { type: string }
+        pedidoOrigenId: { type: string }
+        fechaCreacion: { type: string, format: date-time }
+
+    SolicitarAnulacionRequest:
+      type: object
+      required: [motivo]
+      properties:
+        motivo: { $ref: '#/components/schemas/MotivoAnulacion' }
+        comentario: { type: string }
+    SolicitarAnulacionResponse:
+      type: object
+      properties:
+        pedidoId: { type: string }
+        estadoPedido: { type: string }
+        autorizacionRequerida: { type: boolean }
+        solicitudReembolsoGenerada: { type: [boolean, 'null'] }
+        solicitudAnulacionId: { type: [string, 'null'], examples: [ANUL-0012] }
+        mensaje: { type: [string, 'null'] }
+        timestamp: { type: [string, 'null'], format: date-time }
+    ListadoAnulaciones:
+      type: object
+      properties:
+        contenido:
+          type: array
+          items:
+            type: object
+            properties:
+              solicitudAnulacionId: { type: string }
+              pedidoId: { type: string }
+              motivo: { type: string }
+              fechaSolicitud: { type: string, format: date }
+              estado: { $ref: '#/components/schemas/EstadoAnulacion' }
+              canal: { $ref: '#/components/schemas/CanalVenta' }
+              nombreCliente: { type: [string, 'null'] }
+              estadoPedido: { $ref: '#/components/schemas/EstadoPedido' }
+        pagina: { type: integer }
+        totalPaginas: { type: integer }
+        totalElementos: { type: integer }
+    ResolverAnulacionRequest:
+      type: object
+      required: [decision, comentario]
+      properties:
+        decision: { type: string, enum: [APROBADA, RECHAZADA] }
+        autorizadorId: { type: string }
+        comentario: { type: string }
+    ResolverAnulacionResponse:
+      type: object
+      properties:
+        pedidoId: { type: string }
+        estadoPedido: { type: string }
+        estadoAnulacion: { type: string }
+
+    EstadoEnvioEvento:
+      type: object
+      required: [eventId, eventType, version, timestamp, emitter, data]
+      properties:
+        eventId: { type: string, description: Marketplace deduplica por este valor. }
+        eventType: { type: string, examples: [ShipmentStatusUpdated] }
+        version: { type: string, examples: [1.0.0] }
+        timestamp: { type: string, format: date-time }
+        emitter: { type: string, examples: [modulo-ventas] }
+        data:
+          type: object
+          properties:
+            orderId: { type: string, examples: [PED-2026-00981] }
+            publicStatus: { type: string, examples: [DESPACHADO] }
+            trackingNumber: { type: string, description: Código del despacho en G2. }
+            estimatedDeliveryDate: { type: [string, 'null'], format: date }
+
+    PedidoPickup:
+      type: object
+      required: [pedidoId, clienteNombre, clienteDni, anaquelUbicacion, fechaArriboTienda, estado, articulos]
+      properties:
+        pedidoId: { type: string }
+        clienteNombre: { type: string }
+        clienteDni: { type: string }
+        anaquelUbicacion: { type: string }
+        fechaArriboTienda: { type: string }
+        estado: { type: string, example: LISTO_PARA_RECOJO }
+        articulos:
+          type: array
+          items:
+            type: object
+            properties:
+              sku: { type: string }
+              nombre: { type: string }
+              talla: { type: string }
+              color: { type: string }
+              cantidad: { type: integer }
+
+    EntregaPickupRequest:
+      type: object
+      required: [dniRecoge, nombreRecoge]
+      properties:
+        dniRecoge: { type: string, pattern: '^\d{8}$' }
+        nombreRecoge: { type: string }
+        esTerceroAutorizado: { type: boolean }
+        codigoRetiro: { type: string }
+
+    EntregaPickupResponse:
+      type: object
+      required: [constanciaId, fechaHoraEntrega, estado]
+      properties:
+        constanciaId: { type: string }
+        fechaHoraEntrega: { type: string }
+        estado: { type: string, example: ENTREGADO }

@@ -1,0 +1,7 @@
+# Los fixtures son copias de contratos upstream: Git no debe convertir sus
+# finales de línea. El SHA-256 del lock se calcula sobre los bytes del archivo
+# (LF) y debe coincidir también en checkouts Windows con autocrlf=true.
+shared/fixtures/** -text
+mod_catalog/fixtures/** -text
+mod_shipping/fixtures/** -text
+mod_postventa/fixtures/** -text

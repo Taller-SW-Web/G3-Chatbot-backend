@@ -1,0 +1,38 @@
+{
+  "canal": "CHATBOT",
+  "contacto": {
+    "clienteId": "3f9a2b7e-6c1d-4e2a-9b3f-7a1d2c4e5f6a",
+    "nombreCompleto": "Juan Pérez Rodríguez",
+    "tipoDocumento": "DNI",
+    "numeroDocumento": "72458912",
+    "telefono": "+51999888777",
+    "email": "juan.perez@example.com"
+  },
+  "items": [
+    {
+      "productoId": "PROD-101",
+      "sku": "SKU-AUR-01",
+      "descripcion": "Audífonos Inalámbricos Bluetooth",
+      "cantidad": 1,
+      "precioUnitario": 129.9
+    }
+  ],
+  "envio": {
+    "modalidad": "DELIVERY",
+    "costo": 0,
+    "destinatario": "Juan Pérez",
+    "departamento": "Lima",
+    "provincia": "Lima",
+    "distrito": "San Miguel",
+    "direccion": "Av. La Marina 1234, Dpto 401",
+    "referencia": "Frente al centro comercial"
+  },
+  "pago": {
+    "metodoPago": "TARJETA_CREDITO",
+    "moneda": "PEN",
+    "subtotal": 129.9,
+    "descuentoCupon": 0,
+    "costoEnvio": 0,
+    "total": 129.9
+  }
+}

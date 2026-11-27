@@ -1,0 +1,11 @@
+{
+  "activo": true,
+  "sub": "22222222-2222-2222-2222-222222222222",
+  "email": "carlos@ejemplo.com",
+  "roles": [
+    "VENDEDOR"
+  ],
+  "permisos": [],
+  "tipo": "acceso",
+  "exp": 1789276800
+}

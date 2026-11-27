@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "pedidoId": "PED-2026-00981",
+      "canal": "CHATBOT",
+      "estado": "PAGADO",
+      "total": 129.9,
+      "moneda": "PEN",
+      "fechaCreacion": "2026-11-05T19:00:00Z",
+      "nombreCliente": "Juan Pérez Rodríguez"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "pageSize": 10
+}
