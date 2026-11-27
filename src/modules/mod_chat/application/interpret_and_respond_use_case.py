@@ -128,7 +128,7 @@ class InterpretAndRespondUseCase:
         *,
         assistant_name: str,
         llm_timeout_seconds: float,
-        sanitize_text: Callable[[str], str] | None = None,
+        sanitize_text: Callable[..., str] | None = None,
         output_validator: OutputValidator | None = None,
         degraded_mode: DegradedMode | None = None,
         attachments=None,
@@ -149,6 +149,55 @@ class InterpretAndRespondUseCase:
         self._output_validator = output_validator or OutputValidator()
         self._degraded_mode = degraded_mode or DegradedMode()
         self._attachments = attachments
+
+    def _sanitize_input(self, text: str, *, otp_solicitado: bool) -> str:
+        try:
+            return self._sanitize(text, otp_solicitado=otp_solicitado)
+        except TypeError:
+            return self._sanitize(text)
+
+    async def _is_otp_pending(self, conversation_id: uuid.UUID) -> bool:
+        """Detect whether the conversation is awaiting a phone/MFA OTP (SPEC-05, ADR-0006)."""
+        otp_forms = {"OTP_CELULAR", "OTP_MFA", "MFA", "VERIFICAR_CELULAR"}
+        otp_states = {"OTP_PENDIENTE", "MFA_PENDIENTE", "ESPERA_OTP"}
+        context: dict[str, Any] = {}
+        try:
+            raw_ctx = await self._conversations.get_context(conversation_id)
+            if isinstance(raw_ctx, dict):
+                context = raw_ctx
+        except Exception:
+            context = {}
+
+        if (
+            context.get("otpPendiente")
+            or context.get("mfaPendiente")
+            or context.get("otp_solicitado")
+            or str(context.get("estado") or "").upper() in otp_states
+            or str(context.get("formularioPendiente") or "").upper() in otp_forms
+        ):
+            return True
+
+        try:
+            recent = await self._messages.list_dialogue(conversation_id, limit=4)
+        except Exception:
+            return False
+
+        for msg in reversed(recent):
+            if msg.role == MessageRole.ASSISTANT:
+                for block in msg.blocks or ():
+                    if not isinstance(block, dict):
+                        continue
+                    if str(block.get("tipo") or "").upper() != "FORMULARIO":
+                        continue
+                    form_name = (
+                        block.get("formulario")
+                        or (block.get("datos") or {}).get("formulario")
+                        or (block.get("datos") or {}).get("tipo")
+                    )
+                    if str(form_name or "").upper() in otp_forms:
+                        return True
+                break
+        return False
 
     async def send_message(
         self,
@@ -178,7 +227,8 @@ class InterpretAndRespondUseCase:
             if attachment_ids
             else []
         )
-        clean = self._sanitize(text) if text else ""
+        otp_pending = await self._is_otp_pending(conversation_id) if text else False
+        clean = self._sanitize_input(text, otp_solicitado=otp_pending) if text else ""
         try:
             customer_message = await self._messages.add(conversation_id, MessageRole.CUSTOMER, clean)
             if attachment_rows:

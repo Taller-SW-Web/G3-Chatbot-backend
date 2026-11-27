@@ -31,6 +31,9 @@ from src.modules.mod_chat.adapters.reaction_postgres_adapter import ReactionPost
 from src.modules.mod_chat.adapters.registry_tool_adapter import RegistryToolAdapter
 from src.modules.mod_chat.adapters.scripted_llm_provider import ScriptedLLMProvider
 from src.modules.mod_chat.application.attachment_service import AttachmentService
+from src.modules.mod_chat.application.conversation_retention_service import (
+    ConversationRetentionService,
+)
 from src.modules.mod_chat.application.dispatch_direct_action_use_case import (
     DispatchDirectActionUseCase,
 )
@@ -65,6 +68,7 @@ from src.shared.infrastructure.di.capabilities import (
     ACTION_SCOPE,
     ATTACHMENT_CLEANUP,
     CONVERSATION_CONTEXT,
+    CONVERSATION_RETENTION,
     FEEDBACK_NOTIFIER,
 )
 from src.shared.infrastructure.di.registry import registry
@@ -202,9 +206,17 @@ def provide_action_dispatcher(session: AsyncSession) -> ActionDispatcher:
     return ActionDispatcher(provide_tool_registry(session))
 
 
-def sanitize_sensitive_text(text: str) -> str:
+def sanitize_sensitive_text(text: str, *, otp_solicitado: bool = False) -> str:
     """Redact customer secrets before they are persisted or sent to the LLM."""
-    return SensitiveDataFilter().redactar(text).texto
+    return SensitiveDataFilter().redactar(text, otp_solicitado=otp_solicitado).texto
+
+
+def provide_conversation_retention(session: AsyncSession) -> ConversationRetentionService:
+    """Retention sweeper for stale anonymous (>7d) and customer (>90d) conversations."""
+    return ConversationRetentionService(
+        conversations=ConversationPostgresAdapter(session),
+        uow=SqlAlchemyUnitOfWork(session),
+    )
 
 
 def build_interpret_and_respond(session: AsyncSession) -> InterpretAndRespondUseCase:
@@ -283,10 +295,11 @@ router = build_router(RouterOptions())
 
 
 def configure(container) -> None:
-    """Chat exposes the turn/action scopes, the context cart/catalog need and attachment cleanup."""
+    """Chat exposes the turn/action scopes, context, attachment cleanup and retention."""
     container.register(ACTION_SCOPE, provide_action_scope)
     container.register(CONVERSATION_CONTEXT, provide_conversation_context)
     container.register(ATTACHMENT_CLEANUP, provide_attachment_service)
+    container.register(CONVERSATION_RETENTION, provide_conversation_retention)
 
 
 __all__ = [
