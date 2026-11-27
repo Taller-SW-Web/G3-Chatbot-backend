@@ -1,0 +1,18 @@
+{
+  "evaluated_at": "2026-11-26T12:00:00Z",
+  "binding": false,
+  "items": [
+    {
+      "sku": "SKU-AUR-01",
+      "requested_quantity": 2,
+      "result": "SUFICIENTE",
+      "reason_code": null
+    },
+    {
+      "sku": "SKU-RUN-42",
+      "requested_quantity": 10,
+      "result": "INSUFICIENTE",
+      "reason_code": "STOCK_BAJO"
+    }
+  ]
+}

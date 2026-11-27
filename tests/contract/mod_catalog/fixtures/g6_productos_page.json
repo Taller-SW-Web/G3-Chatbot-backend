@@ -1,0 +1,29 @@
+{
+  "items": [
+    {
+      "product_id": "PROD-101",
+      "slug": "audifonos-bluetooth-aur-01",
+      "name": "Audífonos Inalámbricos Bluetooth",
+      "description": "Audífonos con cancelación de ruido y estuche de carga.",
+      "categoria_id": "CAT-AUDIO",
+      "tipo_producto_id": "TIPO-AUDIFONOS",
+      "marca_id": "MARCA-SONY",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [
+        "https://cdn.example.com/productos/aur-01.jpg"
+      ],
+      "attributes": [
+        {
+          "caracteristica_id": "CAR-COLOR",
+          "nombre": "Color",
+          "valor_id": "VAL-NEGRO",
+          "valor": "Negro"
+        }
+      ]
+    }
+  ],
+  "pagina": 2,
+  "tamanio": 5,
+  "total": 1
+}

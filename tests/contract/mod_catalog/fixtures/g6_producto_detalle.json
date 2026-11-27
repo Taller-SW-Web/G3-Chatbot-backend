@@ -1,0 +1,55 @@
+{
+  "product_id": "PROD-101",
+  "slug": "audifonos-bluetooth-aur-01",
+  "name": "Audífonos Inalámbricos Bluetooth",
+  "description": "Audífonos con cancelación de ruido y estuche de carga.",
+  "categoria_id": "CAT-AUDIO",
+  "tipo_producto_id": "TIPO-AUDIFONOS",
+  "marca_id": "MARCA-SONY",
+  "tiene_variantes": true,
+  "sku_base": null,
+  "images": [
+    "https://cdn.example.com/productos/aur-01.jpg"
+  ],
+  "attributes": [
+    {
+      "caracteristica_id": "CAR-COLOR",
+      "nombre": "Color",
+      "valor_id": "VAL-NEGRO",
+      "valor": "Negro"
+    }
+  ],
+  "marca": {
+    "marca_id": "MARCA-SONY",
+    "name": "Sony",
+    "description": "Marca de electrónica de consumo.",
+    "logo_url": "https://cdn.example.com/marcas/sony.png",
+    "country_code": "JP"
+  },
+  "variants": [
+    {
+      "variant_id": "VAR-AUR-01-NEG",
+      "sku": "SKU-AUR-01-NEG",
+      "identifying_attributes": [
+        {
+          "caracteristica_id": "CAR-COLOR",
+          "nombre": "Color",
+          "valor_id": "VAL-NEGRO",
+          "valor": {
+            "nombre": "Negro"
+          }
+        },
+        {
+          "caracteristica_id": "CAR-TALLA",
+          "nombre": "Talla",
+          "valor_id": "VAL-UNICA",
+          "valor": "Única"
+        }
+      ],
+      "non_identifying_attributes": [],
+      "images": [
+        "https://cdn.example.com/productos/aur-01-negro.jpg"
+      ]
+    }
+  ]
+}
