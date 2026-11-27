@@ -263,8 +263,9 @@ violación. `tests/unit/test_check_modules.py` es la regresión del gate.
 
 ## 11. Añadir un endpoint o una capacidad
 
-1. Lee la spec del módulo y `MODULE.md`; si el cambio no está en la spec,
-   actualízala en el mismo PR.
+1. Lee la spec del módulo y `MODULE.md`; si el cambio no está en la spec, abre
+   una issue en `G3-Chatbot-specs` asignada a `@Ankarmin` y `@MathiasTL`; no
+   edites specs desde este repo.
 2. Define/extiende el puerto en `ports/`; no importes ORM ni adapters en
    `application/`.
 3. Implementa la regla en `domain/` si es pura; orquesta en `application/`.
