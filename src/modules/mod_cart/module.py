@@ -13,6 +13,9 @@ from src.modules.mod_cart.adapters.cart_item_postgres_adapter import CartItemPos
 from src.modules.mod_cart.adapters.cart_postgres_adapter import CartPostgresAdapter
 from src.modules.mod_cart.adapters.http.cart_router import create_cart_router
 from src.modules.mod_cart.application.manage_cart_use_case import ManageCartUseCase
+from src.modules.mod_cart.application.merge_anonymous_cart_service import (
+    MergeAnonymousCartService,
+)
 from src.modules.mod_catalog.public import (
     provide_catalog_service,
     provide_product_catalog,
@@ -20,7 +23,7 @@ from src.modules.mod_catalog.public import (
 )
 from src.shared.infrastructure.config.settings import get_settings
 from src.shared.infrastructure.db.connection import get_session
-from src.shared.infrastructure.di.capabilities import CONVERSATION_CONTEXT
+from src.shared.infrastructure.di.capabilities import CART_MERGE, CONVERSATION_CONTEXT
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -54,6 +57,15 @@ def provide_cart_service(
     )
 
 
+def provide_cart_merge(session: AsyncSession) -> MergeAnonymousCartService:
+    settings = get_settings()
+    return MergeAnonymousCartService(
+        carts=CartPostgresAdapter(session),
+        items=CartItemPostgresAdapter(session),
+        inventory=provide_product_inventory(settings),
+    )
+
+
 def build_router(options: RouterOptions) -> APIRouter:
     return create_cart_router(provide_cart_service)
 
@@ -62,7 +74,8 @@ router = build_router(RouterOptions())
 
 
 def configure(container) -> None:
-    """No cross-module capability: checkout and shipping import `public.py` directly."""
+    """Registers `CART_MERGE` so `mod-auth` can fuse anonymous carts without importing `mod-cart`."""
+    container.register(CART_MERGE, provide_cart_merge)
 
 
 __all__ = [
@@ -70,6 +83,7 @@ __all__ = [
     "REQUIRED_CAPABILITIES",
     "build_router",
     "configure",
+    "provide_cart_merge",
     "provide_cart_repositories",
     "provide_cart_service",
     "router",

@@ -21,6 +21,7 @@ from src.modules.mod_cart.ports.cart_repository_port import (
     StaleCartError,
 )
 from src.shared.infrastructure.db.models.cart import Cart
+from src.shared.infrastructure.db.models.conversation import Conversation
 
 OPEN_STATUSES = ("ACTIVE", "IN_CHECKOUT")
 
@@ -63,6 +64,21 @@ class CartPostgresAdapter:
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 
+    async def obtener_abiertos_por_anonymous_sid(self, anonymous_sid: str) -> list[Cart]:
+        """Open anonymous carts belonging to conversations with hashed `anonymous_sid`."""
+        stmt = (
+            select(Cart)
+            .join(Conversation, Cart.conversation_id == Conversation.id)
+            .where(
+                Conversation.anonymous_sid == anonymous_sid,
+                Cart.customer_id.is_(None),
+                Cart.status.in_(OPEN_STATUSES),
+            )
+            .order_by(Cart.updated_at.asc(), Cart.id.asc())
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
     async def crear_para_cliente(self, customer_id: uuid.UUID) -> Cart:
         row = Cart(customer_id=customer_id)
         self.session.add(row)
@@ -88,7 +104,11 @@ class CartPostgresAdapter:
         await self.session.execute(
             update(Cart)
             .where(Cart.id == cart_id)
-            .values(totals_snapshot=snapshot, updated_at=datetime.now(timezone.utc))
+            .values(
+                # null(), not None: bare None binds JSON `null` and fails ck_cart_totals_snapshot_object.
+                totals_snapshot=snapshot if snapshot is not None else null(),
+                updated_at=datetime.now(timezone.utc),
+            )
         )
         await self._flush()
 
