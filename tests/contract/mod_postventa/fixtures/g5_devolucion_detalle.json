@@ -1,0 +1,34 @@
+{
+  "devolucionId": "DEV-2026-0042",
+  "pedidoId": "PED-2026-00981",
+  "clienteId": "3f9a2b7e-6c1d-4e2a-9b3f-7a1d2c4e5f6a",
+  "tipo": "DEVOLUCION_DINERO",
+  "estado": "EN_EVALUACION",
+  "motivo": "PRODUCTO_DEFECTUOSO",
+  "descripcion": "El producto llegó con la pantalla rayada.",
+  "items": [
+    {
+      "productoId": "PROD-101",
+      "cantidad": 1
+    }
+  ],
+  "resolucion": null,
+  "evidencias": [
+    {
+      "tipo": "IMAGEN",
+      "url": "https://postventa.example.com/evidencias/DEV-2026-0042-01.jpg"
+    }
+  ],
+  "fechaRegistro": "2026-11-26T12:00:00Z",
+  "historial": [
+    {
+      "estadoAnterior": null,
+      "estado": "SOLICITADA",
+      "actor": "CLIENTE",
+      "idActor": "3f9a2b7e-6c1d-4e2a-9b3f-7a1d2c4e5f6a",
+      "detalle": null,
+      "fecha": "2026-11-26T12:00:00Z"
+    }
+  ],
+  "recepciones": []
+}

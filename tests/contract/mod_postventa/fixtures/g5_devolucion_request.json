@@ -1,0 +1,18 @@
+{
+  "pedidoId": "PED-2026-00981",
+  "tipo": "DEVOLUCION_DINERO",
+  "motivo": "PRODUCTO_DEFECTUOSO",
+  "descripcion": "El producto llegó con la pantalla rayada.",
+  "items": [
+    {
+      "productoId": "PROD-101",
+      "cantidad": 1
+    }
+  ],
+  "evidencias": [
+    {
+      "tipo": "IMAGEN",
+      "url": "https://postventa.example.com/evidencias/DEV-2026-0042-01.jpg"
+    }
+  ]
+}

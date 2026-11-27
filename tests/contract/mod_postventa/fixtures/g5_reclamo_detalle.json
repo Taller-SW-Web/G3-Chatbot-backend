@@ -1,0 +1,25 @@
+{
+  "reclamoId": "REC-2026-0077",
+  "codigoSeguimiento": "REC-77-2026",
+  "pedidoId": "PED-2026-00981",
+  "tipo": "RECLAMO",
+  "canal": "CHATBOT",
+  "motivo": "INCUMPLIMIENTO_PLAZO_ENTREGA",
+  "detalle": "El pedido superó la fecha estimada de entrega sin aviso.",
+  "estado": "REGISTRADO",
+  "plazoDiasHabiles": 15,
+  "fechaLimiteSLA": "2026-12-17T23:59:59Z",
+  "fechaRegistro": "2026-11-26T12:00:00Z",
+  "fechaAtencion": null,
+  "respuestaVisibleCliente": null,
+  "consumidor": {
+    "nombreCompleto": "Ana Díaz",
+    "documento": "40123456",
+    "email": "ana@example.com",
+    "telefono": "+51987654321"
+  },
+  "atendidoPor": null,
+  "estadoSla": "EN_PLAZO",
+  "diasHabilesRestantes": 15,
+  "slaCumplido": null
+}

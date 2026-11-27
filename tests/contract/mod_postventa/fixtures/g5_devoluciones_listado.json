@@ -1,0 +1,17 @@
+{
+  "clienteId": null,
+  "contenido": [
+    {
+      "devolucionId": "DEV-2026-0042",
+      "pedidoId": "PED-2026-00981",
+      "tipo": "DEVOLUCION_DINERO",
+      "estado": "EN_EVALUACION",
+      "motivo": "PRODUCTO_DEFECTUOSO",
+      "estadoReembolso": null,
+      "fechaRegistro": "2026-11-26T12:00:00Z"
+    }
+  ],
+  "pagina": 1,
+  "totalPaginas": 1,
+  "totalElementos": 1
+}
