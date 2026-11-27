@@ -37,6 +37,7 @@ from src.shared.domain.module_errors import (
 )
 
 LIST_TTL_SECONDS = 600.0
+PROMOTION_CACHE_TTL_SECONDS = 60.0
 MAX_VARIANTS_PER_PRODUCT = 100
 # G6 bulk pricing cost grows with SKU count. Keep each request within the
 # existing upstream timeout, with at most four calls in flight and no retries.
@@ -54,10 +55,11 @@ OFFER_DISCOVERY_SECONDS = 8.0
 
 
 class OptionCache:
-    """In-process categories/brands cache (SPEC-06).
+    """In-process catalog list cache (SPEC-06, SPEC-08).
 
-    Injectable so tests and `MODULES_MODE` runs never share stale lists: each
-    use case gets its own cache unless the wiring passes a shared instance.
+    Holds categories/brands lists and the 60 s promotions list. Injectable so
+    tests and `MODULES_MODE` runs never share stale lists: each use case gets
+    its own cache unless the wiring passes a shared instance.
     """
 
     def __init__(self, ttl_seconds: float = LIST_TTL_SECONDS):
@@ -98,6 +100,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
         uow,
         normalizer: ProductNormalizer | None = None,
         option_cache: OptionCache | None = None,
+        promotion_cache: OptionCache | None = None,
     ):
         self._catalog = catalog
         self._inventory = inventory
@@ -108,7 +111,11 @@ class ManageCatalogUseCase(DiscoveryMixin):
         self._variants = VariantResolver()
         self._stock = StockValidator()
         self._similar = SimilarProducts()
-        self._promotion_cache = OptionCache(60)
+        self._promotion_cache = (
+            promotion_cache
+            if promotion_cache is not None
+            else OptionCache(PROMOTION_CACHE_TTL_SECONDS)
+        )
 
     @property
     def inventory(self):
