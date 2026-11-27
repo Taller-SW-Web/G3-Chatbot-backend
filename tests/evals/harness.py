@@ -10,12 +10,11 @@ same `seeds/` that `MODULES_MODE=fake` uses (SPEC-06, SPEC-09, SPEC-11).
 """
 from __future__ import annotations
 
-import re
 import uuid
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 from src.modules.mod_cart.application.manage_cart_use_case import ManageCartUseCase
@@ -30,6 +29,7 @@ from src.modules.mod_chat.application.dto.conversation_events import (
 )
 from src.modules.mod_chat.application.interpret_and_respond_use_case import (
     InterpretAndRespondUseCase,
+    _Turn,
 )
 from src.modules.mod_chat.application.tools.cart_handlers import build_cart_handlers
 from src.modules.mod_chat.application.tools.catalog_handlers import build_catalog_handlers
@@ -53,31 +53,6 @@ from tests.fakes.fake_commerce import FakeCarts, FakeItems, FakeUow
 
 NOW = datetime.now(timezone.utc)
 _SENSITIVE_FILTER = SensitiveDataFilter()
-
-# Same evidence the agent loop accepts from a successful tool result so the
-# eval can check that no reply introduces an amount outside the tools.
-_MONEY_EVIDENCE_KEYS = frozenset({
-    "amount", "coupon_discount", "descuento", "descuento_monto", "discount_amount",
-    "line_total", "list_price", "monto", "offer_price", "price", "precio", "precio_lista",
-    "precio_oferta", "precio_regular", "precio_total", "precio_unitario", "regular_price",
-    "shipping_cost", "subtotal", "total", "unit_price",
-})
-_UNIT_PRICE_KEYS = frozenset({"precio", "price", "unit_price", "precio_unitario"})
-_QUANTITY_KEYS = frozenset({"cantidad", "quantity"})
-
-
-def _snake_case(value: Any) -> str:
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", str(value)).casefold()
-
-
-def _as_decimal(value: Any) -> Decimal | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal, str)):
-        return None
-    try:
-        number = Decimal(str(value))
-    except (InvalidOperation, ValueError):
-        return None
-    return number if number.is_finite() and number >= 0 else None
 
 
 class FakeConversations:
@@ -377,41 +352,17 @@ def block_types(events: Sequence[ConversationEvent]) -> list[str]:
     return [str(block.get("tipo", "")) for block in blocks(events)]
 
 
-def _collect_amounts(value: Any, amounts: set[Decimal], currency: str = "PEN") -> None:
-    if isinstance(value, Mapping):
-        current_currency = str(value.get("currency", currency or "PEN")).upper()
-        quantity = next(
-            (value[key] for key in value if _snake_case(key) in _QUANTITY_KEYS), None
-        )
-        if isinstance(quantity, int) and not isinstance(quantity, bool) and quantity >= 1:
-            for key, child in value.items():
-                if _snake_case(key) in _UNIT_PRICE_KEYS:
-                    unit = _as_decimal(child)
-                    if unit is not None:
-                        amounts.add(unit * quantity)
-        for key, child in value.items():
-            normalized_key = _snake_case(key)
-            if normalized_key == "texto" and isinstance(child, str):
-                amounts.update(extract_pen_amounts(child))
-            elif normalized_key in _MONEY_EVIDENCE_KEYS and current_currency in {"PEN", "S/"}:
-                number = _as_decimal(child)
-                if number is not None:
-                    amounts.add(number)
-            _collect_amounts(child, amounts, current_currency)
-    elif isinstance(value, (list, tuple)):
-        for child in value:
-            _collect_amounts(child, amounts, currency)
-
-
 def authorized_amounts(calls: Sequence[ToolCallRecord]) -> set[Decimal]:
-    """Amounts backed by successful tool data or blocks, like the agent loop authorizes."""
-    amounts: set[Decimal] = set()
+    """Amounts the agent loop itself authorizes from successful tool results.
+
+    Reusing `_Turn.authorize_result` keeps the eval aligned with production:
+    data and UI blocks are evidence; model-authored numbers are not.
+    """
+    turn = _Turn()
     for call in calls:
-        if call.result.code != "OK":
-            continue
-        _collect_amounts(call.result.data, amounts)
-        _collect_amounts(list(call.result.blocks), amounts)
-    return amounts
+        if call.result.code == "OK":
+            turn.authorize_result(call.result)
+    return turn.authorized_amounts
 
 
 def assert_no_invented_amounts(case: EvalCase, world: ShoppingWorld, text: str) -> None:
