@@ -217,6 +217,11 @@ jobs:
           dockerfile: Dockerfile
           # Solo bloquea errores; los estilos se revisan sin frenar el gate.
           failure-threshold: error
+      - name: hadolint (gateway)
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: gateway/Dockerfile
+          failure-threshold: error
       - name: Trivy (vulnerabilidades y configuración)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -229,6 +234,17 @@ jobs:
           format: table
       - name: Build image (equivalente al build del frontend)
         run: docker build --tag g3-chatbot-backend:ci .
+      - name: Build gateway image
+        run: docker build --file gateway/Dockerfile --tag g3-chatbot-gateway:ci gateway
+      - name: Trivy (gateway image)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: g3-chatbot-gateway:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          format: table
 
   # H5-C2: DAST pasivo con OWASP ZAP contra el stack levantado en CI con módulos
   # fake y LLM_PROVIDER=fake (sin datos reales ni secretos). Falla solo ante
@@ -346,6 +362,79 @@ jobs:
         if: always()
         run: test "${{ steps.zap_gate.outputs.exit_code }}" = "0"
 
+  # H5-G2 (ADR-0031): verifica el enrutamiento real de /health, /api/v1 y SSE
+  # a través del contenedor Kong OSS DB-less delante de FastAPI.
+  gateway-integration:
+    name: Gateway integration (Kong OSS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chatbot_gateway
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Prepare environment (fake modules and scripted LLM)
+        run: |
+          sed -e 's#^DATABASE_URL=.*#DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/chatbot_gateway#' \
+              -e 's#^LLM_PROVIDER=.*#LLM_PROVIDER=fake#' \
+              .env.template > .env
+          alembic upgrade head
+      - name: Start backend
+        run: |
+          nohup uvicorn src.infrastructure.main:app --host 127.0.0.1 --port 8000 --env-file .env \
+            > uvicorn.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health && exit 0
+            sleep 2
+          done
+          cat uvicorn.log
+          exit 1
+      - name: Build and start Kong OSS gateway
+        run: |
+          docker build --file gateway/Dockerfile --tag g3-chatbot-gateway:ci gateway
+          docker run -d --name kong-ci --network host \
+            -e PORT=8080 \
+            -e BACKEND_UPSTREAM_URL=http://127.0.0.1:8000 \
+            g3-chatbot-gateway:ci
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/health && exit 0
+            sleep 2
+          done
+          docker logs kong-ci || true
+          cat uvicorn.log || true
+          exit 1
+      - name: Run gateway integration tests
+        env:
+          GATEWAY_TEST_URL: http://127.0.0.1:8080
+        run: python -m pytest tests/integration/test_gateway_kong.py -v
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker logs kong-ci || true
+          cat uvicorn.log || true
+      - name: Stop Kong container
+        if: always()
+        run: docker rm -f kong-ci || true
+
   # Revisa las dependencias que el PR agrega/cambia contra el Dependency Graph.
   # El job corre siempre (aunque en `push` no revisa nada) para no romper el
   # chequeo de `skipped` del gate.
@@ -438,7 +527,7 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [lint, types, unit-tests, openapi, integration-tests, modules, specs, security, dependency-review, docker, dast, sonar]
+    needs: [lint, types, unit-tests, openapi, integration-tests, modules, specs, security, dependency-review, docker, dast, gateway-integration, sonar]
     if: always()
     steps:
       - name: Require every job to succeed
