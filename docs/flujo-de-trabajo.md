@@ -22,8 +22,10 @@ No se implementa “lo que parece razonable”.
 2. Lee la spec completa: requisitos, escenarios, requisitos no funcionales y
    criterios de completitud.
 3. Comprueba si el cambio ya está cubierto. Si no:
-   - actualiza la spec en **su repo** (o coordina el cambio) en el mismo PR;
-   - registra en el PR qué escenario nuevo se añadió y por qué.
+   - abre una issue en `G3-Chatbot-specs` asignada a `@Ankarmin` y `@MathiasTL`;
+     no abras ramas ni PRs en specs;
+   - registra en el PR qué escenario nuevo se añadió y por qué; el PR espera a
+     que la spec esté en `development`.
 4. Si el cambio afecta el DAG o una capacidad, escribe la decisión: qué módulo
    la registra, quién la consume y si es requerida u opcional.
 
