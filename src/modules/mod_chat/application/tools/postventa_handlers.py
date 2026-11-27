@@ -517,6 +517,7 @@ def build_postventa_confirmation_handlers(postventa: PostventaService) -> dict[s
                 holder_token=context.access_token,
                 payload=payload,
                 idempotency_key=key,
+                conversation_id=conversation_id,
             )
         except PostventaError as exc:
             if exc.code == "RECLAMO_DUPLICADO":
@@ -561,6 +562,7 @@ def build_postventa_confirmation_handlers(postventa: PostventaService) -> dict[s
                 holder_token=context.access_token,
                 payload=payload,
                 idempotency_key=key,
+                conversation_id=conversation_id,
             )
         except PostventaError as exc:
             if exc.code == "DEVOLUCION_DUPLICADA":
