@@ -70,7 +70,14 @@ class _StubService:
     async def profile(self, holder_token: str, customer_id: str):
         return {"id": customer_id, "celularVerificado": True, "ultimoDocumento": None}
 
-    async def login(self, email: str, password: str, *, canal: str | None = None):
+    async def login(
+        self,
+        email: str,
+        password: str,
+        *,
+        canal: str | None = None,
+        anonymous_sid: str | None = None,
+    ):
         if password == "wrong":
             raise InvalidCredentialsError()
         return {"accessToken": "tok", "expiresIn": 900, "usuario": {"id": str(CUSTOMER_ID)}}
