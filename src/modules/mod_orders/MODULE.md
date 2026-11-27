@@ -46,7 +46,7 @@ resuelve por la capacidad `dispatch_port`.
 
 | Capacidad | Consumidor | Motivo |
 |---|---|---|
-| `order_confirmation` | `mod-checkout`, worker de outbox | el correo de confirmación pertenece a este módulo |
+| `order_confirmation` | worker de outbox (tras `nuevoEstado: PAGADO` de G5) | el correo de confirmación pertenece a este módulo |
 | `feedback_notifier` | worker de outbox | correo interno de sugerencias/bugs (SPEC-24), mismo `EmailSender` |
 
 ## Retroalimentación (SPEC-24)

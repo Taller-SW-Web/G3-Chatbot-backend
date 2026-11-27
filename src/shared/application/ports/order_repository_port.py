@@ -4,6 +4,7 @@ Authentication rule (`contratos-integracion.md` §1, §3.3, agreement A15):
 - System operations (`create_order`, `notify_payment`, `cancel_order`) use the
   channel service token (`modulo-chatbot` with scopes `ventas:pedidos:crear`,
   `ventas:pagos:webhook`, `ventas:pedidos:anular`).
+- System read `get_order_as_service` uses the service token (`ventas:pedidos:consultar`).
 - Customer read operations (`list_customer_orders`, `get_customer_order`) forward
   the customer's Bearer token (`rol: CLIENTE`, filtered by `sub` in Ventas).
 """
@@ -41,6 +42,17 @@ class SalesOrderPort(Protocol):
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
         """`POST /api/v1/pedidos/{id}/anulaciones` (`SPEC-15` Req. 3)."""
+        ...
+
+    async def get_order_as_service(
+        self,
+        order_id: str,
+        *,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """`GET /api/v1/pedidos/{id}` with the service token (scope `ventas:pedidos:consultar`).
+
+        For system flows with no customer token (outbox reconciliation)."""
         ...
 
     async def list_customer_orders(

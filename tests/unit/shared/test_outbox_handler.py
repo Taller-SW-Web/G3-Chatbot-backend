@@ -17,8 +17,9 @@ JOB_ID = uuid.uuid4()
 PAYMENT = {"order_id": "PED-1", "payment_data": {"transaccionId": "TX-1"}, "correlation_id": "c-1"}
 
 
-def _handler(*, notification_service=None, feedback_notifier=None, local_status=None):
+def _handler(*, notification_service=None, feedback_notifier=None, local_status=None, notify_state="PAGADO"):
     outbox_repo, order_ref_repo, sales_client = AsyncMock(), AsyncMock(), AsyncMock()
+    sales_client.notify_payment.return_value = {"pedidoId": "PED-1", "nuevoEstado": notify_state}
     order_ref_repo.obtener_por_order_id.return_value = (
         SimpleNamespace(local_status=local_status) if local_status else None
     )
@@ -187,3 +188,174 @@ async def test_relayed_email_without_a_service_is_unavailable_not_silently_proce
     handler, _, _, _ = _handler()
     with pytest.raises(HandlerUnavailableError):
         await handler.dispatch(JOB_ID, "SEND_EMAIL", {"order_id": "PED-1"}, relayed=True)
+
+
+# -- payment result from Ventas (decision "Pendiente hasta G5") ---------------------------
+
+
+def _confirmation_service():
+    service = AsyncMock()
+    service.enqueue_confirmation.return_value = {"correoEnmascarado": "m***a@ejemplo.com", "mensaje": "ok"}
+    return service
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("relayed", [False, True])
+async def test_pagado_marks_paid_and_enqueues_the_confirmation_in_both_dispatch_modes(relayed):
+    service = _confirmation_service()
+    handler, _, order_ref, _ = _handler(notification_service=service)
+    await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", PAYMENT, relayed=relayed)
+    order_ref.actualizar_estado.assert_awaited_once_with("PED-1", "PAID_NOTIFIED")
+    service.enqueue_confirmation.assert_awaited_once_with("PED-1")
+
+
+@pytest.mark.asyncio
+async def test_a_redelivered_payment_task_does_not_send_a_second_confirmation():
+    # `enqueue_confirmation` registers `(order_id, 0)` once; the second call reports the
+    # existing notification without a new e-mail task. Here the real service semantics
+    # are modelled with a registry: only the first call creates the outbox task.
+    created = []
+
+    async def enqueue(order_id):
+        if order_id not in created:
+            created.append(order_id)
+        return {"correoEnmascarado": "m***a@ejemplo.com", "mensaje": "ok"}
+
+    service = AsyncMock()
+    service.enqueue_confirmation.side_effect = enqueue
+    handler, _, order_ref, sales = _handler(notification_service=service)
+
+    await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", PAYMENT, relayed=True)
+    await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", PAYMENT, relayed=True)
+
+    assert sales.notify_payment.await_count == 2  # Ventas deduplicates by transaccionId
+    assert created == ["PED-1"]  # one confirmation for the order
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("relayed", [False, True])
+async def test_a_late_payment_on_a_cancelled_order_cancels_locally_without_a_confirmation(relayed, caplog):
+    service = _confirmation_service()
+    handler, outbox, order_ref, _ = _handler(notification_service=service, notify_state="ANULADO")
+    with caplog.at_level("INFO"):
+        await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", PAYMENT, relayed=relayed)
+    order_ref.actualizar_estado.assert_awaited_once_with("PED-1", "CANCELLED")
+    service.enqueue_confirmation.assert_not_awaited()
+    assert "order_id=PED-1" in caplog.text and "correlation_id=c-1" in caplog.text
+    assert outbox.marcar_procesado.await_count == (0 if relayed else 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result", [{}, {"nuevoEstado": "MARCIANO"}, None])
+async def test_a_payment_answer_without_a_known_state_keeps_the_old_paid_behaviour_with_a_warning(result, caplog):
+    service = _confirmation_service()
+    handler, _, order_ref, sales = _handler(notification_service=service)
+    sales.notify_payment.return_value = result
+    with caplog.at_level("WARNING"):
+        await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", PAYMENT, relayed=True)
+    order_ref.actualizar_estado.assert_awaited_once_with("PED-1", "PAID_NOTIFIED")
+    service.enqueue_confirmation.assert_awaited_once_with("PED-1")
+    assert "without a PAGADO/ANULADO state" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_failing_confirmation_enqueue_propagates_so_the_task_is_retried():
+    service = _confirmation_service()
+    service.enqueue_confirmation.side_effect = RuntimeError("db down")
+    handler, _, _, _ = _handler(notification_service=service)
+    with pytest.raises(RuntimeError):
+        await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", PAYMENT, relayed=True)
+
+
+# -- 409 PEDIDO_NO_ANULABLE ----------------------------------------------------------------
+
+
+def _not_cancellable(code="PEDIDO_NO_ANULABLE"):
+    return ModuleRequestError("sales", 409, code)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("relayed", [False, True])
+async def test_a_409_not_cancellable_is_a_success_when_ventas_says_anulado(relayed):
+    handler, outbox, order_ref, sales = _handler()
+    sales.cancel_order.side_effect = _not_cancellable()
+    sales.get_order_as_service.return_value = {"pedidoId": "PED-2", "estado": "ANULADO"}
+
+    await handler.dispatch(JOB_ID, "REQUEST_CANCELLATION", {"order_id": "PED-2", "correlation_id": "c-2"}, relayed=relayed)
+
+    sales.get_order_as_service.assert_awaited_once_with("PED-2", correlation_id="c-2")
+    order_ref.actualizar_estado.assert_awaited_once_with("PED-2", "CANCELLED")
+    assert outbox.marcar_procesado.await_count == (0 if relayed else 1)
+
+
+@pytest.mark.asyncio
+async def test_a_409_not_cancellable_stays_a_failure_when_the_order_is_not_cancelled():
+    handler, outbox, order_ref, sales = _handler()
+    error = _not_cancellable()
+    sales.cancel_order.side_effect = error
+    sales.get_order_as_service.return_value = {"pedidoId": "PED-2", "estado": "DESPACHADO"}
+
+    with pytest.raises(ModuleRequestError) as exc:
+        await handler.dispatch(JOB_ID, "REQUEST_CANCELLATION", {"order_id": "PED-2"})
+
+    assert exc.value is error
+    order_ref.actualizar_estado.assert_not_awaited()
+    outbox.marcar_procesado.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_409_whose_confirmation_read_is_refused_keeps_the_original_409():
+    handler, _, order_ref, sales = _handler()
+    error = _not_cancellable()
+    sales.cancel_order.side_effect = error
+    sales.get_order_as_service.side_effect = ModuleRequestError("sales", 403, "ACCESO_DENEGADO")
+
+    with pytest.raises(ModuleRequestError) as exc:
+        await handler.dispatch(JOB_ID, "REQUEST_CANCELLATION", {"order_id": "PED-2"}, relayed=True)
+
+    assert exc.value is error
+    order_ref.actualizar_estado.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_duplicated_cancellation_request_is_not_reconciled():
+    handler, _, _, sales = _handler()
+    sales.cancel_order.side_effect = _not_cancellable("SOLICITUD_DUPLICADA")
+
+    with pytest.raises(ModuleRequestError):
+        await handler.dispatch(JOB_ID, "REQUEST_CANCELLATION", {"order_id": "PED-2"}, relayed=True)
+
+    sales.get_order_as_service.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_other_cancellation_errors_are_not_reconciled():
+    handler, _, _, sales = _handler()
+    sales.cancel_order.side_effect = ModuleRequestError("sales", 404, "PEDIDO_NO_ENCONTRADO")
+
+    with pytest.raises(ModuleRequestError):
+        await handler.dispatch(JOB_ID, "REQUEST_CANCELLATION", {"order_id": "PED-2"}, relayed=True)
+
+    sales.get_order_as_service.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_stock_cancelled_order_in_the_fake_ventas_is_cancelled_locally_on_late_payment():
+    from src.shared.infrastructure.fakes.fake_ventas import FakeSalesPort
+
+    sales = FakeSalesPort()
+    sales.orders["PED-9"] = {
+        "pedidoId": "PED-9", "canal": "CHATBOT", "estado": "CREADO", "total": 10, "moneda": "PEN",
+        "fechaCreacion": "2026-11-05T19:00:00Z", "items": [], "envio": {},
+        "pago": {"estado": "PENDIENTE"},
+        "historialEstados": [{"estado": "CREADO", "fecha": "2026-11-05T19:00:00Z", "actor": "X", "motivo": None}],
+    }
+    sales.cancel_for_stock("PED-9", paid=False)
+    service = _confirmation_service()
+    handler, _, order_ref, _ = _handler(notification_service=service)
+    handler.sales_client = sales
+
+    await handler.dispatch(JOB_ID, "NOTIFY_SALES_PAYMENT", {**PAYMENT, "order_id": "PED-9"}, relayed=True)
+
+    order_ref.actualizar_estado.assert_awaited_once_with("PED-9", "CANCELLED")
+    service.enqueue_confirmation.assert_not_awaited()

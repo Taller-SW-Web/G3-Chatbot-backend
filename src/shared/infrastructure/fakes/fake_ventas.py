@@ -161,6 +161,28 @@ class FakeSalesPort(SalesOrderPort):
             "solicitudReembolsoGenerada": False,
         }
 
+    async def get_order_as_service(
+        self,
+        order_id: str,
+        *,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        order = self.orders.get(order_id)
+        if not order:
+            raise ModuleRequestError("sales", 404, "PEDIDO_NO_ENCONTRADO")
+        return {
+            "pedidoId": order["pedidoId"],
+            "canal": order["canal"],
+            "estado": order["estado"],
+            "total": order["total"],
+            "moneda": order["moneda"],
+            "fechaCreacion": order["fechaCreacion"],
+            "items": order["items"],
+            "envio": order["envio"],
+            "pago": dict(order["pago"]),
+            "historialEstados": self._history(order),
+        }
+
     async def list_customer_orders(
         self,
         holder_token: str,

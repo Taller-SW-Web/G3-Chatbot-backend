@@ -1,7 +1,10 @@
 """Per-type dispatch of an outbox task, shared by the direct worker and the consumer (ADR-0030).
 
 `OutboxProcessor` (direct mode) and the RabbitMQ consumer run the very same effects:
-- NOTIFY_SALES_PAYMENT / REQUEST_CANCELLATION: call Ventas, then update `order_ref`.
+- NOTIFY_SALES_PAYMENT: call Ventas and follow its `nuevoEstado`: PAGADO -> PAID_NOTIFIED plus
+  the confirmation e-mail; ANULADO (late payment) -> CANCELLED, no e-mail.
+- REQUEST_CANCELLATION: call Ventas, then update `order_ref`; a 409 PEDIDO_NO_ANULABLE is a
+  success when Ventas reports the order as ANULADO.
 - SEND_EMAIL: order confirmation through the notification service.
 - SEND_FEEDBACK_EMAIL: internal feedback e-mail.
 
@@ -21,6 +24,7 @@ from typing import Any
 
 from src.shared.application.ports.notification_repository_port import EmailTask
 from src.shared.application.ports.order_repository_port import SalesOrderPort
+from src.shared.domain.module_errors import ModuleRequestError
 from src.shared.infrastructure.persistence.order_ref_postgres_adapter import OrderRefPostgresAdapter
 from src.shared.infrastructure.persistence.outbox_postgres_adapter import OutboxPostgresAdapter
 
@@ -28,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 PAID_NOTIFIED = "PAID_NOTIFIED"
 CANCELLED = "CANCELLED"
+SALES_PAID = "PAGADO"
+SALES_CANCELLED = "ANULADO"
 
 
 class HandlerUnavailableError(Exception):
@@ -92,10 +98,10 @@ class OutboxTaskHandler:
         except KeyError:
             raise NonRetryableTaskError("payload has no order_id") from None
 
-    # No local-status redelivery guard: checkout sets PAID_NOTIFIED / CANCELLED when it
-    # enqueues the task, so `order_ref.local_status` never tells whether Ventas got the call.
-    # Redeliveries rely on Ventas: payments deduplicate by `transaccionId` (ADR-0012) and a
-    # repeated cancellation answers 409, which ADR-0030 classifies as non-retryable.
+    # No local-status redelivery guard: `order_ref.local_status` never tells whether Ventas got
+    # the call. Redeliveries rely on Ventas: payments deduplicate by `transaccionId` (ADR-0012)
+    # and a repeated cancellation answers 409, which is reconciled below. The confirmation
+    # e-mail is idempotent by itself (`enqueue_confirmation` registers `(order_id, 0)` once).
 
     async def _notify_sales_payment(self, payload: dict[str, Any], relayed: bool) -> None:
         order_id = self._order_id(payload)
@@ -103,12 +109,41 @@ class OutboxTaskHandler:
         correlation_id = payload.get("correlation_id")
 
         # Ventas deduplicates by `transaccionId` (ADR-0012), so a repeated call is harmless.
-        await self.sales_client.notify_payment(
+        result = await self.sales_client.notify_payment(
             order_id,
             payment_data,
             correlation_id=correlation_id,
         )
+        new_state = result.get("nuevoEstado") if isinstance(result, dict) else None
+
+        if new_state == SALES_CANCELLED:
+            # Late payment on an order Ventas already cancelled (for example no stock): the
+            # money is refunded by Ventas, so the order is never confirmed to the customer.
+            logger.info(
+                "Payment notified on a cancelled order: order_id=%s correlation_id=%s nuevoEstado=%s",
+                order_id, correlation_id, new_state,
+            )
+            await self.order_ref_repo.actualizar_estado(order_id, CANCELLED)
+            return
+
+        if new_state != SALES_PAID:
+            # `nuevoEstado` is optional in the contract. A 200 means Ventas applied an approved
+            # payment, so the previous behavior (paid) is kept, but it is worth a warning.
+            logger.warning(
+                "Ventas answered the payment without a PAGADO/ANULADO state: order_id=%s "
+                "correlation_id=%s nuevoEstado=%r; treating the order as paid",
+                order_id, correlation_id, new_state,
+            )
         await self.order_ref_repo.actualizar_estado(order_id, PAID_NOTIFIED)
+        await self._enqueue_confirmation(order_id)
+
+    async def _enqueue_confirmation(self, order_id: str) -> None:
+        service = self.notification_service
+        if service is None:
+            logger.error("Order %s is paid but no notification service is wired; no confirmation e-mail", order_id)
+            return
+        # Idempotent: a redelivered task finds the registered notification and does nothing.
+        await service.enqueue_confirmation(order_id)
 
     async def _request_cancellation(self, payload: dict[str, Any], relayed: bool) -> None:
         order_id = self._order_id(payload)
@@ -116,12 +151,33 @@ class OutboxTaskHandler:
         comentario = payload.get("comentario", "Tiempo límite de espera agotado; cancelado por el canal")
         correlation_id = payload.get("correlation_id")
 
-        await self.sales_client.cancel_order(
-            order_id,
-            motivo=motivo,
-            comentario=comentario,
-            correlation_id=correlation_id,
-        )
+        try:
+            await self.sales_client.cancel_order(
+                order_id,
+                motivo=motivo,
+                comentario=comentario,
+                correlation_id=correlation_id,
+            )
+        except ModuleRequestError as exc:
+            if exc.status != 409 or exc.code != "PEDIDO_NO_ANULABLE":
+                raise
+            # SOLICITUD_DUPLICADA is left as a permanent failure: it means a request is still
+            # pending authorization, not that the order is cancelled.
+            try:
+                order = await self.sales_client.get_order_as_service(order_id, correlation_id=correlation_id)
+            except ModuleRequestError as read_exc:
+                # The read was refused (scope, unknown order): the original 409 stands.
+                logger.warning(
+                    "Could not confirm the order state after a 409: order_id=%s status=%s code=%s",
+                    order_id, read_exc.status, read_exc.code,
+                )
+                raise exc from read_exc
+            if not isinstance(order, dict) or order.get("estado") != SALES_CANCELLED:
+                raise
+            logger.info(
+                "Cancellation already applied in Ventas: order_id=%s correlation_id=%s",
+                order_id, correlation_id,
+            )
         await self.order_ref_repo.actualizar_estado(order_id, CANCELLED)
 
     async def _send_email(self, job_id: uuid.UUID, payload: dict[str, Any], relayed: bool) -> None:

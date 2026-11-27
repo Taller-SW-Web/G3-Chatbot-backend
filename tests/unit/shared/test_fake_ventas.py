@@ -156,3 +156,22 @@ async def test_cancelling_an_open_order_still_succeeds():
     assert result["estadoPedido"] == "ANULADO"
     detail = await sales.get_customer_order(created["pedidoId"], token("c1"))
     assert detail["historialEstados"][-1]["motivo"] == "PAGO_NO_COMPLETADO"
+
+
+@pytest.mark.asyncio
+async def test_service_read_returns_the_order_without_a_holder_token():
+    sales = FakeSalesPort()
+    created = await sales.create_order(snapshot("c1"), idempotency_key="k1")
+    sales.cancel_for_stock(created["pedidoId"])
+
+    order = await sales.get_order_as_service(created["pedidoId"])
+
+    assert order["estado"] == "ANULADO"
+    assert order["historialEstados"][-1]["estado"] == "ANULADO"
+
+
+@pytest.mark.asyncio
+async def test_service_read_of_an_unknown_order_is_a_404():
+    with pytest.raises(ModuleRequestError) as exc:
+        await FakeSalesPort().get_order_as_service("PED-NOPE")
+    assert (exc.value.status, exc.value.code) == (404, "PEDIDO_NO_ENCONTRADO")

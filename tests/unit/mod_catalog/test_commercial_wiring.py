@@ -14,7 +14,7 @@ from src.modules.mod_catalog.module import (
     provide_product_catalog,
     provide_product_inventory,
 )
-from src.modules.mod_checkout.module import ORDER_CONFIRMATION, provide_checkout_service
+from src.modules.mod_checkout.module import ORDER_CONFIRMATION, provide_outbox_task_handler
 from src.shared.infrastructure.config.settings import Settings, get_settings
 
 
@@ -72,7 +72,7 @@ async def test_fake_inventory_does_not_invent_availability():
     assert known == [{"sku": "NIK-REV7-42-NEG", "status": "DISPONIBLE"}]
 
 
-def test_checkout_provider_wires_real_notification_service(monkeypatch):
+def test_outbox_handler_wires_the_notification_service(monkeypatch):
     from src.shared.infrastructure.config import settings as settings_module
     from src.shared.infrastructure.di.registry import registry
 
@@ -85,11 +85,11 @@ def test_checkout_provider_wires_real_notification_service(monkeypatch):
     session = MagicMock()
 
     try:
-        checkout = provide_checkout_service(session)
+        handler = provide_outbox_task_handler(session)
     finally:
         registry.clear()
         settings_module.get_settings.cache_clear()
 
     provider.assert_called_once_with(session)
-    assert checkout.notification_service is notification_service
-    assert checkout.dispatch is not None
+    # The confirmation e-mail is enqueued by the outbox once Ventas answers (not by checkout).
+    assert handler.notification_service is notification_service

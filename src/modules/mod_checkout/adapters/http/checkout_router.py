@@ -43,6 +43,10 @@ class ProcessPaymentRequest(BaseModel):
 
 _RESULT_LABELS = {"APPROVED": "APROBADO", "REJECTED": "RECHAZADO", "ERROR": "ERROR"}
 
+# Approved payments are not confirmed to the customer until Ventas answers (outbox).
+_PAYMENT_IN_PROGRESS = "PAGO_EN_PROCESO"
+_PAYMENT_IN_PROGRESS_MESSAGE = "Pago recibido. Estamos confirmando tu pedido y te avisaremos por correo."
+
 
 def _public_summary(summary: Any) -> dict[str, Any]:
     """Drop internal reconciliation keys (`_sales*`) from the HTTP summary."""
@@ -222,7 +226,7 @@ def create_checkout_router(
             if ord_row and getattr(ord_row, "order_id", None):
                 order_id = ord_row.order_id
 
-            confirmation = getattr(attempt, "confirmation", None)
+            approved = attempt.result == "APPROVED"
             return {
                 "id": str(attempt.id),
                 "checkoutId": str(attempt.checkout_id),
@@ -232,8 +236,13 @@ def create_checkout_router(
                 "ultimos4": attempt.last4,
                 "monto": float(attempt.amount),
                 "idTransaccion": attempt.transaction_id,
-                "correoEnmascarado": confirmation.get("correoEnmascarado") if confirmation else None,
-                "mensaje": confirmation.get("mensaje") if confirmation else None,
+                # Same fields as the CONFIRMACION_PEDIDO block (frontend reads these four).
+                "estado": _PAYMENT_IN_PROGRESS if approved else None,
+                "nuevoEstado": None,
+                "motivo": None,
+                "reembolso": None,
+                "correoEnmascarado": None,
+                "mensaje": _PAYMENT_IN_PROGRESS_MESSAGE if approved else None,
             }
         except CheckoutError as exc:
             raise _translate_error(exc) from exc
