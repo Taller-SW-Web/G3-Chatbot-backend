@@ -567,7 +567,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
-      - name: Enforce zero new issues (PR: MINOR+, main: CRITICAL+)
+      - name: "Enforce zero new issues (PR: MINOR+, main: CRITICAL+)"
         if: steps.token.outputs.available == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
