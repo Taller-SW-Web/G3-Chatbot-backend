@@ -110,6 +110,7 @@ async def test_openapi_and_docs_are_published_through_kong(gateway_url: str) -> 
     async with httpx.AsyncClient(base_url=gateway_url, timeout=15.0) as client:
         openapi_resp = await client.get("/openapi.json")
         docs_resp = await client.get("/docs")
+        redoc_resp = await client.get("/redoc")
 
     assert openapi_resp.status_code == 200
     assert openapi_resp.headers.get("x-gateway") == "kong"
@@ -121,6 +122,10 @@ async def test_openapi_and_docs_are_published_through_kong(gateway_url: str) -> 
     assert docs_resp.status_code == 200
     assert docs_resp.headers.get("x-gateway") == "kong"
     assert "swagger" in docs_resp.text.lower()
+
+    assert redoc_resp.status_code == 200
+    assert redoc_resp.headers.get("x-gateway") == "kong"
+    assert "redoc" in redoc_resp.text.lower()
 
 
 async def test_rate_limit_headers_and_429_enforced_by_kong(gateway_url: str) -> None:
