@@ -34,6 +34,7 @@ from src.shared.infrastructure.http.dependencies.rate_limiter import (
     InMemoryRateLimiter,
     client_ip,
 )
+from src.shared.infrastructure.http.openapi import problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 logger = logging.getLogger(__name__)
@@ -234,7 +235,11 @@ def create_session_router(
             usuario=dict(answer.get("usuario", {})),
         )
 
-    @router.post("/login", response_model=OpenedSession | MfaChallenge)
+    @router.post(
+        "/login",
+        response_model=OpenedSession | MfaChallenge,
+        responses=problem_responses(401, 403, 429, 503),
+    )
     async def login(
         body: LoginIn,
         request: Request,
@@ -274,7 +279,9 @@ def create_session_router(
             return MfaChallenge(canal=str(answer.get("canal", "EMAIL")))
         return _open_session_response(response, answer)
 
-    @router.post("/mfa/solicitar", response_model=OkResponse)
+    @router.post(
+        "/mfa/solicitar", response_model=OkResponse, responses=problem_responses(403, 410, 429, 503)
+    )
     async def request_mfa(
         body: RequestMfaIn,
         request: Request,
@@ -293,7 +300,9 @@ def create_session_router(
             raise ProblemError(exc.status, exc.code, "Module request failed") from None
         return OkResponse()
 
-    @router.post("/mfa/verificar", response_model=OpenedSession)
+    @router.post(
+        "/mfa/verificar", response_model=OpenedSession, responses=problem_responses(401, 403, 410, 503)
+    )
     async def verify_mfa(
         body: VerifyMfaIn,
         request: Request,
@@ -337,7 +346,9 @@ def create_session_router(
         response.delete_cookie(CHALLENGE_COOKIE, path=SESSION_COOKIE_PATH)
         return _open_session_response(response, answer)
 
-    @router.post("/refresh", response_model=OpenedSession)
+    @router.post(
+        "/refresh", response_model=OpenedSession, responses=problem_responses(401, 403, 503)
+    )
     async def refresh(
         request: Request,
         response: Response,
@@ -356,7 +367,7 @@ def create_session_router(
                                "Tu sesión terminó, vuelve a iniciar sesión") from None
         return _open_session_response(response, answer)
 
-    @router.post("/logout", response_model=OkResponse)
+    @router.post("/logout", response_model=OkResponse, responses=problem_responses(403))
     async def logout(
         request: Request,
         response: Response,
@@ -384,7 +395,12 @@ def create_session_router(
         except ModuleRequestError as exc:
             raise ProblemError(exc.status, exc.code, "Module request failed") from None
 
-    @router.post("/registro", response_model=RegistroOut, status_code=201)
+    @router.post(
+        "/registro",
+        response_model=RegistroOut,
+        status_code=201,
+        responses=problem_responses(403, 409, 422, 429, 503),
+    )
     async def register(
         body: RegistroIn,
         request: Request,
@@ -453,7 +469,7 @@ def create_session_router(
         except ModuleUnavailableError:
             raise _service_unavailable() from None
 
-    @router.get("/politica-contrasena")
+    @router.get("/politica-contrasena", responses=problem_responses(503))
     async def password_policy(sessions: ManageSessionUseCase = Depends(session_provider)):
         """Password rules the chat renders before asking for one (SPEC-01 Req. 2)."""
         try:
@@ -463,7 +479,7 @@ def create_session_router(
         except ModuleUnavailableError:
             raise _service_unavailable() from None
 
-    @router.post("/verificar-correo", status_code=204)
+    @router.post("/verificar-correo", status_code=204, responses=problem_responses(403, 410, 503))
     async def verify_email(
         body: VerificarCorreoIn,
         request: Request,
@@ -479,7 +495,12 @@ def create_session_router(
             raise _service_unavailable() from None
         return Response(status_code=204)
 
-    @router.post("/verificar-correo/reenviar", response_model=OkResponse, status_code=202)
+    @router.post(
+        "/verificar-correo/reenviar",
+        response_model=OkResponse,
+        status_code=202,
+        responses=problem_responses(403, 429, 503),
+    )
     async def resend_verification(
         body: ReenviarVerificacionIn,
         request: Request,
