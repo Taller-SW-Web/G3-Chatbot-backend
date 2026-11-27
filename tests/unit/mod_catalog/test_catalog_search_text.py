@@ -5,6 +5,8 @@ from src.modules.mod_catalog.application.tools import SearchArguments
 from tests.unit.mod_catalog.test_astra_regressions import cards
 from tests.unit.mod_catalog.test_offer_discovery_review import paged
 
+STOPWORDS = {"de", "para", "con", "el", "la", "en", "y"}
+
 
 @pytest.mark.asyncio
 async def test_catalog_total_above_carousel_size_states_how_many_are_shown():
@@ -32,3 +34,28 @@ async def test_local_filter_that_empties_the_page_returns_no_carousel():
     assert result["total_scope"] == "page"
     assert "No encontré productos" in result["texto"]
     assert "pantalla" not in result["texto"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "expected_q", "expected_category"),
+    [
+        ("zapatillas de running", "running", "cat-zapatillas"),
+        ("zapatillas para correr", "correr", "cat-zapatillas"),
+        ("zapatillas", None, "cat-zapatillas"),
+        ("running", "running", None),
+        ("ZAPATILLAS DE RUNNING", "running", "cat-zapatillas"),
+        ("polo de algodón", "algodon", "cat-polos"),
+    ],
+)
+async def test_compound_query_renders_carousel_and_reaches_productos_clean(query, expected_q, expected_category):
+    uc, ctx = paged(total=3)
+
+    result = await uc.search(SearchArguments(q=query), ctx)
+
+    assert result["bloques"][0]["tipo"] == "CARRUSEL_PRODUCTOS"
+    assert cards(result) and "Encontré 3 productos" in result["texto"]
+    sent = uc._catalog.search_products.await_args.kwargs
+    assert sent["q"] == expected_q
+    assert sent["category_id"] == expected_category
+    assert not (set((sent["q"] or "").split()) & STOPWORDS)

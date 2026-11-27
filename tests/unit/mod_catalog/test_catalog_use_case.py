@@ -22,6 +22,7 @@ from tests.fakes.fake_commerce import (
 
 CONVERSATION_ID = uuid.uuid4()
 CUSTOMER_ID = uuid.uuid4()
+STOPWORDS = {"de", "para", "con", "el", "la", "en", "y"}
 
 
 def make_catalog(statuses=None, products=None, catalog=None, inventory=None):
@@ -176,6 +177,18 @@ class CountingInventory(FakeInventoryPort):
         return await super().get_availability(skus, **kwargs)
 
 
+class RecordingCatalog(FakeCatalogPort):
+    """Fake Productos that records the arguments received from the BFF."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.search_calls = []
+
+    async def search_products(self, **kwargs):
+        self.search_calls.append(kwargs)
+        return await super().search_products(**kwargs)
+
+
 @pytest.mark.asyncio
 async def test_search_batches_prices_and_availability_in_bulk():
     catalog_port = CountingCatalog()
@@ -276,6 +289,51 @@ async def test_plain_zapatillas_still_returns_every_shoe():
     catalog = owned_catalog(make_seeded_catalog())
     result = await catalog.search(SearchArguments(q="zapatillas"), customer_context())
     assert result["total"] == 34
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "expected_q", "expected_category"),
+    [
+        ("zapatillas de running", "running", "cat-zapatillas"),
+        ("zapatillas para correr", "correr", "cat-zapatillas"),
+        ("zapatillas", None, "cat-zapatillas"),
+        ("running", "running", None),
+        ("ZAPATILLAS DE RUNNING", "running", "cat-zapatillas"),
+        ("Zapatillas Para Correr", "correr", "cat-zapatillas"),
+        ("polo de algodón", "algodon", "cat-polos"),
+    ],
+)
+async def test_search_sends_normalized_q_without_stopwords(query, expected_q, expected_category):
+    catalog_port = RecordingCatalog()
+    catalog = owned_catalog(make_catalog(catalog=catalog_port))
+
+    result = await catalog.search(SearchArguments(q=query), customer_context())
+
+    assert result["bloques"][0]["tipo"] == "CARRUSEL_PRODUCTOS"
+    assert result["bloques"][0]["datos"]["productos"]
+    sent = catalog_port.search_calls[0]
+    assert sent["q"] == expected_q
+    assert sent["category_id"] == expected_category
+    assert not (set((sent["q"] or "").split()) & STOPWORDS)
+
+
+@pytest.mark.asyncio
+async def test_offer_discovery_sends_normalized_q_without_stopwords():
+    catalog_port = RecordingCatalog()
+    catalog = owned_catalog(make_catalog(catalog=catalog_port))
+
+    await catalog.search(
+        SearchArguments(q="zapatillas de running", soloOfertas=True),
+        customer_context(),
+        discover_offers=True,
+    )
+
+    assert catalog_port.search_calls
+    for sent in catalog_port.search_calls:
+        assert sent["q"] == "running"
+        assert sent["category_id"] == "cat-zapatillas"
+        assert not (set((sent["q"] or "").split()) & STOPWORDS)
 
 
 @pytest.mark.asyncio
