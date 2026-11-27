@@ -117,13 +117,15 @@ class SnapshotBuilder:
             "email": str(contacto.get("email") or "").strip(),
         }
 
-        return {
+        snapshot: dict[str, Any] = {
             "canal": canal,
             "contacto": contacto_data,
             "items": formatted_items,
-            # G5 `Cupon.codigo` is @NotBlank and the block is nullable: omit it entirely
-            # when the cart has no coupon, instead of sending an empty code.
-            "cupon": cupon_data if cupon_codigo else None,
-            "envio": envio_data,
-            "pago": pago_data,
         }
+        # G5 `Cupon` is an optional (not nullable) object and `Cupon.codigo` is
+        # @NotBlank: omit the key entirely when the cart has no coupon.
+        if cupon_codigo:
+            snapshot["cupon"] = cupon_data
+        snapshot["envio"] = envio_data
+        snapshot["pago"] = pago_data
+        return snapshot

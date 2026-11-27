@@ -31,6 +31,7 @@ def test_snapshot_builder_success():
     assert snapshot["items"][0]["sku"] == "SKU-1"
     assert snapshot["pago"]["total"] == 105.0
     assert snapshot["cupon"]["codigo"] == "PROMO10"
+    assert "cupon" in snapshot
 
 
 def test_snapshot_builder_omits_coupon_when_absent():
@@ -42,8 +43,8 @@ def test_snapshot_builder_omits_coupon_when_absent():
         pago={"subtotal": 100.0, "total": 110.0},
     )
 
-    # G5 rejects `cupon.codigo` when it is blank; without a coupon the block must be null.
-    assert snapshot["cupon"] is None
+    # G5 `cupon` is optional and not nullable: the key must be absent, not null.
+    assert "cupon" not in snapshot
 
 
 def test_snapshot_builder_omits_blank_coupon_code():
@@ -56,7 +57,7 @@ def test_snapshot_builder_omits_blank_coupon_code():
         pago={"subtotal": 100.0, "total": 110.0},
     )
 
-    assert snapshot["cupon"] is None
+    assert "cupon" not in snapshot
 
 
 def test_snapshot_builder_filters_unavailable_items():
