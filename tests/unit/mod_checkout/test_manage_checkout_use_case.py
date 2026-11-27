@@ -15,6 +15,7 @@ from src.modules.mod_checkout.application.manage_checkout_use_case import (
 )
 from src.modules.mod_checkout.domain.checkout import CheckoutStatus
 from src.modules.mod_checkout.domain.payment_attempt import PaymentResult
+from src.modules.mod_checkout.ports.payment_gateway_port import PaymentProcessResult
 from src.shared.domain.module_errors import ModuleUnavailableError
 from src.shared.infrastructure.db.models.checkout import Checkout
 from src.shared.infrastructure.db.models.payment_attempt import PaymentAttempt
@@ -1204,7 +1205,7 @@ async def test_create_checkout_calls_sales_client_and_records_order_id(
     assert chk.summary["orderId"] == "PED-VENTAS-999"
     mock_sales.create_order.assert_awaited_once()
     snapshot = mock_sales.create_order.call_args[0][0]
-    assert snapshot["cupon"] is None
+    assert "cupon" not in snapshot
     saved_order_ref = mock_orders.guardar.call_args[0][0]
     assert saved_order_ref.order_id == "PED-VENTAS-999"
 
@@ -1310,6 +1311,70 @@ async def test_process_payment_enqueues_outbox_events(
     assert outbox_task.type == "NOTIFY_SALES_PAYMENT"
     assert outbox_task.payload["order_id"] == "PED-OUTBOX-1"
     assert outbox_task.payload["payment_data"]["resultado"] == "APROBADO"
+    assert outbox_task.payload["payment_data"]["ultimosCuatroDigitos"] == "1111"
+
+
+@pytest.mark.asyncio
+async def test_outbox_payment_payload_omits_last4_when_gateway_returns_none(
+    mock_checkouts, mock_attempts
+):
+    cust_id = uuid.uuid4()
+    checkout_id = uuid.uuid4()
+    row = Checkout(
+        id=checkout_id,
+        cart_id=uuid.uuid4(),
+        customer_id=cust_id,
+        status="PENDING_PAYMENT",
+        total=150.0,
+        payment_attempts=0,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        idempotency_key="chk-outbox-no-last4",
+        summary={"orderId": "PED-OUTBOX-2"},
+    )
+    mock_checkouts.obtener_por_id.return_value = row
+
+    mock_orders = MagicMock()
+    order_ref = MagicMock()
+    order_ref.order_id = "PED-OUTBOX-2"
+    mock_orders.obtener_por_checkout_id = AsyncMock(return_value=order_ref)
+    mock_orders.actualizar_estado = AsyncMock()
+
+    mock_outbox = MagicMock()
+    mock_outbox.guardar = AsyncMock()
+
+    class GatewayWithoutLast4:
+        async def process_payment(self, *, card_number, holder_name, expiry, cvv, amount):
+            return PaymentProcessResult(
+                result=PaymentResult.APPROVED.value,
+                brand="VISA",
+                last4="",
+                amount=amount,
+                transaction_id="SIM-NO-LAST4",
+            )
+
+    use_case = ManageCheckoutUseCase(
+        checkouts=mock_checkouts,
+        payment_attempts=mock_attempts,
+        payment_gateway=GatewayWithoutLast4(),
+        orders=mock_orders,
+        outbox=mock_outbox,
+    )
+
+    await use_case.process_payment(
+        ProcessPaymentInput(
+            checkout_id=checkout_id,
+            customer_id=cust_id,
+            idempotency_key="pay-outbox-no-last4",
+            numero_tarjeta="4111 1111 1111 1111",
+            titular="Juan Perez",
+            vencimiento="12/28",
+            cvv="123",
+        )
+    )
+
+    mock_outbox.guardar.assert_awaited_once()
+    payment_data = mock_outbox.guardar.call_args[0][0].payload["payment_data"]
+    assert "ultimosCuatroDigitos" not in payment_data
 
 
 

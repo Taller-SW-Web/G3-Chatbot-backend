@@ -1,0 +1,4 @@
+# OWASP ZAP baseline/API rules (H5-C2).
+# Format: <plugin_id><TAB><IGNORE|WARN|FAIL><TAB><comment>
+# Every IGNORE entry for a High-severity rule MUST be documented in
+# docs/seguridad/zap-exceptions.md with owner, compensating control and review date.

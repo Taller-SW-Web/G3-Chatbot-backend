@@ -11,6 +11,8 @@ CONVERSATION_CONTEXT = "conversation_context"
 DISPATCH_PORT = "dispatch_port"
 ORDER_CONFIRMATION = "order_confirmation"
 OUTBOX_PROCESSOR = "outbox_processor"
+# Per-type dispatch shared by the direct worker and the broker consumer (ADR-0030).
+OUTBOX_TASK_HANDLER = "outbox_task_handler"
 # Long-lived RabbitMQ publisher, registered by the worker lifespan in broker mode (ADR-0030).
 OUTBOX_PUBLISHER = "outbox_publisher"
 ACTION_SCOPE = "action_scope"
@@ -28,5 +30,6 @@ __all__ = [
     "FEEDBACK_NOTIFIER",
     "ORDER_CONFIRMATION",
     "OUTBOX_PROCESSOR",
+    "OUTBOX_TASK_HANDLER",
     "OUTBOX_PUBLISHER",
 ]

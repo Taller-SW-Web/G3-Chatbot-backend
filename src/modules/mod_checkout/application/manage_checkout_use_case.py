@@ -523,7 +523,9 @@ class ManageCheckoutUseCase:
 
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(minutes=15)
-        order_id = f"PED-{now.year}-{uuid.uuid4().hex[:6].upper()}"
+        # Local fallback id (Ventas replaces it); 10 hex chars so a burst of orders cannot
+        # collide on the order_ref primary key.
+        order_id = f"PED-{now.year}-{uuid.uuid4().hex[:10].upper()}"
 
         summary = {
             "lineas": lineas,
@@ -1206,10 +1208,13 @@ class ManageCheckoutUseCase:
                     "moneda": "PEN",
                     "metodo": "TARJETA_CREDITO",
                     "marcaTarjeta": payment_res.brand or "VISA",
-                    "ultimosCuatroDigitos": payment_res.last4 or "••••",
                     "fechaPago": datetime.now(timezone.utc).isoformat(),
                     "codigoAutorizacion": f"AUTH-{uuid.uuid4().hex[:6].upper()}",
                 }
+                # G5 declares `ultimosCuatroDigitos` with pattern ^\d{4}$ and
+                # does not accept null/placeholders: omit it when unknown.
+                if payment_res.last4:
+                    payment_payload["ultimosCuatroDigitos"] = payment_res.last4
                 outbox_entry = NewOutboxTask(
                     type="NOTIFY_SALES_PAYMENT",
                     payload={

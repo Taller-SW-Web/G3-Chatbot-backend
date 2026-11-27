@@ -41,8 +41,8 @@ class FakeSalesPort(SalesOrderPort):
         existing_id = self._order_by_key.get(idempotency_key)
         if existing_id is not None:
             return self._creation_response(self.orders[existing_id])
-        # Random segment: ids stay unique across restarts (order_ref.order_id is a primary key).
-        order_id = f"PED-{datetime.now(timezone.utc).year}-{uuid.uuid4().hex[:6].upper()}"
+        # Random segment: ids stay unique across restarts and load runs (order_ref.order_id is a PK).
+        order_id = f"PED-{datetime.now(timezone.utc).year}-{uuid.uuid4().hex[:10].upper()}"
         total = snapshot.get("pago", {}).get("total", 0.0)
         order_data = {
             "pedidoId": order_id,

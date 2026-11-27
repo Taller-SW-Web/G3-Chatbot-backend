@@ -13,7 +13,7 @@ import logging
 import aio_pika
 from aio_pika import DeliveryMode, Message
 from aio_pika.abc import AbstractExchange, AbstractRobustChannel, AbstractRobustConnection
-from aio_pika.exceptions import CONNECTION_EXCEPTIONS
+from aio_pika.exceptions import CONNECTION_EXCEPTIONS, PublishError
 
 from src.shared.application.ports.outbox_publisher_port import (
     BrokerUnavailableError,
@@ -57,17 +57,33 @@ class RabbitMqOutboxPublisher:
     async def publish(self, message: OutboxMessage) -> None:
         routing_key = routing_key_for(message.type)  # fails before any I/O
         exchange = await self._ensure_ready()
+        amqp_message = self._build_message(message)
         try:
-            await exchange.publish(
-                self._build_message(message),
-                routing_key,
-                mandatory=True,
-                timeout=self._publish_timeout,
-            )
+            try:
+                await self._send(exchange, amqp_message, routing_key)
+            except PublishError:
+                # Unroutable: the broker may have lost the queues or bindings (for example
+                # CloudAMQP deleting idle queues). Re-declare the topology once and retry once.
+                logger.warning("Unroutable publish for %s, re-declaring the topology", message.type)
+                exchange = await self._redeclare()
+                await self._send(exchange, amqp_message, routing_key)
         except _BROKER_ERRORS as exc:
             raise BrokerUnavailableError(
                 f"publish not confirmed by the broker ({type(exc).__name__})"
             ) from None
+
+    async def _send(self, exchange: AbstractExchange, message: Message, routing_key: str) -> None:
+        await exchange.publish(
+            message, routing_key, mandatory=True, timeout=self._publish_timeout
+        )
+
+    async def _redeclare(self) -> AbstractExchange:
+        async with self._lock:
+            if self._channel is None:
+                raise BrokerUnavailableError("cannot re-declare the topology: no channel")
+            await declare_topology(self._channel)
+            self._exchange = await self._channel.get_exchange(EVENTS_EXCHANGE, ensure=False)
+            return self._exchange
 
     @staticmethod
     def _build_message(message: OutboxMessage) -> Message:
