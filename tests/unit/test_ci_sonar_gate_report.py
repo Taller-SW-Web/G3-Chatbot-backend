@@ -97,6 +97,13 @@ def test_measure_failures_fail_closed_on_missing_new_code_measures() -> None:
         max_new_duplication=3,
     ) == ["duplicación de new code 4.5% > 3%"]
     assert measure_failures(
+        {"new_lines": "10"},
+        min_new_coverage=80,
+        max_new_duplication=3,
+    ) == [
+        "new code tiene líneas pero Sonar no publicó new_duplicated_lines_density"
+    ]
+    assert measure_failures(
         {},
         min_new_coverage=80,
         max_new_duplication=3,

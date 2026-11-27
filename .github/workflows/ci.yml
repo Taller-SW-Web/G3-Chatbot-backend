@@ -64,10 +64,10 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           BEFORE_SHA: ${{ github.event.before }}
           EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF_NAME" != "development" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF" != "refs/heads/development" ]; then
             echo "::error::workflow_dispatch solo se permite en development para no ejecutar helpers con token desde una rama no revisada."
             exit 1
           fi

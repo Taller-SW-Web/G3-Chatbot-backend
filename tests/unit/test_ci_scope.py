@@ -127,6 +127,7 @@ def test_infra_plus_config_does_not_hide_code_gates() -> None:
         "sonar-project.properties",
         "pytest.ini",
         "alembic.ini",
+        "pyproject.toml",
     ):
         scope = build_scope(
             ["Dockerfile", extra],
@@ -139,6 +140,19 @@ def test_infra_plus_config_does_not_hide_code_gates() -> None:
         assert scope["run_validate"] is True, extra
         assert scope["run_unit"] is True, extra
         assert scope["run_sonar"] is True, extra
+
+
+def test_gateway_plus_sonar_config_does_not_hide_code_gates() -> None:
+    scope = build_scope(
+        ["gateway/kong.yml", "sonar-project.properties"],
+        graph=GRAPH,
+        event="pull_request",
+        labels=[],
+        full=False,
+    )
+    assert scope["mode"] == "code"
+    assert scope["run_validate"] is True
+    assert scope["run_sonar"] is True
 
 
 def test_dependency_change_runs_audit_and_full_suite() -> None:
