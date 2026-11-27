@@ -1,0 +1,15 @@
+{
+  "coberturaDisponible": true,
+  "tipoCotizacion": "EXACTA",
+  "nombreZona": "Lima Centro",
+  "direccion": "Av. Javier Prado Este 2465",
+  "distrito": "San Borja",
+  "codigoPostal": "15036",
+  "pesoTotalKg": 2.65,
+  "volumenTotalM3": 0.022,
+  "costoEnvio": 10.0,
+  "moneda": "PEN",
+  "plazoEstimadoDiasHabiles": 2,
+  "fechaEstimadaEntrega": "2026-09-25",
+  "cotizadoEn": "2026-09-23T18:30:00Z"
+}
