@@ -321,7 +321,7 @@ def build_scope(
     run_validate = mode in {"code", "deps", "ci"}
     run_unit = mode in {"code", "deps", "ci"}
     run_integration = run_unit and bool(shards)
-    run_docker = mode in {"code", "deps", "infra"} or has_docker
+    run_docker = full_scope or mode in {"code", "deps", "infra"} or has_docker
     run_security = (
         mode == "deps"
         or forced_by_label
