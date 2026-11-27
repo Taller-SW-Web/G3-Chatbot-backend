@@ -17,6 +17,7 @@ from typing import Any, Mapping
 DEFAULT_HOST = "https://sonarcloud.io"
 MAX_ISSUES = 50
 MAX_PAGES = 5
+MEASURE_KEYS = "new_lines,new_coverage,new_duplicated_lines_density,new_violations"
 SEVERITY_ORDER = {
     "INFO": 0,
     "MINOR": 1,
@@ -88,6 +89,39 @@ def fetch_issues(
         if not batch or len(issues) >= total:
             break
     return issues if fetch_all else issues[:limit]
+
+
+def fetch_measures(
+    *,
+    host: str,
+    token: str,
+    project_key: str,
+    pull_request: str | None = None,
+    branch: str | None = None,
+) -> dict[str, str]:
+    params: dict[str, str] = {
+        "component": project_key,
+        "metricKeys": MEASURE_KEYS,
+    }
+    if pull_request:
+        params["pullRequest"] = pull_request
+    elif branch:
+        params["branch"] = branch
+    payload = _api_get(host, "/api/measures/component", params, token)
+    measures = payload.get("component", {}).get("measures", [])
+    return {
+        str(measure.get("metric")): str(measure.get("value", ""))
+        for measure in measures
+    }
+
+
+def _as_float(value: str | None) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def blocking_issues(
@@ -176,10 +210,25 @@ def main(argv: list[str] | None = None) -> int:
         choices=tuple(SEVERITY_ORDER),
         help="Fail when the PR/branch introduces an issue at or above this severity.",
     )
+    parser.add_argument(
+        "--min-new-coverage",
+        type=float,
+        default=80.0,
+        help="Minimum coverage of new code when the strict gate is enabled.",
+    )
+    parser.add_argument(
+        "--max-new-duplication",
+        type=float,
+        default=3.0,
+        help="Maximum duplicated-lines density of new code.",
+    )
     args = parser.parse_args(argv)
 
     token = os.getenv("SONAR_TOKEN")
     if not token:
+        if args.fail_on_severity:
+            print("::error::SONAR_TOKEN is required for the strict gate.")
+            return 1
         print("::warning::SONAR_TOKEN is not available; skipping the gate report.")
         return 0
 
@@ -199,6 +248,17 @@ def main(argv: list[str] | None = None) -> int:
             branch=args.branch,
             limit=args.max_issues,
             fetch_all=bool(args.fail_on_severity),
+        )
+        measures = (
+            fetch_measures(
+                host=args.host,
+                token=token,
+                project_key=args.project_key,
+                pull_request=args.pull_request,
+                branch=args.branch,
+            )
+            if args.fail_on_severity
+            else {}
         )
     except Exception as error:  # noqa: BLE001 - reporting must never mask the real failure
         print(f"::warning::Could not read the SonarCloud gate: {error}")
@@ -222,6 +282,32 @@ def main(argv: list[str] | None = None) -> int:
             summary.write(report)
 
     if args.fail_on_severity:
+        new_lines = _as_float(measures.get("new_lines"))
+        new_coverage = _as_float(measures.get("new_coverage"))
+        new_duplication = _as_float(measures.get("new_duplicated_lines_density"))
+        print(
+            "New code: "
+            f"lines={new_lines if new_lines is not None else 'n/a'}, "
+            f"coverage={new_coverage if new_coverage is not None else 'n/a'}, "
+            f"duplication={new_duplication if new_duplication is not None else 'n/a'}"
+        )
+        if new_lines is not None and new_lines > 0:
+            if new_coverage is not None and new_coverage < args.min_new_coverage:
+                print(
+                    f"::error::Cobertura de new code {new_coverage}% "
+                    f"< {args.min_new_coverage}%."
+                )
+                return 1
+            if (
+                new_duplication is not None
+                and new_duplication > args.max_new_duplication
+            ):
+                print(
+                    f"::error::Duplicación de new code {new_duplication}% "
+                    f"> {args.max_new_duplication}%."
+                )
+                return 1
+
         blocking = blocking_issues(issues, args.fail_on_severity)
         if blocking:
             print(

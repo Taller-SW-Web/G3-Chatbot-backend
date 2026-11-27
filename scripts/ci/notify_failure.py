@@ -35,6 +35,7 @@ def _headers(token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "g3-chatbot-ci",
     }
@@ -214,7 +215,11 @@ def _find_comment(repo: str, pr: str, token: str) -> int | None:
         if status != 200 or not isinstance(payload, list):
             return None
         for comment in payload:
-            if MARKER in str(comment.get("body", "")):
+            author = comment.get("user") or {}
+            is_bot = author.get("login") == "github-actions[bot]" or author.get(
+                "type"
+            ) == "Bot"
+            if is_bot and MARKER in str(comment.get("body", "")):
                 return int(comment["id"])
         if len(payload) < 100:
             return None
@@ -237,6 +242,14 @@ def _upsert_comment(repo: str, pr: str, token: str, body: str) -> bool:
             token,
             {"body": body},
         )
+        if status not in {200, 201}:
+            # A stale marker owned by another actor must not silence the bot.
+            status, _ = _request_json(
+                "POST",
+                f"{_api_base()}/repos/{repo}/issues/{pr}/comments",
+                token,
+                {"body": body},
+            )
     if status not in {200, 201}:
         print(f"::warning::No se pudo publicar el comentario en el PR ({status}).")
         return False

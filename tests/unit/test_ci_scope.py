@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import subprocess
+
 from scripts.ci.scope import (
+    _diff_files,
     build_scope,
     dependents_closure,
     integration_shards,
@@ -65,6 +68,23 @@ def test_docs_only_skips_code_jobs() -> None:
     assert scope["integration_shards"] == []
 
 
+def test_ci_full_label_forces_everything_even_on_docs() -> None:
+    scope = build_scope(
+        ["README.md"],
+        graph=GRAPH,
+        event="pull_request",
+        labels=["ci:full"],
+        full=True,
+    )
+    assert scope["mode"] == "code"
+    assert scope["run_validate"] is True
+    assert scope["run_unit"] is True
+    assert scope["run_integration"] is True
+    assert scope["run_security"] is True
+    assert scope["run_dast"] is True
+    assert scope["run_gateway"] is True
+
+
 def test_shared_code_forces_full_scope() -> None:
     scope = build_scope(
         ["src/shared/domain/module_errors.py"],
@@ -126,6 +146,29 @@ def test_root_integration_test_adds_core_shard() -> None:
     assert shards == ["mod_orders", "core"]
 
 
+def test_integration_shards_ignore_malicious_names_and_duplicate_core(tmp_path) -> None:
+    root = tmp_path / "tests" / "integration"
+    (root / "mod_chat").mkdir(parents=True)
+    (root / "core").mkdir()
+    (root / "mod_chat; touch pwned").mkdir()
+    (root / "__pycache__").mkdir()
+    shards = integration_shards(["mod_chat"], [], full_scope=True, repo_root=tmp_path)
+    assert shards == ["mod_chat", "core"]
+
+
+def test_conftest_forces_full_scope() -> None:
+    scope = build_scope(
+        ["tests/conftest.py"],
+        graph=GRAPH,
+        event="pull_request",
+        labels=[],
+        full=False,
+    )
+    assert scope["full"] is True
+    assert scope["run_unit"] is True
+    assert scope["run_integration"] is True
+
+
 def test_expensive_jobs_only_run_on_push_or_label() -> None:
     pull_request = build_scope(
         ["src/modules/mod_catalog/application/search.py"],
@@ -161,9 +204,84 @@ def test_forced_full_without_diff_runs_code_jobs() -> None:
     assert scope["run_unit"] is True
 
 
+def test_empty_diff_on_pull_request_fails_closed() -> None:
+    scope = build_scope(
+        [],
+        graph=GRAPH,
+        event="pull_request",
+        labels=[],
+        full=False,
+    )
+    assert scope["mode"] == "code"
+    assert scope["full"] is True
+    assert scope["run_unit"] is True
+    assert scope["run_integration"] is True
+
+
 def test_write_github_output_serializes_arrays(tmp_path) -> None:
     output = tmp_path / "github-output"
     write_github_output(output, {"modules": ["mod_a", "mod_b"], "run_unit": True})
     text = output.read_text(encoding="utf-8")
     assert 'modules=["mod_a", "mod_b"]' in text
     assert "run_unit=true" in text
+
+
+def test_openapi_contract_is_not_docs_only() -> None:
+    scope = build_scope(
+        ["docs/openapi.json"],
+        graph=GRAPH,
+        event="pull_request",
+        labels=[],
+        full=False,
+    )
+    assert scope["mode"] == "code"
+    assert scope["full"] is True
+    assert scope["run_validate"] is True
+    assert scope["run_unit"] is True
+
+
+def _git(repo, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return completed.stdout.strip()
+
+
+def test_diff_files_includes_deleted_and_renamed_paths(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "ci@example.com")
+    _git(repo, "config", "user.name", "CI")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_x.py").write_text("def test_x(): pass\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+
+    (repo / "tests" / "test_x.py").unlink()
+    (repo / "README.md").write_text("docs\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "delete test")
+
+    changed = _diff_files(base, repo)
+    assert "tests/test_x.py" in changed
+    assert "README.md" in changed
+
+    (repo / "src").mkdir()
+    (repo / "src" / "code.py").write_text("x = 1\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add code")
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / "docs").mkdir()
+    _git(repo, "mv", "src/code.py", "docs/code.md")
+    _git(repo, "commit", "-m", "rename code to docs")
+
+    changed = _diff_files(base, repo)
+    assert "src/code.py" in changed
+    assert "docs/code.md" in changed

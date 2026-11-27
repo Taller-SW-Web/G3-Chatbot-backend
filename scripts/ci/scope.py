@@ -39,8 +39,15 @@ FULL_SCOPE_PATTERNS = (
     "ruff.toml",
     "alembic.ini",
     "src/shared/**",
+    "src/infrastructure/**",
+    "tests/conftest.py",
+    "tests/integration/conftest.py",
+    "tests/integration/**/conftest.py",
     ".github/workflows/**",
     "scripts/ci/**",
+    # The committed contract is not documentation: it is what the frontend
+    # consumes and what export_openapi.py --check validates.
+    "docs/openapi.json",
 )
 DEPENDENCY_PATTERNS = ("requirements*.txt",)
 DOCKER_PATTERNS = ("Dockerfile", ".dockerignore", "gateway/**")
@@ -133,7 +140,9 @@ def integration_shards(
     available = sorted(
         path.name
         for path in (repo_root / INTEGRATION_ROOT).iterdir()
-        if path.is_dir() and not path.name.startswith("__")
+        if path.is_dir()
+        and path.name != "core"
+        and re.fullmatch(r"mod_[a-z0-9_]+", path.name) is not None
     )
     if full_scope:
         return [*available, "core"]
@@ -154,7 +163,14 @@ def integration_shards(
 
 def _diff_files(base: str, repo_root: Path) -> list[str]:
     completed = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=ACMRTUB", f"{base}...HEAD"],
+        [
+            "git",
+            "diff",
+            "--name-only",
+            "--no-renames",
+            "--diff-filter=ACDMRTUB",
+            f"{base}...HEAD",
+        ],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -202,8 +218,18 @@ def build_scope(
     """Pure scope calculation, independent from git and GitHub."""
     changed = [path.replace("\\", "/") for path in changed_files]
     reasons: list[str] = []
+    forced_by_label = "ci:full" in labels
+    if not changed and event in {"pull_request", "push"}:
+        # An empty diff in a PR/push means the base resolution or the diff
+        # failed silently. Fail closed instead of skipping every gate.
+        full = True
+        reasons.append("empty diff on PR/push")
 
-    docs_only = bool(changed) and all(is_docs_path(path) for path in changed)
+    docs_only = (
+        bool(changed)
+        and all(is_docs_path(path) for path in changed)
+        and not any(_matches(path, FULL_SCOPE_PATTERNS) for path in changed)
+    )
     has_dependencies = any(is_dependency_path(path) for path in changed)
     has_ci = any(
         path.startswith(".github/workflows/") or path.startswith("scripts/ci/")
@@ -236,6 +262,7 @@ def build_scope(
 
     full_scope = bool(
         full
+        or forced_by_label
         or not changed
         or has_ci
         or has_shared
@@ -244,13 +271,13 @@ def build_scope(
         or has_unknown
     )
 
-    if not changed and full:
+    if not changed and full_scope:
         mode = "code"
         reasons.append("scheduled or dispatched full run")
     elif not changed:
         mode = "none"
         reasons.append("no changed files")
-    elif docs_only:
+    elif docs_only and not full_scope:
         mode = "docs"
         reasons.append("docs only")
     elif has_dependencies:
@@ -286,15 +313,25 @@ def build_scope(
         repo_root=repo_root,
     )
     is_pull_request = event == "pull_request"
-    force_expensive = not is_pull_request or "ci:full" in labels
+    force_expensive = not is_pull_request or forced_by_label
 
     run_validate = mode in {"code", "deps", "ci"}
     run_unit = mode in {"code", "deps", "ci"}
     run_integration = run_unit and bool(shards)
     run_docker = mode in {"code", "deps", "infra"} or has_docker
-    run_security = mode == "deps" or event in {"schedule", "workflow_dispatch"}
+    run_security = (
+        mode == "deps"
+        or forced_by_label
+        or event in {"schedule", "workflow_dispatch"}
+    )
     run_dast = force_expensive and mode in {"code", "deps", "ci"}
-    run_gateway = force_expensive and mode in {"code", "deps", "ci", "infra"}
+    run_gateway = (
+        force_expensive and mode in {"code", "deps", "ci", "infra"}
+    ) or any(
+        path.startswith("gateway/")
+        or path == "tests/integration/test_gateway_kong.py"
+        for path in changed
+    )
     run_sonar = mode in {"code", "deps", "ci"}
     run_specs = is_pull_request
     run_dependency_review = is_pull_request
