@@ -41,6 +41,7 @@ class ReturnsServicePort(Protocol):
         holder_token: str,
         payload: dict[str, Any],
         idempotency_key: str,
+        conversation_id: UUID | None = None,
     ) -> dict[str, Any]:
         ...
 
@@ -118,8 +119,9 @@ def create_returns_router(service_provider: Callable[..., ReturnsServicePort]) -
             raw = await service.create_return(
                 customer_id=caller.customer,
                 holder_token=get_bearer_token(request),
-                payload=payload.model_dump(exclude_none=True),
+                payload=payload.model_dump(exclude_none=True, exclude={"conversacionId"}),
                 idempotency_key=idempotency_key,
+                conversation_id=payload.conversacionId,
             )
             return ReturnDetailResponse.model_validate(raw)
         except Exception as exc:

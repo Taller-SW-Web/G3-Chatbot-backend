@@ -1,5 +1,6 @@
 """Customer claims endpoints (SPEC-19, SPEC-20) proxied to G5 M2."""
 from typing import Any, Callable, Protocol
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
@@ -23,6 +24,7 @@ class ClaimsServicePort(Protocol):
         holder_token: str,
         payload: dict[str, Any],
         idempotency_key: str,
+        conversation_id: UUID | None = None,
     ) -> dict[str, Any]:
         ...
 
@@ -64,8 +66,9 @@ def create_claims_router(service_provider: Callable[..., ClaimsServicePort]) -> 
             raw = await service.create_claim(
                 customer_id=caller.customer,
                 holder_token=get_bearer_token(request),
-                payload=payload.model_dump(exclude_none=True),
+                payload=payload.model_dump(exclude_none=True, exclude={"conversacionId"}),
                 idempotency_key=idempotency_key,
+                conversation_id=payload.conversacionId,
             )
             return ClaimDetailResponse.model_validate(raw)
         except Exception as exc:
