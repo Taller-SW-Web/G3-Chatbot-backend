@@ -12,6 +12,7 @@ from src.modules.mod_checkout.application.purchase_rating_service import (
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
+from src.shared.infrastructure.http.openapi import problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 
@@ -25,7 +26,7 @@ class PurchaseRatingIn(BaseModel):
 def create_purchase_rating_router(
     provider: Callable[..., PurchaseRatingService],
 ) -> APIRouter:
-    router = APIRouter(tags=[MODULE_ID])
+    router = APIRouter(tags=[MODULE_ID], responses=problem_responses(404, 409))
 
     @router.post(
         "/pedidos/{pedido_id}/valoracion-compra", status_code=status.HTTP_201_CREATED
