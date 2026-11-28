@@ -6,7 +6,10 @@ Owns the channel rules that G5 delegates to the caller:
 - local idempotency via `claim_ref` / `return_ref`;
 - G3-facing pagination and response normalization.
 """
+import logging
 import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import datetime, timezone
 from typing import Any
 
 from src.modules.mod_postventa.application.postventa_dto import (
@@ -16,16 +19,32 @@ from src.modules.mod_postventa.application.postventa_dto import (
     to_g5_return_reason,
     to_g5_return_type,
 )
+from src.modules.mod_postventa.domain.draft_retention import (
+    CLAIM_DRAFT_CONTEXT_KEY,
+    DRAFT_TTL,
+    RETURN_DRAFT_CONTEXT_KEY,
+    draft_saved_at,
+    is_draft_expired,
+)
 from src.modules.mod_postventa.domain.references import (
     NewClaimReference,
     NewEvidenceReference,
     NewReturnReference,
 )
+from src.modules.mod_postventa.ports.evidence_port import EvidencePort
 from src.modules.mod_postventa.ports.postventa_port import PostventaPort
 from src.shared.application.ports.conversation_repository_port import ConversationRepositoryPort
 from src.shared.application.ports.order_repository_port import SalesOrderPort
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.domain.request_context import correlation_id_var
+
+logger = logging.getLogger(__name__)
+
+# SPEC-21 Req. 5 / SPEC-19 Req. 3: list until exhausted; 50 was the old fixed first page.
+DUPLICATE_PAGE_SIZE = 50
+# A broken upstream that ignores `page` and omits `total` must not hang the request.
+MAX_DUPLICATE_PAGES = 100
 
 
 class PostventaService:
@@ -35,10 +54,11 @@ class PostventaService:
         sales: SalesOrderPort,
         claim_refs: Any | None = None,
         return_refs: Any | None = None,
-        evidence: Any | None = None,
+        evidence: EvidencePort | None = None,
         order_refs: Any | None = None,
         conversations: ConversationRepositoryPort | None = None,
         uow: Any | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._postventa = postventa
         self._sales = sales
@@ -48,6 +68,7 @@ class PostventaService:
         self._order_refs = order_refs
         self._conversations = conversations
         self._uow = uow
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     async def upload_evidence(
         self,
@@ -99,6 +120,7 @@ class PostventaService:
         holder_token: str,
         payload: dict[str, Any],
         idempotency_key: str,
+        conversation_id: uuid.UUID | None = None,
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
         existing = await self._existing_return(idempotency_key)
@@ -115,9 +137,17 @@ class PostventaService:
             for item in normalized.get("evidencias", [])
         ]
         forzar = bool(normalized.pop("forzar", False))
+        if conversation_id is not None:
+            # Commit the draft on its own so a G5 failure keeps it recoverable.
+            await self.save_return_draft(
+                conversation_id=conversation_id, customer_id=customer_id, payload=payload
+            )
         if not forzar:
             duplicate = await self._duplicate_return(
-                holder_token, str(payload.get("pedidoId") or ""), normalized
+                holder_token,
+                str(payload.get("pedidoId") or ""),
+                normalized,
+                correlation_id=correlation_id,
             )
             if duplicate is not None:
                 raise PostventaError(
@@ -128,20 +158,33 @@ class PostventaService:
         result = await self._postventa.create_return(
             normalized, holder_token=holder_token, correlation_id=correlation_id
         )
+        return_id = str(result["devolucionId"])
         if self._return_refs is not None:
             await self._return_refs.guardar(
                 NewReturnReference(
-                    return_id=str(result["devolucionId"]),
-                    code=str(result["devolucionId"]),
+                    return_id=return_id,
+                    code=return_id,
                     order_id=str(payload["pedidoId"]),
                     customer_id=customer_id,
                     requested_type=str(payload["tipo"]),
                     idempotency_key=idempotency_key,
                 )
             )
+        # Same unit of work as `return_ref`: evidence rows and the draft cleanup commit together.
+        await self._associate_return_evidence(
+            return_id=return_id,
+            customer_id=customer_id,
+            normalized=normalized,
+            conversation_id=conversation_id,
+        )
+        if conversation_id is not None:
+            await self._remove_draft(
+                RETURN_DRAFT_CONTEXT_KEY, conversation_id=conversation_id, customer_id=customer_id
+            )
+        if self._return_refs is not None or self._evidence is not None or conversation_id is not None:
             await self._commit()
         return await self._postventa.get_customer_return(
-            str(result["devolucionId"]), holder_token, correlation_id=correlation_id
+            return_id, holder_token, correlation_id=correlation_id
         )
 
     async def list_returns(
@@ -182,6 +225,7 @@ class PostventaService:
         holder_token: str,
         payload: dict[str, Any],
         idempotency_key: str,
+        conversation_id: uuid.UUID | None = None,
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
         existing = await self._existing_claim(idempotency_key)
@@ -221,8 +265,15 @@ class PostventaService:
         # G5 has no `solucionEsperada` field: the UI appends it to `detalle`.
         normalized.pop("solucionEsperada", None)
         forzar = bool(normalized.pop("forzar", False))
+        if conversation_id is not None:
+            # Commit the draft on its own so a G5 failure keeps it recoverable.
+            await self.save_claim_draft(
+                conversation_id=conversation_id, customer_id=customer_id, payload=payload
+            )
         if not forzar and order_id:
-            duplicate = await self._duplicate_claim(holder_token, str(order_id), normalized)
+            duplicate = await self._duplicate_claim(
+                holder_token, str(order_id), normalized, correlation_id=correlation_id
+            )
             if duplicate is not None:
                 raise PostventaError(
                     "RECLAMO_DUPLICADO",
@@ -242,6 +293,11 @@ class PostventaService:
                     idempotency_key=idempotency_key,
                 )
             )
+        if conversation_id is not None:
+            await self._remove_draft(
+                CLAIM_DRAFT_CONTEXT_KEY, conversation_id=conversation_id, customer_id=customer_id
+            )
+        if self._claim_refs is not None or conversation_id is not None:
             await self._commit()
         return await self._postventa.get_claim(
             str(result["codigoSeguimiento"]), holder_token, correlation_id=correlation_id
@@ -332,65 +388,316 @@ class PostventaService:
         if self._uow is not None:
             await self._uow.commit()
 
+    # -- drafts in `conversation.context` (SPEC-19/21, 24 h retention) -------------
+
+    async def save_return_draft(
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        customer_id: uuid.UUID,
+        payload: dict[str, Any],
+    ) -> None:
+        """Persist the return draft so a later request or a G5 failure can resume it."""
+        await self._save_draft(
+            RETURN_DRAFT_CONTEXT_KEY,
+            conversation_id=conversation_id,
+            customer_id=customer_id,
+            payload=payload,
+        )
+
+    async def get_return_draft(
+        self, *, conversation_id: uuid.UUID, customer_id: uuid.UUID
+    ) -> dict[str, Any] | None:
+        """Draft payload, or None when missing or older than 24 h (SPEC-21 retention)."""
+        return await self._load_draft(
+            RETURN_DRAFT_CONTEXT_KEY,
+            conversation_id=conversation_id,
+            customer_id=customer_id,
+        )
+
+    async def clear_return_draft(
+        self, *, conversation_id: uuid.UUID, customer_id: uuid.UUID
+    ) -> None:
+        await self._remove_draft(
+            RETURN_DRAFT_CONTEXT_KEY,
+            conversation_id=conversation_id,
+            customer_id=customer_id,
+        )
+        await self._commit()
+
+    async def save_claim_draft(
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        customer_id: uuid.UUID,
+        payload: dict[str, Any],
+    ) -> None:
+        """Persist the claim draft so a later request or a G5 failure can resume it."""
+        await self._save_draft(
+            CLAIM_DRAFT_CONTEXT_KEY,
+            conversation_id=conversation_id,
+            customer_id=customer_id,
+            payload=payload,
+        )
+
+    async def get_claim_draft(
+        self, *, conversation_id: uuid.UUID, customer_id: uuid.UUID
+    ) -> dict[str, Any] | None:
+        """Draft payload, or None when missing or older than 24 h (SPEC-19 retention)."""
+        return await self._load_draft(
+            CLAIM_DRAFT_CONTEXT_KEY,
+            conversation_id=conversation_id,
+            customer_id=customer_id,
+        )
+
+    async def clear_claim_draft(
+        self, *, conversation_id: uuid.UUID, customer_id: uuid.UUID
+    ) -> None:
+        await self._remove_draft(
+            CLAIM_DRAFT_CONTEXT_KEY,
+            conversation_id=conversation_id,
+            customer_id=customer_id,
+        )
+        await self._commit()
+
+    async def _save_draft(
+        self,
+        key: str,
+        *,
+        conversation_id: uuid.UUID,
+        customer_id: uuid.UUID,
+        payload: dict[str, Any],
+    ) -> None:
+        if self._conversations is None:
+            return
+        await self._require_owned_conversation(conversation_id, customer_id)
+        context = await self._conversations.get_context_for_update(conversation_id)
+        context[key] = {
+            "payload": dict(payload),
+            "savedAt": self._clock().astimezone(timezone.utc).isoformat(),
+        }
+        await self._conversations.save_context(conversation_id, context)
+        # The draft must survive the G5 call that follows; commit it on its own.
+        await self._commit()
+
+    async def _load_draft(
+        self, key: str, *, conversation_id: uuid.UUID, customer_id: uuid.UUID
+    ) -> dict[str, Any] | None:
+        if self._conversations is None:
+            return None
+        await self._require_owned_conversation(conversation_id, customer_id)
+        context = await self._conversations.get_context(conversation_id)
+        entry = context.get(key)
+        if not isinstance(entry, dict):
+            return None
+        payload = entry.get("payload")
+        if not isinstance(payload, dict) or draft_saved_at(entry) is None:
+            return None
+        if is_draft_expired(entry, self._clock(), DRAFT_TTL):
+            # PII must disappear, not just stop being readable (SPEC-19/21 privacy).
+            await self._remove_draft(
+                key, conversation_id=conversation_id, customer_id=customer_id
+            )
+            await self._commit()
+            return None
+        return dict(payload)
+
+    async def _remove_draft(
+        self, key: str, *, conversation_id: uuid.UUID, customer_id: uuid.UUID
+    ) -> None:
+        if self._conversations is None:
+            return
+        await self._require_owned_conversation(conversation_id, customer_id)
+        context = await self._conversations.get_context_for_update(conversation_id)
+        if key not in context:
+            return
+        context.pop(key)
+        await self._conversations.save_context(conversation_id, context)
+
+    async def _require_owned_conversation(
+        self, conversation_id: uuid.UUID, customer_id: uuid.UUID
+    ) -> None:
+        if self._conversations is None:
+            return
+        owned = await self._conversations.find_owned(
+            conversation_id, CallerIdentity(customer_id=customer_id)
+        )
+        if owned is None:
+            raise PostventaError(
+                "RECURSO_NO_ENCONTRADO", "No encontré esa conversación en tu cuenta."
+            )
+
+    # -- duplicate detection -------------------------------------------------------
+
     async def _duplicate_claim(
-        self, holder_token: str, order_id: str, normalized: dict[str, Any]
+        self,
+        holder_token: str,
+        order_id: str,
+        normalized: dict[str, Any],
+        *,
+        correlation_id: str | None = None,
     ) -> dict[str, Any] | None:
         """SPEC-19 Req. 3: one open claim per order + reason, filtered locally."""
-        raw = await self._postventa.list_customer_claims(
-            holder_token, page=1, page_size=50
-        )
         reason = str(normalized.get("motivo") or "")
-        for item in raw.get("contenido") or raw.get("items") or []:
-            if not isinstance(item, dict):
-                continue
-            estado = str(item.get("estado") or "").upper()
-            if estado in {"ATENDIDO", "DERIVADO"}:
-                continue
-            if str(item.get("pedidoId") or "") != order_id:
-                continue
-            if str(item.get("motivo") or "") != reason:
-                continue
-            return {
-                "reclamoId": item.get("reclamoId"),
-                "codigoSeguimiento": item.get("codigoSeguimiento"),
-                "estado": estado,
-            }
+        try:
+            pages = self._pages(
+                lambda page: self._postventa.list_customer_claims(
+                    holder_token,
+                    page=page,
+                    page_size=DUPLICATE_PAGE_SIZE,
+                    correlation_id=correlation_id,
+                ),
+                correlation_id=correlation_id,
+            )
+            async for items in pages:
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    estado = str(item.get("estado") or "").upper()
+                    if estado in {"ATENDIDO", "DERIVADO"}:
+                        continue
+                    if str(item.get("pedidoId") or "") != order_id:
+                        continue
+                    if str(item.get("motivo") or "") != reason:
+                        continue
+                    return {
+                        "reclamoId": item.get("reclamoId"),
+                        "codigoSeguimiento": item.get("codigoSeguimiento"),
+                        "estado": estado,
+                    }
+        except Exception as exc:
+            # SPEC-19 Req. 4: the claim is the main operation; do not block on the check.
+            self._warn_duplicate_failure("reclamos", correlation_id, exc)
         return None
 
     async def _duplicate_return(
-        self, holder_token: str, order_id: str, normalized: dict[str, Any]
+        self,
+        holder_token: str,
+        order_id: str,
+        normalized: dict[str, Any],
+        *,
+        correlation_id: str | None = None,
     ) -> dict[str, Any] | None:
         """SPEC-21 Req. 5: open return for the same order, reason and lines."""
-        raw = await self._postventa.list_customer_returns(
-            holder_token, page=1, page_size=50
-        )
         reason = str(normalized.get("motivo") or "")
         requested = self._lines_signature(normalized.get("items") or [])
-        for item in raw.get("contenido") or raw.get("items") or []:
-            if not isinstance(item, dict):
-                continue
-            estado = str(item.get("estado") or "").upper()
-            if estado in {"RECHAZADA", "COMPLETADA"}:
-                continue
-            if str(item.get("pedidoId") or "") != order_id:
-                continue
-            if str(item.get("motivo") or "") != reason:
-                continue
-            return_id = item.get("devolucionId")
-            if not return_id:
-                continue
-            try:
-                detail = await self._postventa.get_customer_return(str(return_id), holder_token)
-            except Exception:
-                # Without the detail the lines cannot be compared; do not block.
-                continue
-            if self._lines_signature(detail.get("items") or []) == requested:
-                return {
-                    "devolucionId": return_id,
-                    "estado": estado,
-                    "motivo": reason,
-                }
+        try:
+            pages = self._pages(
+                lambda page: self._postventa.list_customer_returns(
+                    holder_token,
+                    page=page,
+                    page_size=DUPLICATE_PAGE_SIZE,
+                    correlation_id=correlation_id,
+                ),
+                correlation_id=correlation_id,
+            )
+            async for items in pages:
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    estado = str(item.get("estado") or "").upper()
+                    if estado in {"RECHAZADA", "COMPLETADA"}:
+                        continue
+                    if str(item.get("pedidoId") or "") != order_id:
+                        continue
+                    if str(item.get("motivo") or "") != reason:
+                        continue
+                    return_id = item.get("devolucionId")
+                    if not return_id:
+                        continue
+                    try:
+                        detail = await self._postventa.get_customer_return(
+                            str(return_id), holder_token, correlation_id=correlation_id
+                        )
+                    except Exception:
+                        # Without the detail the lines cannot be compared; do not block.
+                        continue
+                    if self._lines_signature(detail.get("items") or []) == requested:
+                        return {
+                            "devolucionId": return_id,
+                            "estado": estado,
+                            "motivo": reason,
+                        }
+        except Exception as exc:
+            # SPEC-21 Req. 5: fail-open; a previous page without a match is not proof.
+            self._warn_duplicate_failure("devoluciones", correlation_id, exc)
         return None
+
+    async def _pages(
+        self,
+        fetch: Callable[[int], Awaitable[dict[str, Any]]],
+        *,
+        correlation_id: str | None = None,
+    ) -> AsyncIterator[list[Any]]:
+        """Yield all list pages; page 51 is reachable (the old fixed page silently missed it)."""
+        page = 1
+        while page <= MAX_DUPLICATE_PAGES:
+            raw = await fetch(page)
+            items = raw.get("contenido") or raw.get("items") or []
+            if not isinstance(items, list):
+                items = []
+            yield items
+            if len(items) < DUPLICATE_PAGE_SIZE:
+                return
+            total = raw.get("totalElementos", raw.get("total"))
+            try:
+                if total is not None and page * DUPLICATE_PAGE_SIZE >= int(total):
+                    return
+            except (TypeError, ValueError):
+                pass
+            page += 1
+        logger.warning(
+            "Se alcanzó el tope de %d páginas al buscar duplicados; se continúa sin "
+            "bloquear [correlation_id=%s]",
+            MAX_DUPLICATE_PAGES,
+            correlation_id or correlation_id_var.get(),
+        )
+
+    @staticmethod
+    def _warn_duplicate_failure(
+        kind: str, correlation_id: str | None, exc: Exception
+    ) -> None:
+        logger.warning(
+            "No se pudo consultar el listado de %s; se continúa sin bloquear (fail-open) "
+            "[correlation_id=%s]: %s",
+            kind,
+            correlation_id or correlation_id_var.get(),
+            type(exc).__name__,
+        )
+
+    # -- evidence linkage ----------------------------------------------------------
+
+    async def _associate_return_evidence(
+        self,
+        *,
+        return_id: str,
+        customer_id: uuid.UUID,
+        normalized: dict[str, Any],
+        conversation_id: uuid.UUID | None,
+    ) -> None:
+        """Attach the uploaded drafts of this request to the new return, same UoW."""
+        if self._evidence is None:
+            return
+        urls = sorted(
+            {
+                str(item["url"])
+                for item in normalized.get("evidencias") or []
+                if isinstance(item, dict) and item.get("url")
+            }
+        )
+        if not urls:
+            return
+        rows = await self._evidence.listar_borrador_por_urls(
+            urls, customer_id, conversation_id
+        )
+        seen: set[str] = set()
+        for row in rows:
+            url = str(row.url)
+            if url in seen:
+                # Several abandoned drafts may share a URL; attach a single row.
+                continue
+            seen.add(url)
+            await self._evidence.asociar_devolucion(row.id, row.conversation_id, return_id)
 
     @staticmethod
     def _lines_signature(items: list[Any]) -> tuple[tuple[str, int], ...]:

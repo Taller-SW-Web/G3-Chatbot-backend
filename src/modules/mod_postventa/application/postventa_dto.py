@@ -4,6 +4,7 @@ The chatbot exposes its own `camelCase` API and translates to the G5 enums
 documented in `ventas.yaml` 1.10.0 / `postventa.yaml` 1.6.0.
 """
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -136,6 +137,8 @@ class CreateReturnRequest(BaseModel):
     descripcion: str | None = Field(default=None, max_length=2000)
     items: list[ReturnItemDTO] = Field(..., min_length=1)
     evidencias: list[ReturnEvidenceDTO] = Field(default_factory=list)
+    # Optional conversation that owns the 24 h draft; never forwarded to G5.
+    conversacionId: UUID | None = None
     # SPEC-21: register anyway after the duplicate warning.
     forzar: bool = False
 
@@ -227,6 +230,8 @@ class CreateClaimRequest(BaseModel):
     detalle: str = Field(..., min_length=20, max_length=1000)
     consumidor: ClaimConsumerDTO
     solucionEsperada: str | None = Field(default=None, max_length=500)
+    # Optional conversation that owns the 24 h draft; never forwarded to G5.
+    conversacionId: UUID | None = None
     # SPEC-19: register anyway after the duplicate warning.
     forzar: bool = False
 

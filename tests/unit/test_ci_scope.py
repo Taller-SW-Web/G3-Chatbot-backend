@@ -196,6 +196,7 @@ def test_changed_module_selects_integration_shards() -> None:
         "mod_chat",
         "mod_checkout",
         "mod_orders",
+        "mod_postventa",
     ]
 
 
