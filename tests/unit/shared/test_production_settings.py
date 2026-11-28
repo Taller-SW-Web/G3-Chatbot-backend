@@ -278,3 +278,19 @@ def test_verified_contact_flag_is_read_from_the_environment(env, monkeypatch):
     monkeypatch.setenv("REQUIRE_VERIFIED_CONTACT", "true")
     get_settings.cache_clear()
     assert get_settings().require_verified_contact is True
+
+
+def test_development_defaults_enable_the_payment_latency_card(env):
+    env(APP_ENV="development")
+    assert get_settings().payment_simulator_latency_enabled is True
+
+
+def test_payment_latency_can_be_disabled_outside_production(env):
+    env(APP_ENV="development", PAYMENT_SIMULATOR_LATENCY_ENABLED="false")
+    assert get_settings().payment_simulator_latency_enabled is False
+
+
+def test_production_forces_the_payment_latency_card_off(env):
+    env(PAYMENT_SIMULATOR_LATENCY_ENABLED="true")
+    assert get_settings().payment_simulator_latency_enabled is False
+
