@@ -26,6 +26,10 @@ from src.shared.application.ports.token_validator_port import AccountNotAllowedE
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
+from src.shared.infrastructure.http.dependencies.caller_identity import (
+    CHAT_SID_COOKIE,
+    hash_chat_sid,
+)
 from src.shared.infrastructure.http.dependencies.rate_limiter import (
     LOGIN_PER_IP,
     REGISTER_DEBOUNCE_PER_EMAIL,
@@ -88,11 +92,27 @@ def _register_field_errors(errors: list[dict[str, str]], password: str) -> list[
 
 def _csrf_check(request: Request, allowed_origins: Sequence[str]) -> None:
     if not request.headers.get("x-requested-with"):
-        raise ProblemError(403, "PETICION_INVALIDA", "Invalid request",
-                           "Missing X-Requested-With header.")
+        raise ProblemError(
+            403,
+            "PETICION_INVALIDA",
+            "Invalid request",
+            "Missing X-Requested-With header.",
+        )
+    allowed = {_normalize_origin(item) for item in allowed_origins if _normalize_origin(item)}
     origin = request.headers.get("origin")
-    if origin and _normalize_origin(origin) not in set(allowed_origins):
-        raise ProblemError(403, "PETICION_INVALIDA", "Invalid request", "Origin mismatch.")
+    if origin is not None:
+        if _normalize_origin(origin) not in allowed:
+            raise ProblemError(403, "PETICION_INVALIDA", "Invalid request", "Origin mismatch.")
+        return
+    sec_fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+    if sec_fetch_site == "same-origin":
+        return
+    raise ProblemError(
+        403,
+        "PETICION_INVALIDA",
+        "Invalid request",
+        "Missing Origin header.",
+    )
 
 
 def _clear_session_cookies(response: Response) -> None:
@@ -133,6 +153,7 @@ class OpenedSession(BaseModel):
     accessToken: str
     expiresIn: int = 900
     usuario: dict = Field(default_factory=dict)
+    accionPendiente: str | None = None
 
 
 class MfaChallenge(BaseModel):
@@ -232,6 +253,7 @@ def create_session_router(
             accessToken=str(answer.get("accessToken")),
             expiresIn=int(answer.get("expiresIn", 900)),
             usuario=dict(answer.get("usuario", {})),
+            accionPendiente=answer.get("accionPendiente"),
         )
 
     @router.post("/login", response_model=OpenedSession | MfaChallenge)
@@ -249,8 +271,15 @@ def create_session_router(
                 "Demasiados intentos de inicio de sesión. Espera un momento e inténtalo de nuevo.",
                 retry_after,
             )
+        raw_sid = request.cookies.get(CHAT_SID_COOKIE)
+        anonymous_sid = hash_chat_sid(raw_sid) if raw_sid else None
         try:
-            answer = await sessions.login(body.email, body.password, canal=body.canal)
+            if anonymous_sid is not None:
+                answer = await sessions.login(
+                    body.email, body.password, canal=body.canal, anonymous_sid=anonymous_sid
+                )
+            else:
+                answer = await sessions.login(body.email, body.password, canal=body.canal)
         except InvalidCredentialsError:
             raise ProblemError(401, "CREDENCIALES_INVALIDAS", "Invalid credentials",
                                "Correo o contraseña incorrectos") from None
@@ -304,8 +333,15 @@ def create_session_router(
         challenge = request.cookies.get(CHALLENGE_COOKIE)
         if not challenge:
             raise ProblemError(410, "CODIGO_VENCIDO", "Code expired", "Pide un código nuevo")
+        raw_sid = request.cookies.get(CHAT_SID_COOKIE)
+        anonymous_sid = hash_chat_sid(raw_sid) if raw_sid else None
         try:
-            answer = await sessions.verify_mfa_code(challenge, body.code)
+            if anonymous_sid is not None:
+                answer = await sessions.verify_mfa_code(
+                    challenge, body.code, anonymous_sid=anonymous_sid
+                )
+            else:
+                answer = await sessions.verify_mfa_code(challenge, body.code)
         except InvalidCredentialsError as exc:
             extra = ({"intentosRestantes": exc.intentos_restantes}
                      if exc.intentos_restantes is not None else None)

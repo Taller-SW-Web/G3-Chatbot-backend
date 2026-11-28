@@ -15,9 +15,9 @@ from src.shared.infrastructure.http.dependencies.auth_guard import require_custo
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_current_customer
 from src.shared.infrastructure.http.problem import register_problem_handlers
 
-CSRF = {"X-Requested-With": "XMLHttpRequest"}
-CUSTOMER_ID = "00000000-0000-0000-0000-000000000001"
 ALLOWED_ORIGIN = "http://localhost:3000"
+CSRF = {"X-Requested-With": "XMLHttpRequest", "Origin": ALLOWED_ORIGIN}
+CUSTOMER_ID = "00000000-0000-0000-0000-000000000001"
 
 
 class FakeSessions:
@@ -25,8 +25,11 @@ class FakeSessions:
         self.script = script or {}
         self.calls = []
 
-    async def login(self, email, password, *, canal=None):
-        self.calls.append(("login", email, canal))
+    async def login(self, email, password, *, canal=None, anonymous_sid=None):
+        if anonymous_sid is not None:
+            self.calls.append(("login", email, canal, anonymous_sid))
+        else:
+            self.calls.append(("login", email, canal))
         result = self.script.get("login")
         if isinstance(result, Exception):
             raise result
@@ -39,8 +42,11 @@ class FakeSessions:
             raise result
         return result or {"ok": True}
 
-    async def verify_mfa_code(self, challenge, code):
-        self.calls.append(("verify_mfa", challenge, code))
+    async def verify_mfa_code(self, challenge, code, *, anonymous_sid=None):
+        if anonymous_sid is not None:
+            self.calls.append(("verify_mfa", challenge, code, anonymous_sid))
+        else:
+            self.calls.append(("verify_mfa", challenge, code))
         result = self.script.get("verify_mfa")
         if isinstance(result, Exception):
             raise result
@@ -206,6 +212,66 @@ def test_login_with_untrusted_origin_is_rejected_exactly():
     allowed = client.post(BASE + "/login", json={"email": "a@b.pe", "password": "secret123"},
                           headers={**CSRF, "Origin": ALLOWED_ORIGIN})
     assert allowed.status_code == 200
+
+
+def test_refresh_without_origin_is_rejected_and_allowed_origin_succeeds():
+    """SPEC-03 RNF (#246) - POST /sesion/refresh requires Origin or Sec-Fetch-Site: same-origin."""
+    sessions = FakeSessions({"refresh": {"accessToken": "acc-2", "expiresIn": 900, "refreshToken": "ref-2"}})
+    client = make_client(sessions)
+    client.cookies.set("chat_rt", "ref-1")
+
+    missing = client.post(BASE + "/refresh", headers={"X-Requested-With": "XMLHttpRequest"})
+    assert missing.status_code == 403
+    assert missing.json()["code"] == "PETICION_INVALIDA"
+
+    allowed = client.post(
+        BASE + "/refresh",
+        headers={"X-Requested-With": "XMLHttpRequest", "Origin": ALLOWED_ORIGIN},
+    )
+    assert allowed.status_code == 200
+    assert allowed.json()["accessToken"] == "acc-2"
+
+    same_origin = client.post(
+        BASE + "/refresh",
+        headers={"X-Requested-With": "XMLHttpRequest", "Sec-Fetch-Site": "same-origin"},
+    )
+    assert same_origin.status_code == 200
+
+
+def test_logout_without_origin_is_rejected():
+    """SPEC-03 RNF (#246) - POST /sesion/logout rejects requests without Origin/Sec-Fetch-Site."""
+    sessions = FakeSessions()
+    client = make_client(sessions)
+    res = client.post(BASE + "/logout", headers={"X-Requested-With": "XMLHttpRequest"})
+    assert res.status_code == 403
+    assert res.json()["code"] == "PETICION_INVALIDA"
+
+
+def test_login_forwards_hashed_chat_sid_and_returns_pending_action():
+    """SPEC-03 Req. 1 & 3 (#246) - chat_sid cookie is hashed before linking conversations."""
+    from src.shared.infrastructure.http.dependencies.caller_identity import hash_chat_sid
+
+    sessions = FakeSessions(
+        {
+            "login": {
+                "accessToken": "acc",
+                "expiresIn": 900,
+                "refreshToken": "ref-1",
+                "usuario": {"id": CUSTOMER_ID},
+                "accionPendiente": "INICIAR_CHECKOUT",
+            }
+        }
+    )
+    client = make_client(sessions)
+    client.cookies.set("chat_sid", "raw-anon-cookie")
+    res = client.post(
+        BASE + "/login",
+        json={"email": "a@b.pe", "password": "secret123"},
+        headers=CSRF,
+    )
+    assert res.status_code == 200
+    assert res.json()["accionPendiente"] == "INICIAR_CHECKOUT"
+    assert ("login", "a@b.pe", "EMAIL", hash_chat_sid("raw-anon-cookie")) in sessions.calls
 
 
 def test_verify_mfa_code_opens_session_and_clears_challenge_cookie():
