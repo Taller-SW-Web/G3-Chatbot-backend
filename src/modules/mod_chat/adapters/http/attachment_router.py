@@ -17,6 +17,7 @@ from src.shared.infrastructure.http.dependencies.rate_limiter import (
     InMemoryRateLimiter,
     client_ip,
 )
+from src.shared.infrastructure.http.openapi import problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 
@@ -51,6 +52,7 @@ def create_attachment_router(
     @router.post(
         "/conversaciones/{conversation_id}/adjuntos",
         status_code=status.HTTP_201_CREATED,
+        responses=problem_responses(404, 422, 429, 503),
     )
     async def upload_attachment(
         conversation_id: uuid.UUID,
@@ -80,6 +82,7 @@ def create_attachment_router(
     @router.delete(
         "/conversaciones/{conversation_id}/adjuntos/{attachment_id}",
         status_code=status.HTTP_204_NO_CONTENT,
+        responses=problem_responses(404, 409),
     )
     async def delete_attachment(
         conversation_id: uuid.UUID,
@@ -94,7 +97,7 @@ def create_attachment_router(
         return Response(status_code=204)
 
     # Static route before `/{attachment_id}` so "archivo" never matches an id.
-    @router.get("/adjuntos/archivo")
+    @router.get("/adjuntos/archivo", responses=problem_responses(403, 404))
     async def read_signed_file(
         clave: str = Query(..., min_length=1, max_length=300),
         exp: int = Query(..., ge=0),
@@ -110,7 +113,7 @@ def create_attachment_router(
         media_type = mimetypes.guess_type(clave)[0] or "application/octet-stream"
         return Response(content=data, media_type=media_type, headers={"Cache-Control": "private, max-age=60"})
 
-    @router.get("/adjuntos/{attachment_id}")
+    @router.get("/adjuntos/{attachment_id}", responses=problem_responses(404))
     async def signed_urls(
         attachment_id: uuid.UUID,
         caller: CallerIdentity | None = Depends(get_caller_identity),

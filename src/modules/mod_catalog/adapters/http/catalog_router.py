@@ -18,6 +18,7 @@ from src.modules.mod_catalog.application.tools import (
     ProductArguments,
     SearchArguments,
 )
+from src.shared.infrastructure.http.openapi import problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 
@@ -65,9 +66,13 @@ def _problem(error: CatalogError) -> ProblemError:
 
 
 def create_catalog_router(catalog_provider) -> APIRouter:
-    router = APIRouter(prefix="/catalogo", tags=[MODULE_ID])
+    router = APIRouter(
+        prefix="/catalogo", tags=[MODULE_ID], responses=problem_responses(503)
+    )
 
-    @router.get("/productos", response_model=CatalogSearchOut)
+    @router.get(
+        "/productos", response_model=CatalogSearchOut, responses=problem_responses(404, 409)
+    )
     async def search_products(
         q: str | None = Query(default=None),
         categoria: str | None = Query(default=None),
@@ -112,7 +117,7 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         except Exception as exc:
             raise _problem(_as_catalog_error(exc)) from exc
 
-    @router.get("/productos/{product_id}")
+    @router.get("/productos/{product_id}", responses=problem_responses(404, 409))
     async def product_detail(
         product_id: str,
         service: ManageCatalogUseCase = Depends(catalog_provider),
