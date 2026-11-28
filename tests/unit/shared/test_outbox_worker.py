@@ -20,6 +20,7 @@ def mock_repos():
 @pytest.mark.asyncio
 async def test_notify_sales_payment_success(mock_repos):
     outbox_repo, order_ref_repo, sales_client = mock_repos
+    sales_client.notify_payment.return_value = {"pedidoId": "PED-1", "nuevoEstado": "PAGADO"}
     processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client)
 
     job = Outbox(
@@ -230,3 +231,77 @@ async def test_email_grace_is_forwarded_to_the_repository(mock_repos):
     await processor.process_pending_batch()
 
     outbox_repo.listar_pendientes.assert_awaited_once_with(limite=1, email_gracia=grace)
+
+
+@pytest.mark.asyncio
+async def test_direct_worker_late_payment_cancels_without_confirmation(mock_repos):
+    outbox_repo, order_ref_repo, sales_client = mock_repos
+    sales_client.notify_payment.return_value = {"pedidoId": "PED-1", "nuevoEstado": "ANULADO"}
+    notifications = AsyncMock()
+    processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client, notification_service=notifications)
+    job = Outbox(
+        id=uuid.uuid4(),
+        type="NOTIFY_SALES_PAYMENT",
+        payload={"order_id": "PED-1", "payment_data": {"transaccionId": "SIM-1"}},
+        status="PENDING",
+        attempts=0,
+    )
+
+    assert await processor.process_one(job) is True
+
+    order_ref_repo.actualizar_estado.assert_awaited_once_with("PED-1", "CANCELLED")
+    notifications.enqueue_confirmation.assert_not_awaited()
+    outbox_repo.marcar_procesado.assert_awaited_once_with(job.id)
+
+
+@pytest.mark.asyncio
+async def test_direct_worker_paid_payment_enqueues_the_confirmation_once(mock_repos):
+    outbox_repo, order_ref_repo, sales_client = mock_repos
+    sales_client.notify_payment.return_value = {"pedidoId": "PED-1", "nuevoEstado": "PAGADO"}
+    notifications = AsyncMock()
+    processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client, notification_service=notifications)
+    job = Outbox(
+        id=uuid.uuid4(),
+        type="NOTIFY_SALES_PAYMENT",
+        payload={"order_id": "PED-1", "payment_data": {"transaccionId": "SIM-1"}},
+        status="PENDING",
+        attempts=0,
+    )
+
+    assert await processor.process_one(job) is True
+
+    order_ref_repo.actualizar_estado.assert_awaited_once_with("PED-1", "PAID_NOTIFIED")
+    notifications.enqueue_confirmation.assert_awaited_once_with("PED-1")
+
+
+@pytest.mark.asyncio
+async def test_direct_worker_409_not_cancellable_confirmed_anulado_is_processed(mock_repos):
+    outbox_repo, order_ref_repo, sales_client = mock_repos
+    sales_client.cancel_order.side_effect = ModuleRequestError("sales", 409, "PEDIDO_NO_ANULABLE")
+    sales_client.get_order_as_service.return_value = {"estado": "ANULADO"}
+    processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client)
+    job = Outbox(
+        id=uuid.uuid4(), type="REQUEST_CANCELLATION", payload={"order_id": "PED-2"}, status="PENDING", attempts=0
+    )
+
+    assert await processor.process_one(job) is True
+
+    order_ref_repo.actualizar_estado.assert_awaited_once_with("PED-2", "CANCELLED")
+    outbox_repo.marcar_procesado.assert_awaited_once_with(job.id)
+
+
+@pytest.mark.asyncio
+async def test_direct_worker_409_not_cancellable_not_anulado_fails_permanently(mock_repos):
+    outbox_repo, order_ref_repo, sales_client = mock_repos
+    sales_client.cancel_order.side_effect = ModuleRequestError("sales", 409, "PEDIDO_NO_ANULABLE")
+    sales_client.get_order_as_service.return_value = {"estado": "ENTREGADO"}
+    outbox_repo.session = AsyncMock()
+    processor = OutboxProcessor(outbox_repo, order_ref_repo, sales_client)
+    job = Outbox(
+        id=uuid.uuid4(), type="REQUEST_CANCELLATION", payload={"order_id": "PED-2"}, status="PENDING", attempts=0
+    )
+
+    assert await processor.process_one(job) is False
+
+    assert job.status == "FAILED"
+    order_ref_repo.actualizar_estado.assert_not_awaited()

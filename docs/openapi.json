@@ -1167,9 +1167,31 @@
             "title": "Moneda",
             "type": "string"
           },
+          "motivoAnulacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivoanulacion"
+          },
           "pedidoId": {
             "title": "Pedidoid",
             "type": "string"
+          },
+          "reembolso": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reembolso"
           },
           "seguimientoDisponible": {
             "default": false,
@@ -1209,6 +1231,17 @@
           "fecha": {
             "title": "Fecha",
             "type": "string"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
           }
         },
         "required": [
@@ -1387,6 +1420,17 @@
             ],
             "title": "Mensaje"
           },
+          "motivoAnulacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivoanulacion"
+          },
           "pedidoId": {
             "title": "Pedidoid",
             "type": "string"
@@ -1401,6 +1445,17 @@
               }
             ],
             "title": "Recibidopor"
+          },
+          "reembolso": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reembolso"
           }
         },
         "required": [
@@ -1497,6 +1552,146 @@
           "cvv"
         ],
         "title": "ProcessPaymentRequest",
+        "type": "object"
+      },
+      "ProcessPaymentResponse": {
+        "description": "`POST /checkout/{id}/pago` 200 body. `estado` is `PAGO_EN_PROCESO` for an approved payment\n(the order is confirmed later by the outbox, never here); `nuevoEstado`, `motivo`,\n`reembolso` and `correoEnmascarado` stay null on this endpoint.",
+        "properties": {
+          "checkoutId": {
+            "title": "Checkoutid",
+            "type": "string"
+          },
+          "correoEnmascarado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correoenmascarado"
+          },
+          "estado": {
+            "anyOf": [
+              {
+                "const": "PAGO_EN_PROCESO",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estado"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "idTransaccion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idtransaccion"
+          },
+          "marca": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marca"
+          },
+          "mensaje": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mensaje"
+          },
+          "monto": {
+            "title": "Monto",
+            "type": "number"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
+          },
+          "nuevoEstado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nuevoestado"
+          },
+          "orderId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orderid"
+          },
+          "reembolso": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reembolso"
+          },
+          "resultado": {
+            "title": "Resultado",
+            "type": "string"
+          },
+          "ultimos4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ultimos4"
+          }
+        },
+        "required": [
+          "id",
+          "checkoutId",
+          "resultado",
+          "monto"
+        ],
+        "title": "ProcessPaymentResponse",
         "type": "object"
       },
       "PurchaseRatingIn": {
@@ -4903,9 +5098,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Process Payment Api V1 Checkout  Checkout Id  Pago Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ProcessPaymentResponse"
                 }
               }
             },

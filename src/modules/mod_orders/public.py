@@ -9,6 +9,7 @@ from src.modules.mod_orders.application.notification_service import (
     NotificationService,
 )
 from src.modules.mod_orders.application.orders_service import OrdersService
+from src.modules.mod_orders.domain.cancellation import cancellation_message
 from src.modules.mod_orders.domain.status_mapper import (
     SALES_STATUS_LABELS,
     map_order_status_label,
@@ -27,6 +28,7 @@ __all__ = [
     "OrdersService",
     "SALES_STATUS_LABELS",
     "build_notification_service",
+    "cancellation_message",
     "map_order_status_label",
     "provide_orders_service",
     "provide_sales_port",

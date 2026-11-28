@@ -122,6 +122,48 @@ def test_cancel_order_success():
 
 
 @respx.mock
+def test_get_order_as_service_uses_the_service_token_and_the_consult_scope():
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(request.headers)
+        return httpx.Response(200, json={"pedidoId": "PED-1234", "estado": "ANULADO"})
+
+    respx.get(f"{BASE_URL}/api/v1/pedidos/PED-1234").mock(side_effect=handler)
+    scopes: list[str | None] = []
+
+    class ScopeStub(StubTokenProvider):
+        async def get_token(self, *, correlation_id=None, scope=None, audience=None) -> str:
+            scopes.append(scope)
+            return await super().get_token(correlation_id=correlation_id, scope=scope, audience=audience)
+
+    client = VentasClient(base_url=BASE_URL, timeout_seconds=5.0, service_token_provider=ScopeStub())
+
+    async def run():
+        return await client.get_order_as_service("PED-1234", correlation_id="c-1")
+
+    res = anyio.run(run)
+    assert res["estado"] == "ANULADO"
+    assert seen["authorization"] == "Bearer fake-ventas-service-token"
+    assert scopes == ["ventas:pedidos:consultar"]
+
+
+@respx.mock
+def test_get_order_as_service_surfaces_a_refused_read():
+    respx.get(f"{BASE_URL}/api/v1/pedidos/PED-1").mock(
+        return_value=httpx.Response(403, json={"codigo": "ACCESO_DENEGADO"})
+    )
+    client = VentasClient(base_url=BASE_URL, timeout_seconds=5.0, service_token_provider=StubTokenProvider())
+
+    async def run():
+        return await client.get_order_as_service("PED-1")
+
+    with pytest.raises(ModuleRequestError) as exc:
+        anyio.run(run)
+    assert (exc.value.status, exc.value.code) == (403, "ACCESO_DENEGADO")
+
+
+@respx.mock
 def test_ventas_error_normalizes_codigo_to_code():
     respx.post(f"{BASE_URL}/api/v1/pedidos").mock(
         return_value=httpx.Response(409, json={"codigo": "SIN_STOCK", "mensaje": "Stock agotado"})

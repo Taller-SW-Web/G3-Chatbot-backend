@@ -315,6 +315,32 @@ async def test_a_redelivered_message_is_handled_again_with_the_same_effects_and_
     assert h.consumer.stats.consumed == 2
 
 
+@pytest.mark.asyncio
+async def test_the_consumer_runs_the_shared_handler_payment_rules_like_the_direct_worker(h):
+    """Broker mode: the real handler on a relayed PAGADO answer confirms once, on ANULADO never."""
+    from unittest.mock import AsyncMock as Mock
+
+    from src.shared.infrastructure.worker.outbox_handler import OutboxTaskHandler
+
+    sales, order_ref, notifications = Mock(), Mock(), Mock()
+    handler = OutboxTaskHandler(Mock(), order_ref, sales, notifications)
+    h.consumer._handler_factory = lambda session: handler
+    body = {"order_id": "PED-1", "payment_data": {"transaccionId": "T-1"}}
+
+    sales.notify_payment.return_value = {"nuevoEstado": "PAGADO"}
+    await h.consumer._on_message(SALES, h.message("NOTIFY_SALES_PAYMENT", body))
+    order_ref.actualizar_estado.assert_awaited_once_with("PED-1", "PAID_NOTIFIED")
+    notifications.enqueue_confirmation.assert_awaited_once_with("PED-1")
+
+    order_ref.actualizar_estado.reset_mock()
+    notifications.enqueue_confirmation.reset_mock()
+    sales.notify_payment.return_value = {"nuevoEstado": "ANULADO"}
+    await h.consumer._on_message(SALES, h.message("NOTIFY_SALES_PAYMENT", body))
+    order_ref.actualizar_estado.assert_awaited_once_with("PED-1", "CANCELLED")
+    notifications.enqueue_confirmation.assert_not_awaited()
+    assert h.events.count("ack") == 2 and h.channel.published == []
+
+
 # -- failures while settling ----------------------------------------------------------
 
 

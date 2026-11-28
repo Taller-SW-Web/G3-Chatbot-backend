@@ -428,6 +428,7 @@ class OrderHistoryMilestoneDTO(BaseModel):
     etiqueta: str
     fecha: str
     completado: bool = True
+    motivo: str | None = None
 
 
 class OrderDetailResponse(BaseModel):
@@ -445,6 +446,9 @@ class OrderDetailResponse(BaseModel):
     historial: list[OrderHistoryMilestoneDTO] = Field(default_factory=list)
     seguimientoDisponible: bool = False
     csatEnviado: bool = False
+    # backend#182: reason code (e.g. STOCK_NO_DISPONIBLE) and refund message of a cancelled order.
+    motivoAnulacion: str | None = None
+    reembolso: str | None = None
 
 
 class TrackingMilestoneDTO(BaseModel):
@@ -469,6 +473,8 @@ class OrderTrackingResponse(BaseModel):
     recibidoPor: str | None = None
     detalleDisponible: bool = True
     mensaje: str | None = None
+    motivoAnulacion: str | None = None
+    reembolso: str | None = None
 
 
 class ResendConfirmationResponse(BaseModel):

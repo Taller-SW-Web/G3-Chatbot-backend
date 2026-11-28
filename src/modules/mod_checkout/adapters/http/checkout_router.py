@@ -1,6 +1,6 @@
 """Checkout and payment endpoints (SPEC-14, contratos-integracion.md §2.5)."""
 import inspect
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
@@ -42,7 +42,35 @@ class ProcessPaymentRequest(BaseModel):
     cvv: str
 
 
+PaymentInProgress = Literal["PAGO_EN_PROCESO"]
+
+
+class ProcessPaymentResponse(BaseModel):
+    """`POST /checkout/{id}/pago` 200 body. `estado` is `PAGO_EN_PROCESO` for an approved payment
+    (the order is confirmed later by the outbox, never here); `nuevoEstado`, `motivo`,
+    `reembolso` and `correoEnmascarado` stay null on this endpoint."""
+
+    id: str
+    checkoutId: str
+    orderId: str | None = None
+    resultado: str
+    marca: str | None = None
+    ultimos4: str | None = None
+    monto: float
+    idTransaccion: str | None = None
+    estado: PaymentInProgress | None = None
+    nuevoEstado: str | None = None
+    motivo: str | None = None
+    reembolso: str | None = None
+    correoEnmascarado: str | None = None
+    mensaje: str | None = None
+
+
 _RESULT_LABELS = {"APPROVED": "APROBADO", "REJECTED": "RECHAZADO", "ERROR": "ERROR"}
+
+# Approved payments are not confirmed to the customer until Ventas answers (outbox).
+_PAYMENT_IN_PROGRESS: PaymentInProgress = "PAGO_EN_PROCESO"
+_PAYMENT_IN_PROGRESS_MESSAGE = "Pago recibido. Estamos confirmando tu pedido y te avisaremos por correo."
 
 
 def _public_summary(summary: Any) -> dict[str, Any]:
@@ -185,7 +213,9 @@ def create_checkout_router(
             raise _translate_error(exc) from exc
 
     @router.post(
-        "/checkout/{checkout_id}/pago", openapi_extra=idempotency_key_required()
+        "/checkout/{checkout_id}/pago",
+        response_model=ProcessPaymentResponse,
+        openapi_extra=idempotency_key_required(),
     )
     async def process_payment(
         checkout_id: UUID,
@@ -229,7 +259,7 @@ def create_checkout_router(
             if ord_row and getattr(ord_row, "order_id", None):
                 order_id = ord_row.order_id
 
-            confirmation = getattr(attempt, "confirmation", None)
+            approved = attempt.result == "APPROVED"
             return {
                 "id": str(attempt.id),
                 "checkoutId": str(attempt.checkout_id),
@@ -239,8 +269,13 @@ def create_checkout_router(
                 "ultimos4": attempt.last4,
                 "monto": float(attempt.amount),
                 "idTransaccion": attempt.transaction_id,
-                "correoEnmascarado": confirmation.get("correoEnmascarado") if confirmation else None,
-                "mensaje": confirmation.get("mensaje") if confirmation else None,
+                # Same fields as the CONFIRMACION_PEDIDO block (frontend reads these four).
+                "estado": _PAYMENT_IN_PROGRESS if approved else None,
+                "nuevoEstado": None,
+                "motivo": None,
+                "reembolso": None,
+                "correoEnmascarado": None,
+                "mensaje": _PAYMENT_IN_PROGRESS_MESSAGE if approved else None,
             }
         except CheckoutError as exc:
             raise _translate_error(exc) from exc

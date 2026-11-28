@@ -161,3 +161,50 @@ async def test_tool_is_registered_as_session_only():
     anonymous = await registry.ejecutar(
         "consultar_pedidos", {}, ExecutionContext(conversacion_id=str(uuid.uuid4())))
     assert anonymous.code == "REQUIERE_SESION"
+
+
+@pytest.mark.asyncio
+async def test_stock_cancelled_order_detail_explains_reason_and_refund():
+    sales = FakeSalesPort()
+    order_id = await _order(sales)
+    sales.cancel_for_stock(order_id)
+
+    result = await _handler(sales)(OrderQueryArguments(pedidoId=order_id), _context())
+
+    refund = "Se procesará el reembolso al medio de pago original."
+    assert result.data["texto"] == f"Tu pedido {order_id} fue anulado por falta de stock. {refund}"
+    (block,) = result.data["bloques"]
+    assert block["datos"]["pedido"]["estado"] == "ANULADO"
+    assert block["datos"]["pedido"]["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
+    assert block["datos"]["pedido"]["reembolso"] == refund
+    (hito,) = block["datos"]["hitos"]
+    assert hito["titulo"] == "Anulado"
+    assert hito["motivo"] == "STOCK_NO_DISPONIBLE"
+
+
+@pytest.mark.asyncio
+async def test_unpaid_stock_cancelled_order_states_the_reason_without_a_refund():
+    sales = FakeSalesPort()
+    order_id = await _order(sales)
+    sales.cancel_for_stock(order_id, paid=False)
+
+    result = await _handler(sales)(OrderQueryArguments(pedidoId=order_id), _context())
+
+    assert result.data["texto"] == f"Tu pedido {order_id} fue anulado por falta de stock."
+    pedido = result.data["bloques"][0]["datos"]["pedido"]
+    assert pedido["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
+    assert "reembolso" not in pedido
+
+
+@pytest.mark.asyncio
+async def test_cancelled_unpaid_order_states_no_refund():
+    sales = FakeSalesPort()
+    order_id = await _order(sales)
+    await sales.cancel_order(order_id)
+
+    result = await _handler(sales)(OrderQueryArguments(pedidoId=order_id), _context())
+
+    assert result.data["texto"] == f"Tu pedido {order_id} fue anulado."
+    pedido = result.data["bloques"][0]["datos"]["pedido"]
+    assert pedido["motivoAnulacion"] == "PAGO_NO_COMPLETADO"
+    assert "reembolso" not in pedido

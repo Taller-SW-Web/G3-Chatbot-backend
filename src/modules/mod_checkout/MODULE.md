@@ -35,7 +35,7 @@ pedidos ni gestiona postventa.
 - **G2 Despacho** (cotización) por `mod-shipping.public`.
 - **G5 Ventas** `POST /pedidos`, `POST /pedidos/{id}/pagos/notificacion`,
   `POST /pedidos/{id}/anulaciones` (`provide_sales_port`).
-- **G7 correo** (confirmación) a través de la capacidad `order_confirmation`
+- **G7 correo** (confirmación) a través de la capacidad `order_confirmation`, usada solo por el worker de outbox: el pago aprobado responde `estado: PAGO_EN_PROCESO` y el pedido queda en `PAYMENT_PENDING_NOTIFICATION`; la confirmación se encola cuando G5 responde `nuevoEstado: PAGADO` (si responde `ANULADO`, el pedido pasa a `CANCELLED` y no se envía correo)
   que registra `mod-orders`; el outbox vive en `src/shared`.
 
 ## Contacto verificado (SPEC-04)

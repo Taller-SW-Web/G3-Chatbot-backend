@@ -135,6 +135,24 @@ class VentasClient(BaseModuleClient, SalesOrderPort):
         )
         return self._parse_response(response)
 
+    async def get_order_as_service(
+        self,
+        order_id: str,
+        *,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """GET /api/v1/pedidos/{id} with the service token (scope ventas:pedidos:consultar)."""
+        auth_headers = await self._get_service_headers(
+            correlation_id=correlation_id, scope="ventas:pedidos:consultar", audience="api-ventas"
+        )
+        response = await self._request(
+            "GET",
+            f"/api/v1/pedidos/{quote(order_id, safe='')}",
+            headers=auth_headers,
+            correlation_id=correlation_id,
+        )
+        return self._parse_response(response)
+
     async def list_customer_orders(
         self,
         holder_token: str,

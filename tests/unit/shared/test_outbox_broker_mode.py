@@ -192,6 +192,7 @@ async def test_unroutable_type_is_marked_failed_instead_of_published(deps):
 @pytest.mark.asyncio
 async def test_direct_mode_is_unchanged_and_never_touches_a_publisher(deps):
     outbox_repo, order_ref_repo, sales_client = deps
+    sales_client.notify_payment.return_value = {"nuevoEstado": "PAGADO"}
     job = _job(payload={"order_id": "PED-D", "payment_data": {"transaccionId": "T-1"}})
 
     assert await OutboxProcessor(outbox_repo, order_ref_repo, sales_client).process_one(job) is True

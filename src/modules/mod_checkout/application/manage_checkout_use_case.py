@@ -109,7 +109,6 @@ class ManageCheckoutUseCase:
         cart_items: Any | None = None,
         orders: Any | None = None,
         phone_verifications: Any | None = None,
-        notification_service: Any | None = None,
         sales_client: Any | None = None,
         sales_deadline_seconds: float = 30.0,
         outbox: Any | None = None,
@@ -129,7 +128,6 @@ class ManageCheckoutUseCase:
         self.cart_items = cart_items
         self.orders = orders
         self.phone_verifications = phone_verifications
-        self.notification_service = notification_service
         self.sales_client = sales_client
         self.sales_deadline_seconds = sales_deadline_seconds
         self.outbox = outbox
@@ -1224,19 +1222,12 @@ class ManageCheckoutUseCase:
                 )
                 await _safe_call(self.outbox, "guardar", outbox_entry)
 
-            confirmation_res = None
-            if order_id:
-                if ord_row and getattr(ord_row, "order_id", None):
-                    await _safe_call(self.orders, "actualizar_estado", order_id, "PAID_NOTIFIED")
+            # The order is NOT confirmed here (decision "Pendiente hasta G5"): it waits in
+            # PAYMENT_PENDING_NOTIFICATION until the outbox gets Ventas' answer, which sets
+            # PAID_NOTIFIED and enqueues the confirmation e-mail, or CANCELLED (late payment).
+            if order_id and ord_row and getattr(ord_row, "order_id", None):
+                await _safe_call(self.orders, "actualizar_estado", order_id, "PAYMENT_PENDING_NOTIFICATION")
 
-                if self.notification_service is not None:
-                    try:
-                        confirmation_res = await self.notification_service.enqueue_confirmation(order_id)
-                    except Exception:
-                        logger.exception("Failed to enqueue confirmation for order %s", order_id)
-
-            if confirmation_res:
-                saved_attempt.confirmation = confirmation_res
             if self.uow:
                 await _safe_call(self.uow, "commit")
             return saved_attempt

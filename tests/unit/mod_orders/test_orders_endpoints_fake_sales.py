@@ -213,3 +213,39 @@ def test_reversed_date_range_is_400_validacion_without_calling_sales() -> None:
     assert body["code"] == "VALIDACION"
     assert any(error["campo"] == "desde" for error in body["errores"])
     assert sales.calls == 0
+
+
+def test_stock_cancelled_order_detail_and_tracking_explain_reason_and_refund() -> None:
+    import asyncio
+
+    sales = FakeSalesPort()
+    order_id = asyncio.run(_create(sales))
+    sales.cancel_for_stock(order_id)
+    client = _client(sales)
+
+    detail = client.get(f"/api/v1/pedidos/{order_id}", headers=HEADERS)
+    tracking = client.get(f"/api/v1/pedidos/{order_id}/seguimiento", headers=HEADERS)
+
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["estado"] == "ANULADO"
+    assert body["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
+    assert body["reembolso"] == "Se procesará el reembolso al medio de pago original."
+    assert body["historial"][-1]["motivo"] == "STOCK_NO_DISPONIBLE"
+    assert tracking.status_code == 200, tracking.text
+    assert tracking.json()["mensaje"] == (
+        "Tu pedido fue anulado por falta de stock. Se procesará el reembolso al medio de pago original."
+    )
+    assert tracking.json()["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
+
+
+def test_open_order_detail_has_null_cancellation_fields() -> None:
+    import asyncio
+
+    sales = FakeSalesPort()
+    order_id = asyncio.run(_create(sales))
+
+    body = _client(sales).get(f"/api/v1/pedidos/{order_id}", headers=HEADERS).json()
+
+    assert body["motivoAnulacion"] is None
+    assert body["reembolso"] is None

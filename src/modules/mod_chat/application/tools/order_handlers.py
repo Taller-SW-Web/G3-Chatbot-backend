@@ -18,6 +18,7 @@ from src.modules.mod_chat.application.tools.tool_blocks import (
 from src.modules.mod_orders.public import (
     SALES_STATUS_LABELS,
     NotificationError,
+    cancellation_message,
     map_order_status_label,
     sanitize_tracking_payload,
 )
@@ -59,8 +60,11 @@ def _hitos(detail: dict[str, Any]) -> list[dict[str, Any]]:
     }
     current = str(detail.get("estado") or "").upper()
     if current == "ANULADO":
-        return [{"titulo": SALES_STATUS_LABELS["ANULADO"], "fecha": dates.get("ANULADO") or
-                 dates.get("CREADO", ""), "done": True}]
+        hito = {"titulo": SALES_STATUS_LABELS["ANULADO"], "fecha": dates.get("ANULADO") or
+                dates.get("CREADO", ""), "done": True}
+        if detail.get("motivoAnulacion"):
+            hito["motivo"] = detail["motivoAnulacion"]
+        return [hito]
     position = ORDER_FLOW.index(current) if current in ORDER_FLOW else -1
     hitos = [
         {
@@ -116,10 +120,12 @@ def order_not_found() -> ToolResult:
 
 def _detail_block(detail: dict[str, Any], seguimiento: dict[str, Any] | None = None) -> dict[str, Any]:
     summary = _summary(detail)
-    data: dict[str, Any] = {
-        "pedido": {**summary, "envio": detail.get("envio"), "items": detail.get("items") or []},
-        "hitos": _hitos(detail),
-    }
+    pedido = {**summary, "envio": detail.get("envio"), "items": detail.get("items") or []}
+    # backend#182: why the order was cancelled and the refund message, when there are any.
+    for key in ("motivoAnulacion", "reembolso"):
+        if detail.get(key):
+            pedido[key] = detail[key]
+    data: dict[str, Any] = {"pedido": pedido, "hitos": _hitos(detail)}
     if seguimiento is not None:
         data["seguimiento"] = seguimiento
     return block("ESTADO_PEDIDO", data)
@@ -128,8 +134,8 @@ def _detail_block(detail: dict[str, Any], seguimiento: dict[str, Any] | None = N
 def _detail_text(detail: dict[str, Any]) -> str:
     summary = _summary(detail)
     if summary["estado"] == "ANULADO":
-        return (f"Tu pedido {summary['pedidoId']} fue anulado. "
-                "Si corresponde un reembolso, se procesará al medio de pago original.")
+        return cancellation_message(
+            detail.get("motivoAnulacion"), detail.get("reembolso"), summary["pedidoId"])
     if summary["estado"] == "ENTREGADO":
         return f"Tu pedido {summary['pedidoId']} ya fue entregado. ¿Todo bien con tu compra?"
     return (f"Tu pedido {summary['pedidoId']} está en estado: "

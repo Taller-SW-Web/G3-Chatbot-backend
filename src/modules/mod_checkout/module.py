@@ -122,7 +122,6 @@ def _build_checkout_service(session: AsyncSession) -> ManageCheckoutUseCase:
         cart_items=cart_repositories.items,
         orders=OrderRefPostgresAdapter(session),
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
-        notification_service=_notification_service(session),
         sales_client=provide_sales_port(settings),
         sales_deadline_seconds=settings.checkout_sales_deadline_seconds,
         outbox=OutboxPostgresAdapter(session),

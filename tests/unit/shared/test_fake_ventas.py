@@ -79,3 +79,99 @@ async def test_detail_of_a_foreign_order_looks_like_not_found():
     with pytest.raises(ModuleRequestError) as exc:
         await sales.get_customer_order(created["pedidoId"], token("c2"))
     assert exc.value.status == 404
+
+
+@pytest.mark.asyncio
+async def test_detail_follows_the_g5_shape_with_payment_and_history():
+    sales = FakeSalesPort()
+    created = await sales.create_order(snapshot("c1", total=80.0), idempotency_key="k1")
+
+    detail = await sales.get_customer_order(created["pedidoId"], token("c1"))
+    assert detail["pago"]["total"] == 80.0
+    assert detail["pago"]["estado"] == "PENDIENTE"
+    assert [entry["estado"] for entry in detail["historialEstados"]] == ["CREADO"]
+
+
+@pytest.mark.asyncio
+async def test_stock_cancelled_order_records_reason_and_actor():
+    sales = FakeSalesPort()
+    created = await sales.create_order(snapshot("c1"), idempotency_key="k1")
+    sales.cancel_for_stock(created["pedidoId"])
+
+    detail = await sales.get_customer_order(created["pedidoId"], token("c1"))
+    assert detail["estado"] == "ANULADO"
+    assert detail["pago"]["estado"] == "CONFIRMADO"
+    last = detail["historialEstados"][-1]
+    assert (last["estado"], last["motivo"], last["actor"]) == (
+        "ANULADO", "STOCK_NO_DISPONIBLE", "SISTEMA_PRODUCTOS",
+    )
+
+
+@pytest.mark.asyncio
+async def test_payment_on_a_cancelled_order_answers_anulado_and_keeps_it_cancelled():
+    sales = FakeSalesPort()
+    created = await sales.create_order(snapshot("c1"), idempotency_key="k1")
+    order_id = created["pedidoId"]
+    sales.cancel_for_stock(order_id, paid=False)
+
+    result = await sales.notify_payment(order_id, {"transaccionId": "TX-1"})
+
+    assert result["nuevoEstado"] == "ANULADO"
+    assert result["transaccionId"] == "TX-1"
+    detail = await sales.get_customer_order(order_id, token("c1"))
+    assert detail["estado"] == "ANULADO"
+    assert detail["pago"]["estado"] == "CONFIRMADO"
+
+
+@pytest.mark.asyncio
+async def test_payment_on_an_open_order_moves_it_to_pagado():
+    sales = FakeSalesPort()
+    created = await sales.create_order(snapshot("c1"), idempotency_key="k1")
+
+    result = await sales.notify_payment(created["pedidoId"], {"transaccionId": "TX-1"})
+
+    assert result["nuevoEstado"] == "PAGADO"
+    detail = await sales.get_customer_order(created["pedidoId"], token("c1"))
+    assert [entry["estado"] for entry in detail["historialEstados"]] == ["CREADO", "PAGADO"]
+
+
+@pytest.mark.asyncio
+async def test_cancelling_an_already_cancelled_order_raises_the_g5_409():
+    sales = FakeSalesPort()
+    created = await sales.create_order(snapshot("c1"), idempotency_key="k1")
+    sales.cancel_for_stock(created["pedidoId"])
+
+    with pytest.raises(ModuleRequestError) as exc:
+        await sales.cancel_order(created["pedidoId"])
+    assert (exc.value.status, exc.value.code) == (409, "PEDIDO_NO_ANULABLE")
+
+
+@pytest.mark.asyncio
+async def test_cancelling_an_open_order_still_succeeds():
+    sales = FakeSalesPort()
+    created = await sales.create_order(snapshot("c1"), idempotency_key="k1")
+
+    result = await sales.cancel_order(created["pedidoId"])
+
+    assert result["estadoPedido"] == "ANULADO"
+    detail = await sales.get_customer_order(created["pedidoId"], token("c1"))
+    assert detail["historialEstados"][-1]["motivo"] == "PAGO_NO_COMPLETADO"
+
+
+@pytest.mark.asyncio
+async def test_service_read_returns_the_order_without_a_holder_token():
+    sales = FakeSalesPort()
+    created = await sales.create_order(snapshot("c1"), idempotency_key="k1")
+    sales.cancel_for_stock(created["pedidoId"])
+
+    order = await sales.get_order_as_service(created["pedidoId"])
+
+    assert order["estado"] == "ANULADO"
+    assert order["historialEstados"][-1]["estado"] == "ANULADO"
+
+
+@pytest.mark.asyncio
+async def test_service_read_of_an_unknown_order_is_a_404():
+    with pytest.raises(ModuleRequestError) as exc:
+        await FakeSalesPort().get_order_as_service("PED-NOPE")
+    assert (exc.value.status, exc.value.code) == (404, "PEDIDO_NO_ENCONTRADO")

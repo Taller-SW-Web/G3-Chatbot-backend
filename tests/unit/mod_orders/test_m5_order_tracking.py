@@ -209,3 +209,21 @@ async def test_tracking_a_foreign_order_is_not_found():
         TrackingArguments(pedidoId=foreign), _context())
     assert result.code == "OK"
     assert "No encontré ese pedido en tu cuenta" in result.data["texto"]
+
+
+@pytest.mark.asyncio
+async def test_tracking_of_a_stock_cancelled_order_explains_reason_and_refund():
+    sales = FakeSalesPort()
+    order_id = await _order(sales)
+    sales.cancel_for_stock(order_id)
+
+    result = await _handlers(sales)["consultar_seguimiento"](TrackingArguments(pedidoId=order_id), _context())
+
+    refund = "Se procesará el reembolso al medio de pago original."
+    assert result.data["texto"] == f"Tu pedido fue anulado por falta de stock. {refund}"
+    (block,) = result.data["bloques"]
+    assert block["datos"]["pedido"]["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
+    assert block["datos"]["pedido"]["reembolso"] == refund
+    assert block["datos"]["pedido"]["estadoEtiqueta"] == "Anulado el 2026-11-05T19:05:00Z"
+    assert block["datos"]["seguimiento"]["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
+    assert block["datos"]["seguimiento"]["estadoEtiqueta"] == "Anulado el 2026-11-05T19:05:00Z"
