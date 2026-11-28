@@ -12,8 +12,8 @@
 
 Sesión del cliente contra Seguridad (SPEC-01..04): registro, login, MFA, refresh,
 logout, perfil y verificación de correo. **No** incluye carrito, checkout ni
-pedidos; `merge_cart_lines` se queda aquí porque el login es su único punto de
-entrada.
+pedidos: la fusión del carrito anónimo se delega a la capacidad `CART_MERGE`
+(SPEC-03 Req. 4) sin importar el interior de `mod-cart`.
 
 ## Superficie pública
 
@@ -53,15 +53,38 @@ Ningún módulo importa `domain/`, `application/` ni `adapters/` de este paquete
   activa el bloqueo legado `403 CELULAR_NO_VERIFICADO` en checkout; el guard de
   producción es `REQUIRE_VERIFIED_CONTACT`.
 
+## Fusión del carrito anónimo (SPEC-03 Req. 4)
+
+- `POST /sesion/login` y `POST /sesion/mfa/verificar` reciben el `chat_sid` de
+  la cookie, lo hashean (igual que `caller_identity`) y pasan ese sid
+  almacenado al caso de uso. Nunca viaja el valor crudo.
+- La capacidad opcional `CART_MERGE` (registrada por `mod-cart` en
+  `configure()`) se resuelve en tiempo de request en `provide_manage_session`.
+  Si falta, un null object devuelve `merged=False` y el login sigue.
+- Invariante de orden: `merge_for_login` se ejecuta **antes** de
+  `link_anonymous_to_customer`, que limpia `Conversation.anonymous_sid` y es
+  la clave con la que se buscan los carritos anónimos. Ambas escrituras
+  comparten el `UnitOfWork` del request y se confirman juntas; si la fusión
+  falla, se hace rollback y el login no abre sesión, dejando el carrito
+  anónimo intacto para el siguiente intento.
+- La respuesta de sesión expone `carritoFusionado`, `avisoCarrito` (el
+  `CART_MERGED_MESSAGE` que muestra el chat) y `ajustesCarrito`
+  (`sku`, `solicitado`, `ajustado`, `motivo`) para los ajustes por límite o
+  stock.
+
 ## Dependencias externas
 
 - **G1 Seguridad** vía `shared/application/ports/security_port.py` y
   `shared/infrastructure/http/security_client.py` (login, MFA, registro, perfil).
 - `local_phone_verification` (tabla compartida) para `celularVerificado`.
 - `phone_otp_challenge` (tabla compartida) para el OTP local de SPEC-04.
-- Capacidad `checkout_document` (registrada por `mod-checkout`) para
-  `ultimoDocumento` sin importar el interior de checkout. Es opcional: si falta,
-  el perfil usa un null object y `/health` reporta `degraded`.
+- Capacidades opcionales, resueltas por el registry (ADR-0024):
+  - `checkout_document` (registrada por `mod-checkout`) para `ultimoDocumento`
+    sin importar el interior de checkout.
+  - `CART_MERGE` (registrada por `mod-cart`) para fusionar el carrito anónimo
+    en el login sin importar el interior de carrito.
+  Si falta una, el perfil/login usan un null object y `/health` reporta
+  `degraded`.
 
 ## Pruebas
 

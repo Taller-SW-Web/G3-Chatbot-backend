@@ -9,7 +9,6 @@ from src.modules.mod_auth.application.manage_session_use_case import (
     RefreshInvalidError,
     mask_document,
     mask_email,
-    merge_cart_lines,
 )
 from src.shared.application.ports.token_validator_port import AccountNotAllowedError
 from src.shared.domain.module_errors import ModuleRequestError
@@ -249,22 +248,6 @@ async def test_login_links_anonymous_conversations_and_returns_pending_action_on
 
     second = await sessions.login("a@b.pe", "secret123", anonymous_sid="hashed-sid")
     assert "accionPendiente" not in second
-
-
-def test_merge_cart_lines_sums_same_sku_capped_at_ten():
-    """SPEC-03 Req. 4 - Scenario: Ambos carritos con items."""
-    merged = merge_cart_lines(
-        [{"sku": "SKU-A", "cantidad": 2}],
-        [{"sku": "SKU-A", "cantidad": 1}, {"sku": "SKU-B", "cantidad": 1}],
-    )
-    by_sku = {line["sku"]: line["cantidad"] for line in merged}
-    assert by_sku == {"SKU-A": 3, "SKU-B": 1}
-
-
-def test_merge_cart_lines_caps_quantity_at_ten():
-    """SPEC-03 Req. 4 - quantities never exceed the per-line cap."""
-    merged = merge_cart_lines([{"sku": "SKU-A", "cantidad": 9}], [{"sku": "SKU-A", "cantidad": 5}])
-    assert merged[0]["cantidad"] == 10
 
 
 @pytest.mark.asyncio

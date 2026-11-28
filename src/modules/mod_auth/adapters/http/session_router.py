@@ -150,11 +150,24 @@ class RequestMfaIn(BaseModel):
     canal: str = Field(default="EMAIL", pattern=r"^(EMAIL|SMS)$")
 
 
+class CartMergeAdjustment(BaseModel):
+    """Per-line adjustment reported by the anonymous cart merge (SPEC-03 Req. 4)."""
+
+    sku: str
+    solicitado: int
+    ajustado: int
+    motivo: str
+
+
 class OpenedSession(BaseModel):
     accessToken: str
     expiresIn: int = 900
     usuario: dict = Field(default_factory=dict)
     accionPendiente: str | None = None
+    # SPEC-03 Req. 4: the chat shows `avisoCarrito` and, when present, the per-line adjustments.
+    carritoFusionado: bool = False
+    avisoCarrito: str | None = None
+    ajustesCarrito: list[CartMergeAdjustment] = Field(default_factory=list)
 
 
 class MfaChallenge(BaseModel):
@@ -255,6 +268,9 @@ def create_session_router(
             expiresIn=int(answer.get("expiresIn", 900)),
             usuario=dict(answer.get("usuario", {})),
             accionPendiente=answer.get("accionPendiente"),
+            carritoFusionado=bool(answer.get("carritoFusionado", False)),
+            avisoCarrito=answer.get("avisoCarrito"),
+            ajustesCarrito=list(answer.get("ajustesCarrito") or []),
         )
 
     @router.post(
