@@ -217,7 +217,8 @@ class ManageCatalogUseCase(DiscoveryMixin):
             row["ref"] = index
         memory[MEMORY_CAROUSEL_KEY] = [s["product_id"] for s in summaries]
         memory[MEMORY_FILTERS_KEY] = {
-            "q": filters.q,
+            # Keep the user's text for chips/refinement; G6 received filters.q.
+            "q": args.q,
             "category_id": filters.category_id,
             "brand_id": filters.brand_id,
         }

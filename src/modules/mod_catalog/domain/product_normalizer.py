@@ -10,6 +10,9 @@ from difflib import SequenceMatcher
 
 SIMILARITY_CUTOFF = 0.8
 MAX_CHIPS = 6
+# Connectors the LLM adds around the real search terms ("zapatillas de running").
+# Productos matches literal substrings, so sending them empties the result set.
+SPANISH_STOPWORDS = frozenset({"de", "para", "con", "el", "la", "en", "y"})
 
 # Peruvian Spanish aliases to canonical catalog names.
 DEFAULT_SYNONYMS = {
@@ -23,6 +26,14 @@ DEFAULT_SYNONYMS = {
     "mochila": "Mochilas y morrales",
     "morral": "Mochilas y morrales",
     "canguro": "Mochilas y morrales",
+}
+
+# G6 searches literal substrings over Spanish product descriptions, which use
+# "running" instead of "correr". These are search-vocabulary aliases, not
+# category synonyms: they translate the term but never resolve a category.
+SEARCH_ALIASES = {
+    "correr": "running",
+    "trotar": "running",
 }
 
 
@@ -82,6 +93,7 @@ class ProductNormalizer:
         categoria: str | None = None,
         marca: str | None = None,
     ) -> NormalizedFilters:
+        normalized_q, q_category_id = self._normalize_query(q)
         category_id = unresolved_category = None
         if categoria:
             match = self.normalize_category(categoria)
@@ -89,6 +101,10 @@ class ProductNormalizer:
                 unresolved_category = categoria
             else:
                 category_id = match.get("category_id") or match.get("categoria_id")
+        elif q_category_id is not None:
+            # A category named inside the free text is a structured filter,
+            # not part of the literal substring Productos receives as `q`.
+            category_id = q_category_id
         brand_id = unresolved_brand = None
         if marca:
             match = self.normalize_brand(marca)
@@ -106,13 +122,39 @@ class ProductNormalizer:
             if chip is not None
         )[:MAX_CHIPS]
         return NormalizedFilters(
-            q=q,
+            q=normalized_q,
             category_id=category_id,
             brand_id=brand_id,
             unresolved_category=unresolved_category,
             unresolved_brand=unresolved_brand,
             chips=chips,
         )
+
+    def _normalize_query(self, q: str | None) -> tuple[str | None, str | None]:
+        """Fold, collapse whitespace, drop connectors and translate search aliases.
+
+        The first token that names a known category (directly or through a
+        synonym) becomes `category_id`; the remaining tokens stay as the
+        literal `q` sent to Productos.
+        """
+        if not q:
+            return None, None
+        tokens = [
+            SEARCH_ALIASES.get(token, token)
+            for token in _fold(q).split()
+            if token not in SPANISH_STOPWORDS
+        ]
+        category_id = None
+        remaining: list[str] = []
+        for token in tokens:
+            match = self._match(token, self._categories)
+            if match is not None:
+                matched_id = match.get("category_id") or match.get("categoria_id")
+                if category_id is None or category_id == matched_id:
+                    category_id = matched_id
+                    continue
+            remaining.append(token)
+        return " ".join(remaining) or None, category_id
 
     def _match(self, text: str, options: list[dict]) -> dict | None:
         folded = _fold(text)
