@@ -199,6 +199,8 @@ class Settings:
     attachment_cleanup_interval_seconds: float = 3600.0
     # SPEC-05 retention sweep: closes anonymous conversations (>7d) and archives customer ones (>90d).
     conversation_retention_interval_seconds: float = 3600.0
+    # SPEC-19/21 (#265): local post-sale drafts expire after 24 h; the sweep runs with the worker.
+    postventa_draft_purge_interval_seconds: float = 3600.0
     attachment_max_bytes: int = 5 * 1024 * 1024
     attachment_max_side: int = 4096
     attachment_stored_side: int = 2048
@@ -524,5 +526,8 @@ def _build_settings(app_role: str = "api") -> Settings:
         gateway_shared_secret=os.getenv("GATEWAY_SHARED_SECRET", "").strip(),
         conversation_retention_interval_seconds=_number(
             "CONVERSATION_RETENTION_INTERVAL_SECONDS", "3600", float, minimum=60
+        ),
+        postventa_draft_purge_interval_seconds=_number(
+            "POSTVENTA_DRAFT_PURGE_INTERVAL_SECONDS", "3600", float, minimum=60
         ),
     )
