@@ -106,6 +106,23 @@ Dos detalles que cuestan tiempo si se pasan por alto:
   que el entorno dependa de que el navegador trate `localhost` como contexto seguro.
   En cualquier despliegue HTTPS va en `true`.
 
+### Correo de confirmación (`EMAIL_MODE`)
+
+`EMAIL_MODE` hace explícito el remitente de SPEC-16 y evita el fallo silencioso:
+
+| Valor | Requiere | Efecto |
+|---|---|---|
+| `smtp` | `SMTP_HOST` | Envío real por SMTP (Mailtrap en local). |
+| `fake` | — | Remitente en memoria: no se envía nada; el flujo sigue funcionando. |
+
+Si se omite, el modo se deduce de `SMTP_HOST` (`smtp` si está, `fake` si no).
+En `APP_ENV=production` sin `SMTP_HOST` el arranque falla con un `ValueError`
+que pide `SMTP_HOST` o un `EMAIL_MODE=fake` explícito; `GET /health` publica
+`emailMode` con el remitente efectivo. `NOTIFICATION_SEND_INLINE=false` (por
+defecto) deja el envío al worker del outbox: `POST /pago` solo encola y un SMTP
+lento no bloquea la compra. Solo si el worker está deshabilitado se activa
+`NOTIFICATION_SEND_INLINE=true` como fallback documentado.
+
 ### Reloj y tokens de G7
 
 El validador local de tokens aplica un **leeway de 60 s** (`JWT_LEEWAY_SECONDS` en

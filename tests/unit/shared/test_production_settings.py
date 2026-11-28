@@ -26,6 +26,8 @@ SAFE_ENV = {
     "ATTACHMENT_SIGNING_SECRET": "attachment-secret-value",
     "GATEWAY_SHARED_SECRET": "gateway-secret-value",
     "MODO_QA": "false",
+    # Production never infers the in-memory sender: the explicit opt-in is required.
+    "EMAIL_MODE": "fake",
 }
 
 
@@ -43,6 +45,8 @@ def env(monkeypatch):
         "ATTACHMENT_STORAGE",
         "SUPABASE_URL",
         "SUPABASE_SERVICE_KEY",
+        "SMTP_HOST",
+        "EMAIL_MODE",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -243,3 +247,75 @@ def test_verified_contact_flag_is_read_from_the_environment(env, monkeypatch):
     monkeypatch.setenv("REQUIRE_VERIFIED_CONTACT", "true")
     get_settings.cache_clear()
     assert get_settings().require_verified_contact is True
+
+
+# -- E-mail delivery mode (backend#250) ------------------------------------------
+
+
+def test_production_without_smtp_fails_the_boot(env):
+    env(APP_ENV="production", SMTP_HOST="", EMAIL_MODE="")
+
+    with pytest.raises(ValueError, match="SMTP_HOST"):
+        get_settings()
+
+
+def test_startup_fails_without_smtp_in_production(env):
+    env(APP_ENV="production", SMTP_HOST="", EMAIL_MODE="")
+
+    with pytest.raises(ValueError, match="SMTP_HOST"):
+        create_app()
+
+
+def test_production_accepts_an_explicit_fake_email_mode(env):
+    env(APP_ENV="production", SMTP_HOST="", EMAIL_MODE="fake")
+
+    settings = get_settings()
+
+    assert settings.email_mode == "fake"
+    assert settings.email_mode_explicit is True
+
+
+def test_production_uses_smtp_when_smtp_host_is_configured(env):
+    env(APP_ENV="production", SMTP_HOST="smtp.example.com", EMAIL_MODE="")
+
+    settings = get_settings()
+
+    assert settings.email_mode == "smtp"
+    assert settings.email_mode_explicit is False
+
+
+def test_smtp_mode_requires_smtp_host_in_every_environment(env):
+    env(APP_ENV="development", SMTP_HOST="", EMAIL_MODE="smtp")
+
+    with pytest.raises(ValueError, match="SMTP_HOST"):
+        get_settings()
+
+
+def test_invalid_email_mode_fails_loudly(env):
+    env(EMAIL_MODE="mailgun")
+
+    with pytest.raises(ValueError, match="EMAIL_MODE"):
+        get_settings()
+
+
+def test_development_defaults_to_the_fake_email_mode(env):
+    env(APP_ENV="development", SMTP_HOST="", EMAIL_MODE="")
+
+    settings = get_settings()
+
+    assert settings.email_mode == "fake"
+    assert settings.email_mode_explicit is False
+
+
+def test_notification_send_inline_is_off_by_default(env):
+    env(APP_ENV="development", SMTP_HOST="", EMAIL_MODE="")
+
+    assert get_settings().notification_send_inline is False
+
+
+def test_notification_send_inline_can_be_enabled_as_a_fallback(env, monkeypatch):
+    env(APP_ENV="development", SMTP_HOST="", EMAIL_MODE="")
+    monkeypatch.setenv("NOTIFICATION_SEND_INLINE", "true")
+    get_settings.cache_clear()
+
+    assert get_settings().notification_send_inline is True

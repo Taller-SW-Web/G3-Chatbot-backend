@@ -28,6 +28,7 @@ def _number(name: str, default: str, cast, *, minimum: float):
 OUTBOX_DISPATCH_MODES = ("direct", "broker")
 RABBITMQ_URL_SCHEMES = ("amqp", "amqps")
 MODULE_MODES = ("fake", "http")
+EMAIL_MODES = ("smtp", "fake")
 MODULES = ("security", "products", "sales", "dispatch")
 # Modules with an in-process fake or an HTTP adapter wired in the container.
 MODULES_WITH_ADAPTERS = ("security", "products", "sales", "dispatch")
@@ -131,8 +132,14 @@ class Settings:
     sales_timeout_seconds: float = 5.0
     postventa_timeout_seconds: float = 5.0
     dispatch_timeout_seconds: float = 4.0
-    # Order confirmation e-mail (SPEC-16). Without SMTP_HOST the in-memory
-    # FakeEmailSender is used and nothing is delivered. Mailtrap in development.
+    # Order confirmation e-mail (SPEC-16). `EMAIL_MODE=smtp` requires SMTP_HOST;
+    # `EMAIL_MODE=fake` keeps the in-memory sender and delivers nothing. When
+    # EMAIL_MODE is empty it is inferred from SMTP_HOST, but production refuses
+    # that inferred fake: the sender would silently drop every confirmation.
+    email_mode: str = ""
+    # True when EMAIL_MODE was set explicitly (the only way to accept a fake
+    # sender in production). Filled by `__post_init__`.
+    email_mode_explicit: bool = field(default=False, init=False)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
@@ -142,8 +149,10 @@ class Settings:
     smtp_timeout_seconds: float = 10.0
     # Base of the deep link in the e-mail (`/pedidos/{pedidoId}`).
     frontend_base_url: str = "http://localhost:3000"
-    # Send right after enqueueing; the outbox worker then only closes already sent e-mails.
-    notification_send_inline: bool = True
+    # Off by default: `POST /pago` enqueues the SEND_EMAIL task and the outbox
+    # worker sends it, so an SMTP timeout never blocks the purchase. Set it to
+    # true only for environments without the worker (the request then sends).
+    notification_send_inline: bool = False
     # SPEC-24: internal inbox for suggestions and bugs.
     feedback_inbox_email: str = "soporte@g3-chatbot.local"
     # In-process outbox worker (SPEC-15): polled from the FastAPI lifespan.
@@ -201,6 +210,19 @@ class Settings:
     attachment_thumbnail_side: int = 320
 
     def __post_init__(self) -> None:
+        requested_email_mode = self.email_mode.strip().lower()
+        if requested_email_mode and requested_email_mode not in EMAIL_MODES:
+            raise ValueError(
+                f"EMAIL_MODE must be one of {', '.join(EMAIL_MODES)}, got {requested_email_mode!r}"
+            )
+        object.__setattr__(self, "email_mode_explicit", bool(requested_email_mode))
+        object.__setattr__(
+            self,
+            "email_mode",
+            requested_email_mode or ("smtp" if self.smtp_host else "fake"),
+        )
+        if self.email_mode == "smtp" and not self.smtp_host:
+            raise ValueError("EMAIL_MODE=smtp requires SMTP_HOST")
         if self.outbox_dispatch_mode not in OUTBOX_DISPATCH_MODES:
             raise ValueError(f"OUTBOX_DISPATCH_MODE must be one of {', '.join(OUTBOX_DISPATCH_MODES)}")
         if self.outbox_dispatch_mode == "broker":
@@ -267,6 +289,8 @@ class Settings:
         problems: list[str] = []
         if self.modo_qa:
             problems.append("MODO_QA=true returns the OTP in the HTTP response")
+        if not self.is_production and self.email_mode == "fake":
+            problems.append("EMAIL_MODE=fake (confirmation e-mails are not delivered)")
         if self.phone_otp_secret in ("", DEV_PHONE_OTP_SECRET):
             problems.append("PHONE_OTP_SECRET is unset (public dev constant in use)")
         if self.app_role != "consumer" and self.attachment_signing_secret in ("", DEV_ATTACHMENT_SECRET):
@@ -354,6 +378,12 @@ def _require_production_safe(settings: Settings) -> None:
     """Refuse to boot in production with development defaults (the fake Seguridad has its own opt-in)."""
     if not settings.is_production:
         return
+    if settings.email_mode == "fake" and not settings.email_mode_explicit:
+        raise ValueError(
+            "Refusing to start with APP_ENV=production and no SMTP_HOST: the confirmation "
+            "e-mail would use the in-memory sender and never be delivered. Set SMTP_HOST, "
+            "or EMAIL_MODE=fake explicitly to accept that no e-mail is sent."
+        )
     problems = [
         p for p in settings.unsafe_defaults() if not p.startswith("fake Seguridad")
     ]
@@ -423,6 +453,7 @@ def _build_settings(app_role: str = "api") -> Settings:
             minimum=0.1,
         ),
         dispatch_timeout_seconds=_number("DISPATCH_TIMEOUT_SECONDS", "4", float, minimum=0.1),
+        email_mode=os.getenv("EMAIL_MODE", "").strip().lower(),
         smtp_host=os.getenv("SMTP_HOST", "").strip(),
         smtp_port=_number("SMTP_PORT", "587", int, minimum=1),
         smtp_username=os.getenv("SMTP_USER", "").strip(),
@@ -431,7 +462,7 @@ def _build_settings(app_role: str = "api") -> Settings:
         smtp_starttls=os.getenv("SMTP_STARTTLS", "true").strip().lower() != "false",
         smtp_timeout_seconds=_number("SMTP_TIMEOUT_SECONDS", "10", float, minimum=0.1),
         frontend_base_url=os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").strip().rstrip("/"),
-        notification_send_inline=os.getenv("NOTIFICATION_SEND_INLINE", "true").strip().lower() != "false",
+        notification_send_inline=os.getenv("NOTIFICATION_SEND_INLINE", "false").strip().lower() != "false",
         feedback_inbox_email=(
             os.getenv("FEEDBACK_INBOX_EMAIL", "soporte@g3-chatbot.local").strip()
             or "soporte@g3-chatbot.local"

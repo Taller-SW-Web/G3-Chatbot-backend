@@ -7995,7 +7995,7 @@
     },
     "/health": {
       "get": {
-        "description": "Liveness: deliberately does not touch the database.",
+        "description": "Liveness: deliberately does not touch the database.\n\nAlso declares the e-mail delivery mode (`smtp` or `fake`): an inferred fake\nsender fails the production boot (backend#250), so operators can confirm here\nwhich sender the process is really using.",
         "operationId": "health_health_get",
         "responses": {
           "200": {

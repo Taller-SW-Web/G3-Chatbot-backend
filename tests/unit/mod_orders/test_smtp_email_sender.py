@@ -86,3 +86,14 @@ def test_con_smtp_host_se_usa_smtp():
     sender = orders_module.provide_email_sender(Settings(smtp_host="sandbox.smtp.mailtrap.io", smtp_port=2525))
     assert isinstance(sender, SmtpEmailSender)
     assert (sender.host, sender.port) == ("sandbox.smtp.mailtrap.io", 2525)
+
+
+def test_email_mode_fake_wins_over_a_configured_host():
+    settings = Settings(email_mode="fake", smtp_host="sandbox.smtp.mailtrap.io")
+
+    assert isinstance(orders_module.provide_email_sender(settings), FakeEmailSender)
+
+
+def test_email_mode_smtp_without_host_is_refused():
+    with pytest.raises(ValueError, match="SMTP_HOST"):
+        Settings(email_mode="smtp")

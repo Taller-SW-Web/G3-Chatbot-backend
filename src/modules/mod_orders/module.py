@@ -40,9 +40,13 @@ REQUIRED_CAPABILITIES = (DISPATCH_PORT,)
 
 
 def provide_email_sender(settings: Settings | None = None):
-    """SMTP when SMTP_HOST is set (Mailtrap in development); otherwise the in-memory fake (SPEC-16)."""
+    """Explicit `EMAIL_MODE`: SMTP for real delivery, in-memory fake for development (SPEC-16).
+
+    Settings already fails closed in production when the fake would be inferred from
+    a missing SMTP_HOST, so reaching the fake here is always an explicit decision.
+    """
     settings = settings or get_settings()
-    if not settings.smtp_host:
+    if settings.email_mode == "fake":
         return _FAKE_EMAIL_SENDER
     return SmtpEmailSender(
         host=settings.smtp_host,

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.shared.infrastructure.config.settings import get_settings
 from src.shared.infrastructure.db.connection import get_session
 from src.shared.infrastructure.di.registry import registry
 
@@ -16,11 +17,21 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health")
 async def health() -> dict:
-    """Liveness: deliberately does not touch the database."""
+    """Liveness: deliberately does not touch the database.
+
+    Also declares the e-mail delivery mode (`smtp` or `fake`): an inferred fake
+    sender fails the production boot (backend#250), so operators can confirm here
+    which sender the process is really using.
+    """
+    settings = get_settings()
     missing = registry.optional_missing
+    payload: dict = {
+        "status": "degraded" if missing else "ok",
+        "emailMode": settings.email_mode,
+    }
     if missing:
-        return {"status": "degraded", "missingCapabilities": list(missing)}
-    return {"status": "ok"}
+        payload["missingCapabilities"] = list(missing)
+    return payload
 
 
 @router.get("/health/ready")
