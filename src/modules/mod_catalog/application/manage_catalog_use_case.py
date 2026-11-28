@@ -11,7 +11,7 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from src.modules.mod_catalog.application.discovery import DiscoveryMixin
+from src.modules.mod_catalog.application.discovery import DiscoveryMixin, block
 from src.modules.mod_catalog.application.partial import CommercialRows, PartialRows
 from src.modules.mod_catalog.application.product_lookup import (
     MEMORY_CAROUSEL_KEY,
@@ -21,7 +21,7 @@ from src.modules.mod_catalog.application.product_lookup import (
 )
 from src.modules.mod_catalog.application.tools import SearchArguments
 from src.modules.mod_catalog.domain.offer_policy import price_projection
-from src.modules.mod_catalog.domain.product_normalizer import ProductNormalizer
+from src.modules.mod_catalog.domain.product_normalizer import MAX_CHIPS, ProductNormalizer
 from src.modules.mod_catalog.domain.product_ordering import sort_summaries
 from src.modules.mod_catalog.domain.product_projection import normalize_detail, sellable_skus
 from src.modules.mod_catalog.domain.similar_products import SimilarProducts
@@ -37,6 +37,7 @@ from src.shared.domain.module_errors import (
 )
 
 LIST_TTL_SECONDS = 600.0
+PROMOTION_CACHE_TTL_SECONDS = 60.0
 MAX_VARIANTS_PER_PRODUCT = 100
 # G6 bulk pricing cost grows with SKU count. Keep each request within the
 # existing upstream timeout, with at most four calls in flight and no retries.
@@ -54,10 +55,11 @@ OFFER_DISCOVERY_SECONDS = 8.0
 
 
 class OptionCache:
-    """In-process categories/brands cache (SPEC-06).
+    """In-process catalog list cache (SPEC-06, SPEC-08).
 
-    Injectable so tests and `MODULES_MODE` runs never share stale lists: each
-    use case gets its own cache unless the wiring passes a shared instance.
+    Holds categories/brands lists and the 60 s promotions list. Injectable so
+    tests and `MODULES_MODE` runs never share stale lists: each use case gets
+    its own cache unless the wiring passes a shared instance.
     """
 
     def __init__(self, ttl_seconds: float = LIST_TTL_SECONDS):
@@ -98,6 +100,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
         uow,
         normalizer: ProductNormalizer | None = None,
         option_cache: OptionCache | None = None,
+        promotion_cache: OptionCache | None = None,
     ):
         self._catalog = catalog
         self._inventory = inventory
@@ -108,7 +111,11 @@ class ManageCatalogUseCase(DiscoveryMixin):
         self._variants = VariantResolver()
         self._stock = StockValidator()
         self._similar = SimilarProducts()
-        self._promotion_cache = OptionCache(60)
+        self._promotion_cache = (
+            promotion_cache
+            if promotion_cache is not None
+            else OptionCache(PROMOTION_CACHE_TTL_SECONDS)
+        )
 
     @property
     def inventory(self):
@@ -146,7 +153,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
             return {
                 "code": "OK",
                 "texto": self._clarifying_question(filters),
-                "bloques": [],
+                "bloques": self._clarifying_blocks(filters, categories, brands),
             }
         partial = False
         if discover_offers:
@@ -217,7 +224,8 @@ class ManageCatalogUseCase(DiscoveryMixin):
             row["ref"] = index
         memory[MEMORY_CAROUSEL_KEY] = [s["product_id"] for s in summaries]
         memory[MEMORY_FILTERS_KEY] = {
-            "q": filters.q,
+            # Keep the user's text for chips/refinement; G6 received filters.q.
+            "q": args.q,
             "category_id": filters.category_id,
             "brand_id": filters.brand_id,
         }
@@ -763,18 +771,55 @@ class ManageCatalogUseCase(DiscoveryMixin):
     def _clarifying_question(filters) -> str:
         if filters.unresolved_category and filters.unresolved_brand:
             return (
-                f"No ubico la categoría {filters.unresolved_category} ni la marca "
-                f"{filters.unresolved_brand}. ¿Buscas zapatillas, polos o mochilas?"
+                f"No ubico la categoría {filters.unresolved_category} y no "
+                f"trabajamos la marca {filters.unresolved_brand}. "
+                "Elige una opción disponible."
             )
         if filters.unresolved_category:
             return (
                 f"No ubico la categoría {filters.unresolved_category}. "
-                "¿Buscas zapatillas, polos o mochilas?"
+                "¿Buscas alguna de estas?"
             )
         return (
-            f"No ubico la marca {filters.unresolved_brand}. "
-            "¿De qué marca lo buscas: Nike, Adidas o Andes?"
+            f"No trabajamos la marca {filters.unresolved_brand}. "
+            "¿Buscas alguna de estas marcas?"
         )
+
+    @classmethod
+    def _clarifying_blocks(cls, filters, categories, brands) -> list[dict]:
+        """Chips with up to `MAX_CHIPS` real categories/brands from the catalog."""
+        actions: list[dict] = []
+        if filters.unresolved_category:
+            actions.extend(cls._option_actions(
+                categories, "categoria", "BUSCAR_POR_CATEGORIA"
+            ))
+        if filters.unresolved_brand:
+            actions.extend(cls._option_actions(
+                brands, "marca", "BUSCAR_PRODUCTOS"
+            ))
+        unique: list[dict] = []
+        seen: set[str] = set()
+        for action in actions:
+            key = action["etiqueta"].casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(action)
+            if len(unique) == MAX_CHIPS:
+                break
+        return [block("ACCIONES_RAPIDAS", {"acciones": unique})] if unique else []
+
+    @staticmethod
+    def _option_actions(options, field, action_id) -> list[dict]:
+        names: list[str] = []
+        for option in options:
+            name = option.get("name")
+            if isinstance(name, str) and name.strip() and name.strip() not in names:
+                names.append(name.strip())
+        return [
+            {"id": action_id, "etiqueta": name, "payload": {field: name}}
+            for name in names
+        ]
 
     @staticmethod
     def map_module_error(exc: Exception, *, inactive: bool = False) -> CatalogError:

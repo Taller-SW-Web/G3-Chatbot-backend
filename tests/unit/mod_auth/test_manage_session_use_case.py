@@ -188,25 +188,67 @@ async def test_profile_adds_verified_phone_and_masked_document():
     sessions = make_sessions(security, phone_verifications=FakePhone(), checkouts=FakeCheckouts())
     profile = await sessions.profile("holder", CUSTOMER_ID)
     assert profile["celularVerificado"] is True
-    assert profile["ultimoDocumento"] == {"tipo": "DNI", "numeroEnmascarado": "****5678"}
+    assert profile["ultimoDocumento"] == {"tipo": "DNI", "numeroEnmascarado": "*****678"}
 
 
 @pytest.mark.asyncio
-async def test_profile_prefers_the_document_fields_exposed_by_seguridad():
+async def test_profile_ignores_document_fields_from_seguridad_and_uses_checkout_only():
+    """SPEC-03 Req. 7 - ultimoDocumento comes only from checkout.summary.contacto, never Seguridad."""
+
     class FakeCheckouts:
         async def latest_document(self, customer_id):
-            raise AssertionError("checkout document must not be read when Seguridad exposes it")
+            return {"tipo": "DNI", "numero": "12345678"}
 
     security = FakeSecurity(
-        {"me": {"id": "cust-001", "tipoDocumento": "DNI", "documentoEnmascarado": "****5678"}}
+        {"me": {"id": "cust-001", "tipoDocumento": "CE", "documentoEnmascarado": "XXXX9999"}}
     )
     sessions = make_sessions(security, checkouts=FakeCheckouts())
     profile = await sessions.profile("holder", CUSTOMER_ID)
-    assert profile["ultimoDocumento"] == {"tipo": "DNI", "numeroEnmascarado": "****5678"}
+    assert profile["ultimoDocumento"] == {"tipo": "DNI", "numeroEnmascarado": "*****678"}
 
 
-def test_mask_document_keeps_only_the_last_four_digits():
-    assert mask_document({"tipo": "DNI", "numero": "12345678"})["numeroEnmascarado"] == "****5678"
+def test_mask_document_keeps_only_the_last_three_digits():
+    assert mask_document({"tipo": "DNI", "numero": "12345678"})["numeroEnmascarado"] == "*****678"
+
+
+@pytest.mark.asyncio
+async def test_login_links_anonymous_conversations_and_returns_pending_action_once():
+    """SPEC-03 Req. 1 & 3 - post-login links anonymous conversations and consumes accionPendiente."""
+
+    class FakeConversations:
+        def __init__(self):
+            self.calls = []
+            self.pending = "INICIAR_CHECKOUT"
+
+        async def link_anonymous_to_customer(self, anonymous_sid, customer_id):
+            self.calls.append((anonymous_sid, str(customer_id)))
+            action, self.pending = self.pending, None
+            return (1, action)
+
+    class FakeUow:
+        def __init__(self):
+            self.commits = 0
+
+        async def commit(self):
+            self.commits += 1
+
+        async def rollback(self):
+            pass
+
+    convs = FakeConversations()
+    uow = FakeUow()
+    sessions = make_sessions(
+        FakeSecurity({"login": {"accessToken": "acc"}}),
+        conversations=convs,
+        uow=uow,
+    )
+    first = await sessions.login("a@b.pe", "secret123", anonymous_sid="hashed-sid")
+    assert first["accionPendiente"] == "INICIAR_CHECKOUT"
+    assert convs.calls == [("hashed-sid", CUSTOMER_ID)]
+    assert uow.commits == 1
+
+    second = await sessions.login("a@b.pe", "secret123", anonymous_sid="hashed-sid")
+    assert "accionPendiente" not in second
 
 
 def test_merge_cart_lines_sums_same_sku_capped_at_ten():

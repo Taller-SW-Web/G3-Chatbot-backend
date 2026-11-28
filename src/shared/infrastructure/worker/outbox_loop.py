@@ -117,6 +117,29 @@ async def run_checkout_expiry(
         await asyncio.sleep(interval_seconds)
 
 
+async def run_conversation_retention(
+    session_factory: SessionFactory,
+    retention_factory: Callable[[Any], Any],
+    interval_seconds: float,
+) -> None:
+    """Periodic conversation retention sweep (SPEC-05): closes >7d anonymous, archives >90d customer."""
+    while True:
+        try:
+            async with session_factory() as session:
+                closed, archived = await retention_factory(session).run()
+                if closed or archived:
+                    logger.info(
+                        "Conversation retention closed=%d archived=%d",
+                        closed,
+                        archived,
+                    )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Conversation retention iteration failed: %s", describe_error(exc))
+        await asyncio.sleep(interval_seconds)
+
+
 @asynccontextmanager
 async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan: starts the loop when OUTBOX_WORKER_ENABLED and cancels it on shutdown."""
@@ -125,6 +148,7 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
     from src.shared.infrastructure.di.capabilities import (
         ATTACHMENT_CLEANUP,
         CHECKOUT_EXPIRY,
+        CONVERSATION_RETENTION,
         OUTBOX_PUBLISHER,
     )
     from src.shared.infrastructure.di.container import provide_outbox_processor
@@ -135,6 +159,7 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
     publisher = None
     cleanup_task: asyncio.Task | None = None
     expiry_task: asyncio.Task | None = None
+    retention_task: asyncio.Task | None = None
     try:
         if settings.outbox_worker_enabled and settings.outbox_dispatch_mode == "broker":
             # One long-lived connection for the whole process (ADR-0030); the URL is never logged.
@@ -184,12 +209,27 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info(
                 "Checkout expiry sweeper started (every %.0fs)", settings.checkout_expiry_interval_seconds
             )
+        if settings.outbox_worker_enabled and registry.is_registered(CONVERSATION_RETENTION):
+            connection.get_engine()
+            retention_task = asyncio.create_task(
+                run_conversation_retention(
+                    lambda: connection.open_session(),
+                    registry.provider(CONVERSATION_RETENTION),
+                    settings.conversation_retention_interval_seconds,
+                ),
+                name="conversation-retention",
+            )
+            logger.info(
+                "Conversation retention started (every %.0fs)",
+                settings.conversation_retention_interval_seconds,
+            )
         yield
     finally:
         for name, pending in (
             ("outbox-worker", task),
             ("attachment-cleanup", cleanup_task),
             ("checkout-expiry", expiry_task),
+            ("conversation-retention", retention_task),
         ):
             if pending is not None:
                 pending.cancel()

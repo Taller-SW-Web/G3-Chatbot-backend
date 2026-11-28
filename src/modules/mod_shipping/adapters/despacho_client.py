@@ -20,6 +20,7 @@ from src.shared.domain.module_errors import (
     ModuleRequestError,
     ModuleUnavailableError,
 )
+from src.shared.domain.request_context import correlation_id_var
 from src.shared.infrastructure.http.base_client import BaseModuleClient
 
 
@@ -49,7 +50,8 @@ class DespachoClient(BaseModuleClient):
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
         """`POST /api/v1/cotizaciones`: coverage, cost and lead time (`SPEC-12`)."""
-        correlation_id = correlation_id or str(uuid.uuid4())
+        # Inherit the request id so G2 can join its logs with the BFF's (#248).
+        correlation_id = correlation_id or correlation_id_var.get() or str(uuid.uuid4())
         response = await self._request(
             "POST",
             "/cotizaciones",
@@ -70,7 +72,7 @@ class DespachoClient(BaseModuleClient):
         A 404 is not an error: Despacho does not know the order yet while it is
         still being prepared, so the caller gets `None`.
         """
-        correlation_id = correlation_id or str(uuid.uuid4())
+        correlation_id = correlation_id or correlation_id_var.get() or str(uuid.uuid4())
         response = await self._request(
             "GET",
             f"/seguimientos/pedidos/{quote(order_id, safe='')}",

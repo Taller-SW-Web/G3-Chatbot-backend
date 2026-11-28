@@ -191,6 +191,8 @@ class Settings:
     attachment_signed_url_ttl_seconds: int = 300
     attachment_max_images_per_turn: int = 6
     attachment_cleanup_interval_seconds: float = 3600.0
+    # SPEC-05 retention sweep: closes anonymous conversations (>7d) and archives customer ones (>90d).
+    conversation_retention_interval_seconds: float = 3600.0
     attachment_max_bytes: int = 5 * 1024 * 1024
     attachment_max_side: int = 4096
     attachment_stored_side: int = 2048
@@ -485,5 +487,8 @@ def _build_settings(app_role: str = "api") -> Settings:
         ),
         attachment_cleanup_interval_seconds=_number(
             "ATTACHMENT_CLEANUP_INTERVAL_SECONDS", "3600", float, minimum=60
+        ),
+        conversation_retention_interval_seconds=_number(
+            "CONVERSATION_RETENTION_INTERVAL_SECONDS", "3600", float, minimum=60
         ),
     )
