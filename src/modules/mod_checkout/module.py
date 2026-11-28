@@ -78,8 +78,10 @@ def provide_sales_port(settings: Settings | None = None) -> SalesOrderPort:
     )
 
 
-def provide_payment_gateway() -> PaymentSimulatorAdapter:
-    return PaymentSimulatorAdapter()
+def provide_payment_gateway(settings: Settings | None = None) -> PaymentSimulatorAdapter:
+    """Simulator payment gateway; the 5 s latency card follows `PAYMENT_SIMULATOR_LATENCY_ENABLED`."""
+    settings = settings or get_settings()
+    return PaymentSimulatorAdapter(simulate_latency=settings.payment_simulator_latency_enabled)
 
 
 def provide_checkout_snapshot(session: AsyncSession) -> CheckoutSnapshotPostgresAdapter:
@@ -115,7 +117,7 @@ def _build_checkout_service(session: AsyncSession) -> ManageCheckoutUseCase:
     return ManageCheckoutUseCase(
         checkouts=CheckoutPostgresAdapter(session),
         payment_attempts=PaymentAttemptPostgresAdapter(session),
-        payment_gateway=provide_payment_gateway(),
+        payment_gateway=provide_payment_gateway(settings),
         uow=SqlAlchemyUnitOfWork(session),
         security_client=provide_security_port(settings),
         carts=cart_repositories.carts,
