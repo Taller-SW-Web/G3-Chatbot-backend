@@ -52,8 +52,8 @@ se muestra el carrito:
 - recalcula precios con G6 y actualiza `cart_item.unit_price_ref` al último
   precio visto (la línea conserva el aviso de cambio vía `previous_price`);
 - evalúa promociones una sola vez y persiste en `cart.totals_snapshot`
-  `subtotal`, `descuentos`, `total`, `promociones_ok`, `promotion_reason` y
-  `correlation_id`;
+  `subtotal`, `descuentos`, `total`, `promociones_ok`, `promotion_reason`,
+  `tiene_no_disponibles` y `correlation_id`;
 - `GET /carrito` hace commit de ese snapshot. Sin ese commit, el checkout
   podría leer un snapshot anterior (caso `PED-2026-00088`).
 
