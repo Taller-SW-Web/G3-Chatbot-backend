@@ -75,6 +75,13 @@ PROBLEM_SCHEMA: dict[str, Any] = {
         },
         "campo": {"type": "string", "description": "Offending field or header name."},
         "modulo": {"type": "string", "description": "Module that is unavailable (503)."},
+        "correlationId": {
+            "type": "string",
+            "description": (
+                "Request correlation id (same value as the X-Correlation-Id header), "
+                "present on 5xx responses for support."
+            ),
+        },
     },
     "additionalProperties": True,
 }

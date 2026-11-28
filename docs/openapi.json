@@ -1478,6 +1478,10 @@
             "description": "Stable machine-readable error code.",
             "type": "string"
           },
+          "correlationId": {
+            "description": "Request correlation id (same value as the X-Correlation-Id header), present on 5xx responses for support.",
+            "type": "string"
+          },
           "detail": {
             "description": "Human-readable explanation, when there is one.",
             "type": [
