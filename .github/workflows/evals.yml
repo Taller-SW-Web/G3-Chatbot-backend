@@ -12,7 +12,7 @@ on:
       llm_model:
         description: "Modelo de OpenAI para las evals"
         required: false
-        default: "gpt-4o-mini"
+        default: "gpt-6-luna"
   schedule:
     # Diario 03:00 America/Lima (08:00 UTC).
     - cron: "0 8 * * *"
@@ -35,7 +35,7 @@ jobs:
       MODULES_MODE: fake
       LLM_PROVIDER: openai
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-      LLM_MODEL: ${{ inputs.llm_model || vars.LLM_MODEL || 'gpt-4o-mini' }}
+      LLM_MODEL: ${{ inputs.llm_model || vars.LLM_MODEL || 'gpt-6-luna' }}
       LLM_TEMPERATURE: "0"
       LLM_MAX_TOKENS: "1024"
       LLM_TIMEOUT_SECONDS: "60"
