@@ -53,10 +53,10 @@ export function uuid() {
   });
 }
 
-export function login() {
+export function login(email = DEMO_EMAIL, password = DEMO_PASSWORD) {
   const res = http.post(
     `${API}/sesion/login`,
-    JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD }),
+    JSON.stringify({ email, password }),
     { headers: JSON_HEADERS, tags: { endpoint: "login" } },
   );
   if (res.status !== 200) {
