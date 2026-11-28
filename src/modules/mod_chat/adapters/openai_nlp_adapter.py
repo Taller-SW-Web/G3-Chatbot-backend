@@ -84,12 +84,16 @@ class OpenAILLMProvider:
             "model": self._model,
             "input": self._to_input_items(messages),
             "max_output_tokens": self._max_tokens,
-            "reasoning": {"effort": self._reasoning_effort},
             "store": False,  # never persist conversations at OpenAI
             "stream": True,
         }
-        # Reasoning models only accept the default temperature; it is sent just when reasoning is off.
-        if self._reasoning_effort == "none":
+        # `reasoning` is only sent when the effort is explicit: the Responses API rejects the
+        # parameter on models without reasoning support (e.g. gpt-4o-mini), which used to turn
+        # every turn into a degraded reply. With "none" the model runs in its non-reasoning mode.
+        if self._reasoning_effort != "none":
+            request["reasoning"] = {"effort": self._reasoning_effort}
+        else:
+            # Reasoning models only accept the default temperature; it is sent just when reasoning is off.
             request["temperature"] = self._temperature
         if tools:
             request["tools"] = [self._to_openai_tool(t) for t in tools]

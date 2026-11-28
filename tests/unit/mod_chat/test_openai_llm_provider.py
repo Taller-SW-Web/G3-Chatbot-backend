@@ -173,7 +173,7 @@ async def test_streams_text_deltas_and_usage_with_default_request_shape():
     assert body["model"] == "test-model"
     assert body["temperature"] == 0.6
     assert body["max_output_tokens"] == 256
-    assert body["reasoning"] == {"effort": "none"}
+    assert "reasoning" not in body
     assert body["store"] is False
     assert "previous_response_id" not in body
     assert body["stream"] is True
@@ -280,6 +280,16 @@ async def test_reasoning_effort_is_sent_and_temperature_omitted_unless_none(effo
     body = json.loads(route.calls[0].request.content)
     assert body["reasoning"] == {"effort": effort}
     assert "temperature" not in body
+
+
+@pytest.mark.asyncio
+async def test_reasoning_is_omitted_when_effort_is_none_so_models_without_reasoning_work():
+    """A non-reasoning model (gpt-4o-mini) rejects the `reasoning` parameter; "none" must not send it."""
+    route = http_mock_post(URL).mock(return_value=sse(completed()))
+    await collect(make_provider(reasoning_effort="none"))
+    body = json.loads(route.calls[0].request.content)
+    assert "reasoning" not in body
+    assert body["temperature"] == 0.6
 
 
 def test_invalid_reasoning_effort_is_rejected():

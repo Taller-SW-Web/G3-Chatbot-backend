@@ -25,6 +25,7 @@ from src.modules.mod_chat.adapters.registry_tool_adapter import RegistryToolAdap
 from src.modules.mod_chat.application.dto.conversation_events import (
     BlockEvent,
     ConversationEvent,
+    DegradedEvent,
     FinalEvent,
 )
 from src.modules.mod_chat.application.interpret_and_respond_use_case import (
@@ -276,6 +277,7 @@ class EvalCase:
     llm_calls: int = 0
     skip_reason: str | None = None
     failure: str | None = None
+    degraded_reason: str | None = None
 
     def check(self, name: str, condition: Any, *, detail: Any = None) -> None:
         passed = bool(condition)
@@ -308,6 +310,7 @@ class EvalCase:
             "llm_calls": self.llm_calls,
             "skip_reason": self.skip_reason,
             "failure": self.failure,
+            "degraded_reason": self.degraded_reason,
         }
 
 
@@ -325,8 +328,20 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-async def run_reference_turn(case: EvalCase, world: ShoppingWorld, text: str) -> list[ConversationEvent]:
-    """Send one customer message and copy tools/text/LLM evidence into the report."""
+async def run_reference_turn(
+    case: EvalCase,
+    world: ShoppingWorld,
+    text: str,
+    *,
+    allow_degraded: bool = False,
+) -> list[ConversationEvent]:
+    """Send one customer message and copy tools/text/LLM evidence into the report.
+
+    A live case fails when the turn falls back to the degraded menu: the assertions
+    below would otherwise pass on the offline fallback (no tools, no invented
+    amounts) and report a real model failure as a green case. Only the dedicated
+    degraded-mode case opts in with `allow_degraded=True`.
+    """
     try:
         events = await world.run(text)
     except BaseException:
@@ -336,6 +351,16 @@ async def run_reference_turn(case: EvalCase, world: ShoppingWorld, text: str) ->
     case.final_text = final_text(events)
     case.record_tool_calls(world.tools.calls)
     case.llm_calls = len(world.llm.calls)
+    reasons = [
+        event.reason for event in events if isinstance(event, DegradedEvent)
+    ]
+    case.degraded_reason = reasons[-1] if reasons else None
+    if not allow_degraded:
+        case.check(
+            "el turno no cayó en modo degradado",
+            not reasons,
+            detail={"degraded_reason": case.degraded_reason, "llm_calls": case.llm_calls},
+        )
     return events
 
 
