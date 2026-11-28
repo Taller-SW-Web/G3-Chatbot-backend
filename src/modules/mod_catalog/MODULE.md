@@ -58,6 +58,18 @@ BFF aplica el orden sobre la página devuelta (hasta 10) y deja los productos si
 precio al final. El orden es de página hasta que Productos publique precio
 (A16); `NOVEDAD`/`RELEVANCIA` conservan el orden del proveedor.
 
+## Paginación y resultados vacíos (SPEC-06 Req. 4)
+
+`buscar_productos` agrega `total` y `siguiente` dentro de
+`CARRUSEL_PRODUCTOS.datos`. `total` es el entero reportado por Productos (el
+total consultado cuando la respuesta es parcial); `siguiente` es el payload de
+`BUSCAR_PAGINA` con `pagina` y los filtros normalizados, o `null` en la última
+página. `BUSCAR_PAGINA` con solo `pagina` reutiliza `filtrosVigentes`, de modo
+que el frontend no reconstruye filtros. Sin resultados, la respuesta trae
+`ACCIONES_RAPIDAS` con hasta 3 `BUSCAR_PRODUCTOS` que quitan un filtro activo
+(precio máximo, marca, categoría, precio mínimo, talla, color, ofertas o texto
+libre), usando solo marcas y categorías reales del catálogo.
+
 ## Pruebas
 
 - Unitarias: `tests/unit/mod_catalog/`

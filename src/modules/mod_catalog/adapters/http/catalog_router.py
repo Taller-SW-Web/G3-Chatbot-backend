@@ -110,7 +110,11 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         except Exception as exc:
             raise _problem(_as_catalog_error(exc)) from exc
         bloques = result.get("bloques", [])
-        items = bloques[0]["datos"]["productos"] if bloques else []
+        items: list[dict[str, Any]] = next(
+            (bloque["datos"]["productos"] for bloque in bloques
+             if bloque.get("tipo") == "CARRUSEL_PRODUCTOS"),
+            [],
+        )
         return {"items": items, "total": result.get("total", len(items)),
                 "total_scope": result.get("total_scope", "catalog"),
                 "mensaje": result.get("texto", ""), "partial": result.get("partial", False)}
