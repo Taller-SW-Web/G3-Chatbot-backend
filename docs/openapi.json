@@ -1530,6 +1530,10 @@
             "description": "Stable machine-readable error code.",
             "type": "string"
           },
+          "correlationId": {
+            "description": "Request correlation id (same value as the X-Correlation-Id header), present on 5xx responses for support.",
+            "type": "string"
+          },
           "detail": {
             "description": "Human-readable explanation, when there is one.",
             "type": [
@@ -3862,6 +3866,7 @@
             "required": false,
             "schema": {
               "default": 1,
+              "maximum": 1000,
               "minimum": 1,
               "title": "Pagina",
               "type": "integer"
@@ -4215,6 +4220,7 @@
             "required": false,
             "schema": {
               "default": 1,
+              "maximum": 1000,
               "minimum": 1,
               "title": "Pagina",
               "type": "integer"
@@ -4344,6 +4350,7 @@
             "required": false,
             "schema": {
               "default": 1,
+              "maximum": 1000,
               "minimum": 1,
               "title": "Pagina",
               "type": "integer"
@@ -5492,6 +5499,7 @@
             "required": false,
             "schema": {
               "default": 1,
+              "maximum": 1000,
               "minimum": 1,
               "title": "Page",
               "type": "integer"
@@ -6293,6 +6301,7 @@
             "required": false,
             "schema": {
               "default": 1,
+              "maximum": 1000,
               "minimum": 1,
               "title": "Page",
               "type": "integer"
@@ -6945,6 +6954,7 @@
             "required": false,
             "schema": {
               "default": 1,
+              "maximum": 1000,
               "minimum": 1,
               "title": "Page",
               "type": "integer"
@@ -8047,7 +8057,7 @@
     },
     "/health": {
       "get": {
-        "description": "Liveness: deliberately does not touch the database.",
+        "description": "Liveness: deliberately does not touch the database.\n\nFake modules are a degraded channel even when an explicit opt-in allowed\nthem: the response says so instead of pretending the real services answered.",
         "operationId": "health_health_get",
         "responses": {
           "200": {

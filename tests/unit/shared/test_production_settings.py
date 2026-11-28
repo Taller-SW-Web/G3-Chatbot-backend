@@ -2,6 +2,7 @@
 import logging
 
 import pytest
+from fastapi.testclient import TestClient
 
 from src.infrastructure.main import create_app
 from src.shared.infrastructure.config.settings import Settings, get_settings, warn_unsafe_defaults
@@ -36,7 +37,11 @@ def env(monkeypatch):
         *SAFE_ENV,
         "SECURITY_CLIENT_SECRET",
         "ALLOW_FAKE_SECURITY",
+        "ALLOW_FAKE_MODULES",
         "SECURITY_MODE",
+        "PRODUCTS_MODE",
+        "SALES_MODE",
+        "DISPATCH_MODE",
         "REQUIRE_PHONE_VERIFICATION",
         "REQUIRE_VERIFIED_CONTACT",
         "ALLOW_LOCAL_ATTACHMENTS",
@@ -146,12 +151,42 @@ def test_production_does_not_fall_back_to_the_client_secret(env, monkeypatch):
 
 
 def test_fake_security_in_production_still_needs_the_opt_in(env, monkeypatch):
-    env(MODULES_MODE="fake")
+    env(SECURITY_MODE="fake")
     with pytest.raises(ValueError, match="ALLOW_FAKE_SECURITY"):
         get_settings()
     monkeypatch.setenv("ALLOW_FAKE_SECURITY", "true")
     get_settings.cache_clear()
     assert get_settings().allow_fake_security is True
+
+
+@pytest.mark.parametrize(
+    "variable",
+    ["PRODUCTS_MODE", "SALES_MODE", "DISPATCH_MODE"],
+)
+def test_production_refuses_each_fake_module_without_the_opt_in(env, variable):
+    env(**{variable: "fake"})
+    with pytest.raises(ValueError, match="ALLOW_FAKE_MODULES"):
+        get_settings()
+
+
+def test_startup_refuses_fake_modules_in_production(env):
+    env(SALES_MODE="fake")
+    with pytest.raises(ValueError, match="ALLOW_FAKE_MODULES"):
+        create_app()
+
+
+def test_startup_boots_with_fake_modules_only_with_the_exception(env, caplog):
+    env(SALES_MODE="fake", ALLOW_FAKE_MODULES="true")
+    assert get_settings().allow_fake_modules is True
+    with caplog.at_level(logging.WARNING, logger="src.infrastructure.main"):
+        app = create_app()
+    message = " ".join(record.getMessage() for record in caplog.records)
+    assert "fake modules active" in message
+    health = TestClient(app).get("/health")
+    assert health.status_code == 200
+    body = health.json()
+    assert body["status"] == "degraded"
+    assert body["fakeModules"] == ["sales"]
 
 
 def test_unset_app_env_boots_with_dev_defaults(env, monkeypatch):
