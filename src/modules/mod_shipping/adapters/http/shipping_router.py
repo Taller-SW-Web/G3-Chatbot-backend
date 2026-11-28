@@ -21,6 +21,7 @@ from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
+from src.shared.infrastructure.http.openapi import problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 
@@ -100,7 +101,7 @@ def _translate_shipping_error(exc: Exception) -> ProblemError:
 def create_shipping_router(
     shipping_provider: Callable[..., ShippingServicePort],
 ) -> APIRouter:
-    router = APIRouter(tags=[MODULE_ID])
+    router = APIRouter(tags=[MODULE_ID], responses=problem_responses(503))
 
     @router.get("/direcciones", response_model=SavedAddressesResponse)
     async def list_saved_addresses(
@@ -119,7 +120,11 @@ def create_shipping_router(
         rows = raw.get("direcciones", []) if isinstance(raw, dict) else raw
         return SavedAddressesResponse.model_validate({"direcciones": rows or []})
 
-    @router.post("/envio/cotizar", response_model=ShippingQuoteResponse)
+    @router.post(
+        "/envio/cotizar",
+        response_model=ShippingQuoteResponse,
+        responses=problem_responses(409, 422, 429),
+    )
     async def quote_shipping(
         body: ShippingQuoteRequest,
         caller: CallerIdentity = Depends(require_customer),

@@ -14,7 +14,9 @@ from src.shared.infrastructure.di.capabilities import ACTION_SCOPE
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.correlation import CorrelationMiddleware
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
+from src.shared.infrastructure.http.gateway_guard import GatewaySecretMiddleware
 from src.shared.infrastructure.http.health_router import router as health_router
+from src.shared.infrastructure.http.openapi import install_openapi_contract
 from src.shared.infrastructure.http.problem import register_problem_handlers
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.worker.outbox_loop import outbox_worker_lifespan
@@ -49,8 +51,11 @@ def create_app(
             settings.allow_fake_security,
         )
     app = FastAPI(title="G3 Chatbot backend", lifespan=outbox_worker_lifespan)
+    if settings.gateway_shared_secret:
+        app.add_middleware(GatewaySecretMiddleware, secret=settings.gateway_shared_secret)
     app.add_middleware(CorrelationMiddleware)
     register_problem_handlers(app)
+    install_openapi_contract(app)
     app.include_router(health_router)
     options = RouterOptions(turn_scope=turn_scope, action_scope=action_scope)
     for module in discover_modules():

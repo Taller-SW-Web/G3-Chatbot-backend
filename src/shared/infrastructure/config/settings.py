@@ -78,6 +78,8 @@ class Settings:
     cookie_secure: bool = True
     # Exact origins allowed to call the mutating session endpoints (CSRF check, ADR-0023).
     allowed_origins: tuple[str, ...] = ("http://localhost:3000",)
+    # Shared secret injected by Kong (X-Gateway-Secret) to block direct public backend access (#256).
+    gateway_shared_secret: str = ""
     # LLM (ADR-0005). The key may be empty: the provider fails lazily, with LLMUnavailableError, when used.
     llm_provider: str = "openai"
     llm_model: str = "gpt-6-luna"
@@ -191,6 +193,8 @@ class Settings:
     attachment_signed_url_ttl_seconds: int = 300
     attachment_max_images_per_turn: int = 6
     attachment_cleanup_interval_seconds: float = 3600.0
+    # SPEC-05 retention sweep: closes anonymous conversations (>7d) and archives customer ones (>90d).
+    conversation_retention_interval_seconds: float = 3600.0
     attachment_max_bytes: int = 5 * 1024 * 1024
     attachment_max_side: int = 4096
     attachment_stored_side: int = 2048
@@ -328,6 +332,12 @@ def warn_unsafe_defaults(settings: Settings, log) -> None:
             log.warning(
                 "APP_ENV=%s: REQUIRE_PHONE_VERIFICATION and REQUIRE_VERIFIED_CONTACT are both "
                 "false; checkout accepts unverified contacts.",
+                settings.app_env,
+            )
+        if not settings.gateway_shared_secret:
+            log.warning(
+                "APP_ENV=%s: GATEWAY_SHARED_SECRET is unset; direct requests to the backend "
+                "domain are not blocked by GatewaySecretMiddleware (#256).",
                 settings.app_env,
             )
         return
@@ -485,5 +495,9 @@ def _build_settings(app_role: str = "api") -> Settings:
         ),
         attachment_cleanup_interval_seconds=_number(
             "ATTACHMENT_CLEANUP_INTERVAL_SECONDS", "3600", float, minimum=60
+        ),
+        gateway_shared_secret=os.getenv("GATEWAY_SHARED_SECRET", "").strip(),
+        conversation_retention_interval_seconds=_number(
+            "CONVERSATION_RETENTION_INTERVAL_SECONDS", "3600", float, minimum=60
         ),
     )

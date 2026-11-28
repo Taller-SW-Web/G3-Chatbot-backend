@@ -50,6 +50,7 @@ secreto para desarrollar**, salvo que quieras probar el chat con LLM real.
 | `API_PROXY_TARGET` (frontend) | No | — | `.env.example` |
 | `SONAR_TOKEN` | **Sí** | Admin de SonarCloud | GitHub → Secrets → Actions |
 | `RABBITMQ_URL` | **Sí** (contiene credenciales) | Lead/DevOps (CloudAMQP) | Railway/Vault; nunca en el repo |
+| `GATEWAY_SHARED_SECRET` | **Sí** | Lead/DevOps (Kong + Backend) | Railway (mismo valor en ambos servicios) / Vault; nunca en el repo |
 
 El resto (URLs, flags, modelos, timeouts) está en `.env.template` y se versiona.
 

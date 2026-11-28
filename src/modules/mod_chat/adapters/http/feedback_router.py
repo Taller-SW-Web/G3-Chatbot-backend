@@ -17,6 +17,7 @@ from src.shared.infrastructure.http.dependencies.rate_limiter import (
     SUGGESTIONS_PER_HOUR,
     InMemoryRateLimiter,
 )
+from src.shared.infrastructure.http.openapi import idempotency_key_required, problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 
@@ -50,7 +51,11 @@ def create_feedback_router(
     router = APIRouter(tags=[MODULE_ID])
     limiter = rate_limiter or InMemoryRateLimiter()
 
-    @router.post("/mensajes/{message_id}/reaccion", response_model=ReactionOut)
+    @router.post(
+        "/mensajes/{message_id}/reaccion",
+        response_model=ReactionOut,
+        responses=problem_responses(404, 429),
+    )
     async def react(
         message_id: uuid.UUID,
         body: ReactionIn,
@@ -75,7 +80,12 @@ def create_feedback_router(
             raise _problem(exc) from exc
         return ReactionOut(**answer)
 
-    @router.post("/sugerencias", status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/sugerencias",
+        status_code=status.HTTP_201_CREATED,
+        responses=problem_responses(429, 503),
+        openapi_extra=idempotency_key_required(),
+    )
     async def create_suggestion(
         tipo: str = Form(...),
         titulo: str = Form(...),

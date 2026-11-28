@@ -12,6 +12,7 @@ import time
 import uuid
 
 from src.shared.application.ports.checkout_document_port import CheckoutDocumentPort
+from src.shared.application.ports.conversation_repository_port import ConversationRepositoryPort
 from src.shared.application.ports.phone_verification_port import PhoneVerificationPort
 from src.shared.application.ports.security_port import SecurityPort
 from src.shared.application.ports.token_validator_port import (
@@ -19,6 +20,7 @@ from src.shared.application.ports.token_validator_port import (
     AccountNotAllowedError,
     InvalidTokenError,
 )
+from src.shared.application.unit_of_work_port import UnitOfWorkPort
 from src.shared.domain.masking import mask_email
 from src.shared.domain.module_errors import ModuleRequestError
 
@@ -46,18 +48,10 @@ def merge_cart_lines(anonymous_lines: list[dict], customer_lines: list[dict]) ->
 
 
 def mask_document(document: dict) -> dict:
-    """Masks the document number, keeping only its last four digits (modelo-datos.md §AccountPage)."""
+    """Masks the document number, keeping only its last three characters (SPEC-03 Req. 7)."""
     numero = str(document.get("numero", ""))
-    masked = "*" * max(len(numero) - 4, 0) + numero[-4:] if numero else ""
+    masked = "*" * max(len(numero) - 3, 0) + numero[-3:] if numero else ""
     return {"tipo": document.get("tipo"), "numeroEnmascarado": masked}
-
-
-def _profile_document(profile: dict, checkout_document: dict | None) -> dict | None:
-    """Seguridad's `tipoDocumento`/`documentoEnmascarado` win; else the last checkout document."""
-    masked = profile.get("documentoEnmascarado")
-    if masked:
-        return {"tipo": profile.get("tipoDocumento"), "numeroEnmascarado": str(masked)}
-    return mask_document(checkout_document) if checkout_document else None
 
 
 class InvalidCredentialsError(Exception):
@@ -80,12 +74,16 @@ class ManageSessionUseCase:
         *,
         phone_verifications: PhoneVerificationPort | None = None,
         checkouts: CheckoutDocumentPort | None = None,
+        conversations: ConversationRepositoryPort | None = None,
+        uow: UnitOfWorkPort | None = None,
         clock=time.monotonic,
     ):
         self._security = security
         self._validator = validator
         self._phone_verifications = phone_verifications
         self._checkouts = checkouts
+        self._conversations = conversations
+        self._uow = uow
         self._clock = clock
         self._password_policy: dict | None = None
         self._password_policy_at = 0.0
@@ -137,7 +135,14 @@ class ManageSessionUseCase:
         """Neutral re-send: the answer never reveals whether the account exists (SPEC-02 Req. 2)."""
         return await self._security.resend_verification(email)
 
-    async def login(self, email: str, password: str, *, canal: str | None = None) -> dict:
+    async def login(
+        self,
+        email: str,
+        password: str,
+        *,
+        canal: str | None = None,
+        anonymous_sid: str | None = None,
+    ) -> dict:
         """Returns the Seguridad answer: opened tokens or `{mfaRequerido, challengeToken, canal}`.
 
         When MFA is required, the OTP is requested here (SPEC-03 Req. 2); the
@@ -154,12 +159,18 @@ class ManageSessionUseCase:
             if challenge:
                 await self._security.request_mfa(challenge, canal or answer.get("canal"))
             return answer
-        return await self._validated_session(answer)
+        return await self._validated_session(answer, anonymous_sid=anonymous_sid)
 
     async def request_mfa_code(self, challenge_token: str, canal: str | None = None) -> dict:
         return await self._security.request_mfa(challenge_token, canal)
 
-    async def verify_mfa_code(self, challenge_token: str, code: str) -> dict:
+    async def verify_mfa_code(
+        self,
+        challenge_token: str,
+        code: str,
+        *,
+        anonymous_sid: str | None = None,
+    ) -> dict:
         try:
             answer = await self._security.verify_mfa(challenge_token, code)
         except ModuleRequestError as exc:
@@ -169,23 +180,66 @@ class ManageSessionUseCase:
             if exc.status == 401:
                 raise InvalidCredentialsError(exc.intentos_restantes) from None
             raise
-        return await self._validated_session(answer)
+        return await self._validated_session(answer, anonymous_sid=anonymous_sid)
 
-    async def _validated_session(self, answer: dict) -> dict:
+    async def _validated_session(
+        self, answer: dict, *, anonymous_sid: str | None = None
+    ) -> dict:
         """Validates the emitted access token before opening the session (SPEC-03 Req. 1).
 
         A token without the `CLIENTE` role (or an invalid token) discards the
         session in Seguridad and aborts, so no cookie/token reaches the client.
+        When `anonymous_sid` is present, anonymous conversations are linked to
+        the customer and any stored `accionPendiente` is consumed once.
         """
         token = answer.get("accessToken")
         try:
             if not token:
                 raise InvalidTokenError("Seguridad returned no access token.")
-            await self._validator.validate_customer(token)
+            claims = await self._validator.validate_customer(token)
         except (AccountNotAllowedError, InvalidTokenError):
             await self.logout(answer.get("refreshToken"))
             raise
-        return answer
+        result = dict(answer)
+        pending_action = await self._link_anonymous_conversations(
+            anonymous_sid=anonymous_sid,
+            claims=claims,
+            answer=result,
+        )
+        if pending_action is not None:
+            result["accionPendiente"] = pending_action
+        return result
+
+    async def _link_anonymous_conversations(
+        self,
+        *,
+        anonymous_sid: str | None,
+        claims: object,
+        answer: dict,
+    ) -> str | None:
+        if not anonymous_sid or self._conversations is None:
+            return None
+        raw_sub = claims.get("sub") if isinstance(claims, dict) else None
+        if not raw_sub:
+            usuario = answer.get("usuario")
+            raw_sub = usuario.get("id") if isinstance(usuario, dict) else None
+        if not raw_sub:
+            return None
+        try:
+            customer_id = uuid.UUID(str(raw_sub))
+        except ValueError:
+            return None
+        try:
+            _, pending_action = await self._conversations.link_anonymous_to_customer(
+                anonymous_sid, customer_id
+            )
+            if self._uow is not None:
+                await self._uow.commit()
+            return pending_action
+        except Exception:
+            if self._uow is not None:
+                await self._uow.rollback()
+            raise
 
     async def refresh(self, refresh_token: str) -> dict:
         try:
@@ -212,8 +266,10 @@ class ManageSessionUseCase:
         if phone and self._phone_verifications is not None:
             verified = await self._phone_verifications.existe(uuid.UUID(str(customer_id)), phone)
         profile["celularVerificado"] = verified
-        document = None
-        if "documentoEnmascarado" not in profile and self._checkouts is not None:
-            document = await self._checkouts.latest_document(uuid.UUID(str(customer_id)))
-        profile["ultimoDocumento"] = _profile_document(profile, document)
+        document = (
+            await self._checkouts.latest_document(uuid.UUID(str(customer_id)))
+            if self._checkouts is not None
+            else None
+        )
+        profile["ultimoDocumento"] = mask_document(document) if document else None
         return profile

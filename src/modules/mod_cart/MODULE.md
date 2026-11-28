@@ -17,6 +17,7 @@ ni crea pedidos (eso es `mod-checkout`).
 | Tipo | Archivo | Qué expone |
 |---|---|---|
 | Backend | `public.py` | `provide_cart_service`, `provide_cart_repositories` (`CartRepositories`), `ManageCartUseCase`, `CartError` |
+| Backend (capacidad) | `module.py` | Capacidad `CART_MERGE` (`provide_cart_merge` → `MergeAnonymousCartService`), consumida opcionalmente por `mod-auth` en el login sin violar el DAG |
 | Frontend | `public.ts` | Tipos de carrito e ítem |
 
 `provide_cart_repositories` lo consumen `mod-checkout` y `mod-shipping`, ambos
@@ -51,8 +52,8 @@ se muestra el carrito:
 - recalcula precios con G6 y actualiza `cart_item.unit_price_ref` al último
   precio visto (la línea conserva el aviso de cambio vía `previous_price`);
 - evalúa promociones una sola vez y persiste en `cart.totals_snapshot`
-  `subtotal`, `descuentos`, `total`, `promociones_ok`, `promotion_reason` y
-  `correlation_id`;
+  `subtotal`, `descuentos`, `total`, `promociones_ok`, `promotion_reason`,
+  `tiene_no_disponibles` y `correlation_id`;
 - `GET /carrito` hace commit de ese snapshot. Sin ese commit, el checkout
   podría leer un snapshot anterior (caso `PED-2026-00088`).
 

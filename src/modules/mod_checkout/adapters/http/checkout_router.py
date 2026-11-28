@@ -17,6 +17,7 @@ from src.shared.application.dto.commerce_contracts_dto import CreateCheckoutRequ
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
+from src.shared.infrastructure.http.openapi import idempotency_key_required, problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 
@@ -132,9 +133,13 @@ def _translate_error(err: CheckoutError) -> ProblemError:
 def create_checkout_router(
     use_case_provider: Callable[..., ManageCheckoutUseCase],
 ) -> APIRouter:
-    router = APIRouter(tags=[MODULE_ID])
+    router = APIRouter(tags=[MODULE_ID], responses=problem_responses(402, 404, 409, 410, 422, 503))
 
-    @router.post("/checkout", status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/checkout",
+        status_code=status.HTTP_201_CREATED,
+        openapi_extra=idempotency_key_required(),
+    )
     async def create_checkout(
         payload: CreateCheckoutRequest,
         response: Response,
@@ -207,7 +212,11 @@ def create_checkout_router(
         except CheckoutError as exc:
             raise _translate_error(exc) from exc
 
-    @router.post("/checkout/{checkout_id}/pago", response_model=ProcessPaymentResponse)
+    @router.post(
+        "/checkout/{checkout_id}/pago",
+        response_model=ProcessPaymentResponse,
+        openapi_extra=idempotency_key_required(),
+    )
     async def process_payment(
         checkout_id: UUID,
         payload: ProcessPaymentRequest,

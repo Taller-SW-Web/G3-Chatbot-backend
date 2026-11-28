@@ -478,21 +478,33 @@ class ManageCartUseCase:
             return self._empty_cart_view()
         skus = [row.sku for row in rows]
         price_rows: dict = {}
-        prices, (evaluation, promotions_ok) = await asyncio.gather(
+        prices, (availability, availability_degraded) = await asyncio.gather(
             self._prices_map(skus, price_rows),
-            self._evaluate(cart, rows, coupon_code=coupon_code),
+            self._availability_map(skus),
         )
-        # No campaign lookup is needed when no campaign was applied. Preserve
-        # every authoritative evaluated discount; only its display name is optional.
-        names = await self._promotion_names() if evaluation and evaluation.get("promotion_id") else {}
-        codigo_efectivo = (
-            cart.coupon_code if coupon_code is _COUPON_SIN_CAMBIAR else coupon_code
-        )
-        if codigo_efectivo and evaluation and evaluation.get("promotion_id"):
-            names[str(evaluation["promotion_id"])] = f"Cupón {codigo_efectivo}"
         priced: list[PricedLine] = []
+        unavailable_reasons: dict[str, str] = {}
+        indeterminate_skus: set[str] = set()
         for row in rows:
             price = prices.get(row.sku)
+            stock_check = availability.get(row.sku)
+            # Precedence (gestion-carrito/spec.md:108-110): missing price / inactive SKU
+            # is always "Ya no disponible", never "Agotado".
+            if price is None:
+                is_available = False
+                unavailable_reasons[row.sku] = "NO_DISPONIBLE"
+            elif stock_check is not None and stock_check.code == "SKU_AGOTADO":
+                is_available = False
+                unavailable_reasons[row.sku] = "AGOTADO"
+            elif stock_check is not None and not stock_check.ok:
+                is_available = False
+                unavailable_reasons[row.sku] = "NO_DISPONIBLE"
+            else:
+                is_available = True
+                if availability_degraded or (
+                    stock_check is not None and stock_check.code == "INDETERMINADO"
+                ):
+                    indeterminate_skus.add(row.sku)
             priced.append(PricedLine(
                 sku=row.sku,
                 name=row.name,
@@ -501,8 +513,48 @@ class ManageCartUseCase:
                 previous_price=Decimal(str(row.unit_price_ref)),
                 image_url=row.image_url,
                 variant_description=row.variant_description,
-                available=price is not None,
+                available=is_available,
             ))
+        sellable_rows = [row for row, line in zip(rows, priced, strict=True) if line.available]
+        if sellable_rows:
+            evaluation, promotions_ok = await self._evaluate(
+                cart, sellable_rows, coupon_code=coupon_code
+            )
+        else:
+            evaluation, promotions_ok = None, True
+
+        codigo_efectivo = (
+            cart.coupon_code if coupon_code is _COUPON_SIN_CAMBIAR else coupon_code
+        )
+        removed_coupon_notice: str | None = None
+        if (
+            codigo_efectivo
+            and promotions_ok
+            and evaluation is not None
+            and evaluation.get("coupon_applied") is False
+        ):
+            rejection_reason = str(evaluation.get("reason") or "").upper()
+            await self._carts.set_coupon(cart.id, None)
+            if "MINIMO" in rejection_reason or "MINIMUM" in rejection_reason:
+                removed_coupon_notice = (
+                    f"Quitamos el cupón {codigo_efectivo} porque tu compra ya no alcanza el mínimo"
+                )
+            else:
+                removed_coupon_notice = (
+                    f"Quitamos el cupón {codigo_efectivo} porque ya no es válido"
+                )
+            codigo_efectivo = None
+            # Re-evaluate without coupon so automatic promotions are not suppressed.
+            if sellable_rows:
+                evaluation, promotions_ok = await self._evaluate(
+                    cart, sellable_rows, coupon_code=None
+                )
+
+        # No campaign lookup is needed when no campaign was applied. Preserve
+        # every authoritative evaluated discount; only its display name is optional.
+        names = await self._promotion_names() if evaluation and evaluation.get("promotion_id") else {}
+        if codigo_efectivo and evaluation and evaluation.get("promotion_id"):
+            names[str(evaluation["promotion_id"])] = f"Cupón {codigo_efectivo}"
         totals = self._totals.calculate(
             priced, evaluation=evaluation, promotion_names=names
         )
@@ -527,6 +579,7 @@ class ManageCartUseCase:
             # promotions: a zero discount is not the same as an unavailable engine.
             "promociones_ok": promotions_ok,
             "promotion_reason": evaluation.get("reason") if evaluation else None,
+            "tiene_no_disponibles": bool(unavailable_reasons),
             # Lets an incident match this snapshot with the G6 evaluation.
             "correlation_id": correlation_id_var.get(),
         })
@@ -550,6 +603,8 @@ class ManageCartUseCase:
         unavailable = [line for i, line in enumerate(lines_out) if not priced[i].available]
         texto = f"Tu carrito: {len(rows)} productos · S/ {totals.total:.2f}"
         notices = list(totals.notices)
+        if removed_coupon_notice is not None:
+            notices.append(removed_coupon_notice)
         if conversation_id is not None:
             memory = await self._memory(conversation_id)
             snapshots = dict(memory.get("cartOfferPrices", {}))
@@ -567,8 +622,18 @@ class ManageCartUseCase:
                 memory["cartOfferPrices"] = snapshots
                 await self._conversation_context.save_context(conversation_id, memory)
         for line in unavailable:
-            notices.append(f"{line['nombre']} ya no está disponible. Puedes quitarlo.")
-            line["nota"] = "Ya no disponible"
+            reason = unavailable_reasons.get(line["sku"], "NO_DISPONIBLE")
+            if reason == "AGOTADO":
+                notices.append(f"{line['nombre']} está agotado. Puedes quitarlo.")
+                line["nota"] = "Agotado"
+            else:
+                notices.append(f"{line['nombre']} ya no está disponible. Puedes quitarlo.")
+                line["nota"] = "Ya no disponible"
+        if indeterminate_skus:
+            for line in lines_out:
+                if line["disponible"] and line["sku"] in indeterminate_skus:
+                    line["nota"] = "No pudimos confirmar el stock"
+            notices.append("No pudimos confirmar el stock")
         if not promotions_ok:
             notices.append("El checkout queda bloqueado hasta calcular promociones.")
         return {
@@ -792,6 +857,22 @@ class ManageCartUseCase:
         if captured is not None:
             captured.append(row)
         return regular
+
+    async def _availability_map(self, skus: list[str]) -> tuple[dict[str, Any], bool]:
+        """Batch-revalidate SKU availability in one call (no N+1, SPEC-11, #247)."""
+        try:
+            rows = await self._inventory.get_availability(skus)
+        except Exception as exc:
+            module, status, code = failure_summary(exc, default_module="products")
+            logger.warning(
+                "cart availability batch check failed module=%s status=%s code=%s correlation_id=%s",
+                module,
+                status,
+                code,
+                correlation_id_var.get(),
+            )
+            return {}, True
+        return self._stock.check_bulk(rows, requested=skus), False
 
     async def _prices_map(self, skus: list[str], captured=None) -> dict[str, Decimal]:
         try:

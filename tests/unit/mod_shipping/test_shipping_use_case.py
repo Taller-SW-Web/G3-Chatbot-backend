@@ -89,8 +89,8 @@ async def test_quote_reads_cart_lines_and_forwards_address():
         "distrito": "Miraflores",
         "direccion": "Av. Larco 1234, dpto. 502",
     }
-    # H4-S7: the service sends a dashed UUID as correlation id.
-    assert str(uuid.UUID(call["correlation_id"])) == call["correlation_id"]
+    # #248: the use case never invents an id; the adapter inherits the request's.
+    assert call["correlation_id"] is None
 
 
 @pytest.mark.asyncio

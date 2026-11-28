@@ -7,6 +7,7 @@ refer to a capability without importing the module that owns it.
 """
 
 CHECKOUT_DOCUMENT = "checkout_document"
+CART_MERGE = "cart_merge"
 CONVERSATION_CONTEXT = "conversation_context"
 DISPATCH_PORT = "dispatch_port"
 ORDER_CONFIRMATION = "order_confirmation"
@@ -17,15 +18,18 @@ OUTBOX_TASK_HANDLER = "outbox_task_handler"
 OUTBOX_PUBLISHER = "outbox_publisher"
 ACTION_SCOPE = "action_scope"
 ATTACHMENT_CLEANUP = "attachment_cleanup"
+CONVERSATION_RETENTION = "conversation_retention"
 FEEDBACK_NOTIFIER = "feedback_notifier"
 CHECKOUT_EXPIRY = "checkout_expiry"
 
 __all__ = [
     "ACTION_SCOPE",
     "ATTACHMENT_CLEANUP",
+    "CART_MERGE",
     "CHECKOUT_DOCUMENT",
     "CHECKOUT_EXPIRY",
     "CONVERSATION_CONTEXT",
+    "CONVERSATION_RETENTION",
     "DISPATCH_PORT",
     "FEEDBACK_NOTIFIER",
     "ORDER_CONFIRMATION",
