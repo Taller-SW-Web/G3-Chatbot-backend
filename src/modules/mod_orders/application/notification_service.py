@@ -13,10 +13,13 @@ Entry points:
 - `resend_confirmation(...)`: the "Reenviar" action (max. 2 per order,
   `CONFIRMATION_RESEND`), deduplicated by customer, order and Idempotency-Key.
 
-With `send_inline` the task is also run right after enqueueing it, so the
-e-mail goes out before the outbox worker exists; the worker later finds it
-`SENT` and only closes the task. A failure here never reaches the purchase
-flow (SPEC-16 Req. 3). Never imports FastAPI, SQLAlchemy, smtplib or Jinja2.
+With `send_inline` (off by default) the task is also run right after enqueueing
+it. The normal path is the outbox worker: `POST /pago` only enqueues the
+`SEND_EMAIL` task, so an SMTP timeout never blocks the purchase (SPEC-16 Req. 3,
+checkout-pago RNF Rendimiento). If the worker is disabled in an environment,
+set `NOTIFICATION_SEND_INLINE=true` as the documented fallback. A failed inline
+send stays `PENDING` for the worker; it never reaches the purchase flow.
+Never imports FastAPI, SQLAlchemy, smtplib or Jinja2.
 """
 import logging
 from dataclasses import dataclass
@@ -83,7 +86,7 @@ class NotificationService:
         uow: UnitOfWorkPort,
         *,
         frontend_base_url: str,
-        send_inline: bool = True,
+        send_inline: bool = False,
         clock=None,
     ):
         self._notifications = notifications

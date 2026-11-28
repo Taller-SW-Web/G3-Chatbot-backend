@@ -3,6 +3,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
 from src.shared.infrastructure.http.health_router import router
 
@@ -52,3 +53,39 @@ async def test_liveness_never_touches_the_database():
     res = await _get(_app(session), "/health")
     assert res.status_code == 200
     assert session.statements == []
+
+
+@pytest.mark.asyncio
+async def test_liveness_declares_the_effective_email_mode(monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("EMAIL_MODE", raising=False)
+    try:
+        res = await _get(_app(FakeSession()), "/health")
+        assert res.status_code == 200
+        assert res.json()["emailMode"] == "fake"
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_liveness_declares_an_explicit_fake_mode_in_production(monkeypatch):
+    import src.shared.infrastructure.http.health_router as health_router
+
+    monkeypatch.setattr(
+        health_router,
+        "get_settings",
+        lambda: Settings(
+            app_env="production",
+            email_mode="fake",
+            attachment_storage="supabase",
+            supabase_url="https://storage.example.com",
+            supabase_service_key="service-key-value",
+        ),
+    )
+
+    res = await _get(_app(FakeSession()), "/health")
+
+    assert res.status_code == 200
+    assert res.json()["emailMode"] == "fake"

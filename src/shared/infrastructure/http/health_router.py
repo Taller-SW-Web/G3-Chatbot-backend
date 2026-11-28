@@ -19,14 +19,18 @@ router = APIRouter(tags=["health"])
 async def health() -> dict:
     """Liveness: deliberately does not touch the database.
 
-    Fake modules are a degraded channel even when an explicit opt-in allowed
-    them: the response says so instead of pretending the real services answered.
+    Declares the e-mail delivery mode (`smtp` or `fake`) and any fake module:
+    an inferred fake sender fails the production boot (backend#250) and fake
+    modules are a degraded channel even with an explicit opt-in (backend#255),
+    so operators can confirm here what the process is really using.
     """
+    settings = get_settings()
     missing = registry.optional_missing
-    fake_modules = get_settings().fake_modules()
-    if not missing and not fake_modules:
-        return {"status": "ok"}
-    body: dict = {"status": "degraded"}
+    fake_modules = settings.fake_modules()
+    body: dict = {
+        "status": "degraded" if missing or fake_modules else "ok",
+        "emailMode": settings.email_mode,
+    }
     if fake_modules:
         body["fakeModules"] = list(fake_modules)
     if missing:

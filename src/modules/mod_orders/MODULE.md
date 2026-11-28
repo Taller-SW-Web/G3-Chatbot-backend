@@ -42,7 +42,9 @@ página fuera de rango responde `400 VALIDACION` sin consultar la base ni G5
 - **G5 Ventas** `GET /pedidos/me`, `GET /pedidos/{id}` con el token del titular.
 - **G2 Despacho** `GET /seguimientos/pedidos/{id}` con service token, vía
   capacidad `dispatch_port`.
-- **SMTP** (`SMTP_HOST`) o el `FakeEmailSender` en memoria.
+- **SMTP** (`EMAIL_MODE=smtp` + `SMTP_HOST`) o el `FakeEmailSender` en memoria
+  (`EMAIL_MODE=fake`). Producción sin `SMTP_HOST` falla al arrancar salvo que
+  `EMAIL_MODE=fake` sea explícito; `/health` publica el modo efectivo.
 - Tabla `notification` (propia); `order_ref`/`checkout`/`payment_attempt` y el
   outbox se leen/escriben a través de `mod-checkout.public`.
 
