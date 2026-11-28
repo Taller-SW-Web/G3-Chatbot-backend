@@ -5,11 +5,21 @@ de evidencias y el INSERT de return_ref deben compartir transacción.
 """
 
 import uuid
+from collections.abc import Sequence
+from datetime import datetime
+from typing import Any, cast
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import delete, or_, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_postventa.domain.draft_retention import (
+    CLAIM_DRAFT_CONTEXT_KEY,
+    RETURN_DRAFT_CONTEXT_KEY,
+    remove_expired_drafts,
+)
 from src.modules.mod_postventa.domain.references import NewEvidenceReference
+from src.shared.infrastructure.db.models.conversation import Conversation
 from src.shared.infrastructure.db.models.evidence import Evidence
 
 
@@ -60,6 +70,78 @@ class EvidencePostgresAdapter:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def listar_borrador_por_urls(
+        self,
+        urls: Sequence[str],
+        customer_id: uuid.UUID,
+        conversation_id: uuid.UUID | None = None,
+    ) -> list[Evidence]:
+        """Drafts of this customer whose URL was sent in the confirmed return.
+
+        Joins `conversation` so a URL copied from another customer never links.
+        With `conversation_id`, only that conversation's drafts are candidates.
+        """
+        values = [url for url in dict.fromkeys(urls) if url]
+        if not values:
+            return []
+        stmt = (
+            select(Evidence)
+            .join(Conversation, Conversation.id == Evidence.conversation_id)
+            .where(
+                Evidence.return_id.is_(None),
+                Evidence.url.in_(values),
+                Conversation.customer_id == customer_id,
+            )
+            .order_by(Evidence.created_at, Evidence.id)
+        )
+        if conversation_id is not None:
+            stmt = stmt.where(Evidence.conversation_id == conversation_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def purgar_borradores(self, corte: datetime) -> int:
+        """Delete evidence references still unlinked after the retention window.
+
+        Ventas keeps the file; this only removes the local URL of an abandoned draft.
+        Returns rows deleted and never commits: the job owns the unit of work.
+        """
+        stmt = delete(Evidence).where(
+            Evidence.return_id.is_(None),
+            Evidence.created_at < corte,
+        )
+        result = cast(CursorResult[Any], await self.session.execute(stmt))
+        return int(result.rowcount or 0)
+
+    async def purgar_borradores_contexto(self, ahora: datetime, limite: int = 1000) -> int:
+        """Delete expired `postventa*Draft` keys from `conversation.context`.
+
+        Locks the selected rows (SKIP LOCKED is safe across replicas) and removes
+        only the keys owned by this module; returns how many keys were removed.
+        """
+        stmt = (
+            select(Conversation)
+            .where(
+                or_(
+                    Conversation.context.has_key(RETURN_DRAFT_CONTEXT_KEY),
+                    Conversation.context.has_key(CLAIM_DRAFT_CONTEXT_KEY),
+                )
+            )
+            .order_by(Conversation.updated_at)
+            .limit(limite)
+            .with_for_update(skip_locked=True)
+        )
+        rows = list((await self.session.execute(stmt)).scalars().all())
+        removed = 0
+        for row in rows:
+            context = dict(row.context) if isinstance(row.context, dict) else {}
+            count = remove_expired_drafts(context, ahora)
+            if count:
+                row.context = context
+                removed += count
+        if removed:
+            await self.session.flush()
+        return removed
 
     async def asociar_devolucion(
         self, evidence_id: uuid.UUID, conversation_id: uuid.UUID, return_id: str

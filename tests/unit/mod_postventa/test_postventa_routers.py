@@ -356,3 +356,106 @@ def test_unexpected_postventa_error_is_logged_and_503(caplog) -> None:
     assert response.status_code == 503
     assert any(r.exc_info and isinstance(r.exc_info[1], RuntimeError) for r in caplog.records)
     assert HOLDER not in caplog.text
+
+
+# -- conversacionId in the HTTP forms (SPEC-19/21 drafts) ---------------------------
+
+
+class _ReturnRecorder:
+    def __init__(self):
+        self.kwargs = None
+
+    async def create_return(self, **kwargs):
+        self.kwargs = kwargs
+        return {
+            "devolucionId": "DEV-2026-0001",
+            "pedidoId": "PED-2026-00001",
+            "tipo": "CAMBIO",
+            "estado": "SOLICITADA",
+            "motivo": "OTRO",
+            "fechaRegistro": "2026-11-27T12:00:00Z",
+        }
+
+
+class _ClaimRecorder:
+    def __init__(self):
+        self.kwargs = None
+
+    async def create_claim(self, **kwargs):
+        self.kwargs = kwargs
+        return {
+            "reclamoId": "REC-2026-0001",
+            "codigoSeguimiento": "REC-2026-0001",
+            "pedidoId": "PED-2026-00001",
+            "tipo": "RECLAMO",
+            "motivo": "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
+            "detalle": "La suela se despegó al primer uso.",
+            "estado": "REGISTRADO",
+            "fechaLimiteSLA": "2026-12-18T12:00:00Z",
+            "fechaRegistro": "2026-11-27T12:00:00Z",
+        }
+
+
+def _return_body() -> dict:
+    return {
+        "pedidoId": "PED-2026-00001",
+        "tipo": "CAMBIO",
+        "motivo": "TALLA_INCORRECTA",
+        "items": [{"productoId": "P-1", "cantidad": 1}],
+        "evidencias": [],
+    }
+
+
+def _claim_body() -> dict:
+    return {
+        "pedidoId": "PED-2026-00001",
+        "tipo": "RECLAMO",
+        "motivo": "PRODUCTO_DEFECTUOSO_O_INCORRECTO",
+        "detalle": "La suela se despegó al primer uso.",
+        "consumidor": {
+            "nombreCompleto": "Ana",
+            "documento": "72458912",
+            "email": "ana@example.com",
+            "telefono": "+51999888777",
+        },
+    }
+
+
+@pytest.mark.parametrize("with_conversation", [True, False])
+def test_create_return_passes_conversacion_id_and_never_forwards_it(with_conversation: bool) -> None:
+    recorder = _ReturnRecorder()
+    client = _app(recorder)
+    conversation_id = uuid.uuid4()
+    body = _return_body()
+    if with_conversation:
+        body["conversacionId"] = str(conversation_id)
+
+    response = client.post(
+        "/api/v1/devoluciones",
+        headers=_headers({"Idempotency-Key": f"return-conv-{with_conversation}"}),
+        json=body,
+    )
+
+    assert response.status_code == 201, response.text
+    assert recorder.kwargs["conversation_id"] == (conversation_id if with_conversation else None)
+    assert "conversacionId" not in recorder.kwargs["payload"]
+
+
+@pytest.mark.parametrize("with_conversation", [True, False])
+def test_create_claim_passes_conversacion_id_and_never_forwards_it(with_conversation: bool) -> None:
+    recorder = _ClaimRecorder()
+    client = _app(recorder)
+    conversation_id = uuid.uuid4()
+    body = _claim_body()
+    if with_conversation:
+        body["conversacionId"] = str(conversation_id)
+
+    response = client.post(
+        "/api/v1/reclamos",
+        headers=_headers({"Idempotency-Key": f"claim-conv-{with_conversation}"}),
+        json=body,
+    )
+
+    assert response.status_code == 201, response.text
+    assert recorder.kwargs["conversation_id"] == (conversation_id if with_conversation else None)
+    assert "conversacionId" not in recorder.kwargs["payload"]

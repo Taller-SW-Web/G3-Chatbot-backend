@@ -741,6 +741,18 @@
           "consumidor": {
             "$ref": "#/components/schemas/ClaimConsumerDTO"
           },
+          "conversacionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversacionid"
+          },
           "detalle": {
             "maxLength": 1000,
             "minLength": 20,
@@ -836,6 +848,18 @@
       "CreateReturnRequest": {
         "additionalProperties": false,
         "properties": {
+          "conversacionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversacionid"
+          },
           "descripcion": {
             "anyOf": [
               {
