@@ -273,6 +273,15 @@ async def test_assistant_tool_call_without_text_emits_only_the_function_call():
 
 
 @pytest.mark.asyncio
+async def test_reasoning_model_with_effort_none_keeps_reasoning_and_temperature():
+    route = http_mock_post(URL).mock(return_value=sse(completed()))
+    await collect(make_provider(model="gpt-6-luna", reasoning_effort="none"))
+    body = json.loads(route.calls[0].request.content)
+    assert body["reasoning"] == {"effort": "none"}
+    assert body["temperature"] == 0.6
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("effort", ["minimal", "low", "medium", "high"])
 async def test_reasoning_effort_is_sent_and_temperature_omitted_unless_none(effort):
     route = http_mock_post(URL).mock(return_value=sse(completed()))
