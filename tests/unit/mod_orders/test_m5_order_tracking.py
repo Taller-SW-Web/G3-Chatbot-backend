@@ -224,4 +224,6 @@ async def test_tracking_of_a_stock_cancelled_order_explains_reason_and_refund():
     (block,) = result.data["bloques"]
     assert block["datos"]["pedido"]["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
     assert block["datos"]["pedido"]["reembolso"] == refund
+    assert block["datos"]["pedido"]["estadoEtiqueta"] == "Anulado el 2026-11-05T19:05:00Z"
     assert block["datos"]["seguimiento"]["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
+    assert block["datos"]["seguimiento"]["estadoEtiqueta"] == "Anulado el 2026-11-05T19:05:00Z"

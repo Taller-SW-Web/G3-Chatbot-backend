@@ -34,6 +34,15 @@ def _with_status_label(payload: dict, key: str = "estadoEtiqueta") -> dict:
     return {**payload, key: map_order_status_label(str(payload.get("estado") or ""))}
 
 
+def _cancelled_label(history: list[dict[str, Any]]) -> str:
+    """SPEC-17 §4.1: the cancellation label carries the date of the ANULADO milestone."""
+    for item in reversed(history):
+        if str(item.get("estado") or "").upper() == "ANULADO":
+            fecha = str(item.get("fecha") or "").strip()
+            return f"Anulado el {fecha}" if fecha else "Anulado"
+    return "Anulado"
+
+
 class OrdersService:
     """`OrdersServicePort` for the orders router: confirmation resend (SPEC-16) and
     customer orders listing / detail (SPEC-17) delegated to Ventas."""
@@ -111,6 +120,12 @@ class OrdersService:
                     for m in history
                 ],
             }
+            if str(raw.get("estado") or "").upper() == "ANULADO":
+                label = _cancelled_label(history)
+                detail["estadoEtiqueta"] = label
+                for item in detail["historial"]:
+                    if str(item.get("estado") or "").upper() == "ANULADO":
+                        item["etiqueta"] = label
             if self._order_refs is not None:
                 ref = await self._order_refs.obtener_por_order_id(order_id)
                 if ref is not None:
@@ -146,7 +161,7 @@ class OrdersService:
         fallback: dict[str, Any] = {
             "pedidoId": order_id,
             "estado": estado,
-            "estadoEtiqueta": map_order_status_label(estado),
+            "estadoEtiqueta": _cancelled_label(history) if estado == "ANULADO" else map_order_status_label(estado),
             "fechaProgramada": envio.get("fechaEstimadaEntrega"),
             "distrito": envio.get("distrito"),
             "hitos": [],

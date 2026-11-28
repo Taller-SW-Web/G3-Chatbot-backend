@@ -16,7 +16,7 @@ reenvío de la confirmación por correo (SPEC-16..18). **No** crea pedidos
 
 | Tipo | Archivo | Qué expone |
 |---|---|---|
-| Backend | `public.py` | `OrdersService`, `provide_orders_service`, `NotificationService`/`NotificationError`, `map_order_status_label`, `sanitize_tracking_payload` |
+| Backend | `public.py` | `OrdersService`, `provide_orders_service`, `NotificationService`/`NotificationError`, `map_order_status_label`, `sanitize_tracking_payload`, `cancellation_message` |
 | Frontend | `public.ts` | Tipos de pedido, seguimiento e hitos |
 
 `provide_sales_port`, `provide_checkout_snapshot` y `provide_confirmation_outbox`
