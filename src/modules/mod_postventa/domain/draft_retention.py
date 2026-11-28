@@ -13,6 +13,11 @@ CLAIM_DRAFT_CONTEXT_KEY = "postventaClaimDraft"
 DRAFT_CONTEXT_KEYS = (RETURN_DRAFT_CONTEXT_KEY, CLAIM_DRAFT_CONTEXT_KEY)
 
 
+def draft_cutoff(now: datetime, ttl: timedelta = DRAFT_TTL) -> datetime:
+    """Rows created before this instant crossed the retention window."""
+    return now - ttl
+
+
 def parse_saved_at(value: Any) -> datetime | None:
     """Parse the ISO timestamp written by the service; None when malformed."""
     if not isinstance(value, str):

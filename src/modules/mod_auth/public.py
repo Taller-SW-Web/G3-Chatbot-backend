@@ -14,7 +14,6 @@ from src.modules.mod_auth.application.manage_session_use_case import (
     InvalidCredentialsError,
     ManageSessionUseCase,
     RefreshInvalidError,
-    merge_cart_lines,
 )
 from src.modules.mod_auth.module import provide_manage_session, provide_phone_service
 
@@ -24,7 +23,6 @@ __all__ = [
     "ManageSessionUseCase",
     "PhoneVerificationError",
     "RefreshInvalidError",
-    "merge_cart_lines",
     "provide_manage_session",
     "provide_phone_service",
 ]
