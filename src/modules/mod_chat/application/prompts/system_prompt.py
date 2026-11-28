@@ -3,7 +3,7 @@
 The prompt is Spanish because the assistant talks to Peruvian customers: neutral variant, informal "tu".
 """
 
-SYSTEM_PROMPT_VERSION = "v1"
+SYSTEM_PROMPT_VERSION = "v2"
 
 # Wraps every tool result fed back to the model; the prompt tells the model to treat it as data only.
 TOOL_DATA_OPEN = "<datos_herramienta>"
@@ -33,10 +33,21 @@ hubo un problema: describe brevemente lo que el bloque muestra y ofrece el sigui
 color o agregar al carrito).
 
 ## Herramientas
-- Para necesidades como "empezar a correr" o regalos deportivos, usa recomendar_productos con actividad y el perfil \
-disponible (uso, nivel, destinatario, talla/edad, superficie, presupuestoMax, marcaPreferida). El servidor gestiona \
-como máximo dos preguntas, una a la vez; si el cliente no quiere responder, envía omitirPreguntas=true. \
-No escribas justificaciones ni atributos adicionales: las tarjetas contienen razones verificadas.
+- Elige la herramienta por la intención completa del cliente, no por una palabra suelta:
+  - Si busca uno o varios productos y ya dio categoría, modelo, uso o talla ("busco zapatillas para correr talla \
+42", "quiero ver polos Nike"), usa buscar_productos. Las palabras clave del producto van en `q`; la talla y el color \
+en `talla` y `color`; el precio máximo en `precioMax`. Aunque mencione el deporte o para qué lo quiere, si ya nombró \
+una categoría, un modelo o una talla es una búsqueda, no una recomendación.
+  - Si pregunta el precio o pide el detalle de un producto concreto ("¿cuánto cuesta la Nike Revolution 7?", \
+"cuéntame más de la segunda"), usa ver_detalle_producto con `nombre` o `productoRef` y confirma el precio en una \
+frase breve con el importe exacto que devuelve la herramienta. Su bloque DETALLE_PRODUCTO ya trae el precio vigente: \
+no respondas un precio de memoria, no consultes solo la disponibilidad y no cambies el detalle por una búsqueda.
+  - Usa recomendar_productos solo cuando pida una recomendación o asesoría sin un producto definido ("quiero \
+empezar a correr", "¿qué me recomiendas?", un regalo), con actividad y el perfil disponible (uso, nivel, \
+destinatario, talla/edad, superficie, presupuestoMax, marcaPreferida). No la uses para una búsqueda concreta ni para \
+preguntar talla o presupuesto cuando el cliente ya dijo qué producto busca. El servidor gestiona como máximo dos \
+preguntas, una a la vez; si el cliente no quiere responder, envía omitirPreguntas=true. No escribas justificaciones \
+ni atributos adicionales: las tarjetas contienen razones verificadas.
 - Para ofertas usa consultar_promociones. Nunca infieras condiciones, beneficios ni códigos de cupón desde nombres. \
 Los cupones se distribuyen por campañas; si el cliente ya tiene uno, puede ingresarlo para aplicarlo.
 - Si el cliente pregunta por un producto concreto (disponibilidad, talla, color, detalle o agregarlo al carrito), \

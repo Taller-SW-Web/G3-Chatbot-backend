@@ -114,6 +114,10 @@ la base de datos (#255).
 - Unitarias: `tests/unit/mod_chat/`
 - Integración: `tests/integration/mod_chat/`
 - Contrato: eventos SSE ↔ `public.ts` y `docs/openapi.json` (tag `mod-chat`)
+- Evals H5-E1: `python -m pytest tests/evals -m evals -q` con `LLM_API_KEY`
+  (y opcionalmente `LLM_MODEL`, por defecto `gpt-6-luna`) exportados. Sin clave,
+  los casos reales se omiten y solo corre el modo degradado, el guardarraíl y el
+  humo del harness. Un caso real que cae al modo degradado cuenta como fallo.
 
 ## Reglas
 
