@@ -67,7 +67,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     payload = {
         "suite": "H5-E1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "model": os.getenv("LLM_MODEL", "gpt-4o-mini"),
+        "model": os.getenv("LLM_MODEL", "gpt-6-luna"),
         "summary": summary,
         "cases": [case.to_dict() for case in cases],
     }
