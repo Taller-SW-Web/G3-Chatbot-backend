@@ -19,6 +19,7 @@ OUTBOX_PUBLISHER = "outbox_publisher"
 ACTION_SCOPE = "action_scope"
 ATTACHMENT_CLEANUP = "attachment_cleanup"
 CONVERSATION_RETENTION = "conversation_retention"
+POSTVENTA_DRAFT_PURGE = "postventa_draft_purge"
 FEEDBACK_NOTIFIER = "feedback_notifier"
 CHECKOUT_EXPIRY = "checkout_expiry"
 
@@ -36,4 +37,5 @@ __all__ = [
     "OUTBOX_PROCESSOR",
     "OUTBOX_TASK_HANDLER",
     "OUTBOX_PUBLISHER",
+    "POSTVENTA_DRAFT_PURGE",
 ]
