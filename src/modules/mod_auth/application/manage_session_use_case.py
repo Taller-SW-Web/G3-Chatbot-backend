@@ -3,14 +3,16 @@
 Thin orchestration over the Seguridad port (`SecurityPort`) and the local
 access-token validator (`AccessTokenValidatorPort`): this use case never
 stores tokens itself. Cookies are set by the HTTP edge; the refresh token
-only travels in the `chat_rt` httpOnly cookie. Cart fusion is a pure function
-so the cart flow can reuse it when linking the anonymous cart on login
-(SPEC-03 Req. 4).
+only travels in the `chat_rt` httpOnly cookie. The anonymous cart fusion is
+resolved through the optional `CART_MERGE` capability so this module never
+imports `mod-cart` (ADR-0024); its ordering invariant (merge before linking
+conversations, which clears `anonymous_sid`) is enforced here.
 """
 import logging
 import time
 import uuid
 
+from src.shared.application.ports.cart_merge_port import CartMergePort, CartMergeResult
 from src.shared.application.ports.checkout_document_port import CheckoutDocumentPort
 from src.shared.application.ports.conversation_repository_port import ConversationRepositoryPort
 from src.shared.application.ports.phone_verification_port import PhoneVerificationPort
@@ -26,25 +28,7 @@ from src.shared.domain.module_errors import ModuleRequestError
 
 logger = logging.getLogger(__name__)
 
-MAX_QTY_PER_LINE = 10
 PASSWORD_POLICY_TTL_SECONDS = 10 * 60
-
-
-def merge_cart_lines(anonymous_lines: list[dict], customer_lines: list[dict]) -> list[dict]:
-    """Merges the anonymous cart into the customer cart (SPEC-03 Req. 4).
-
-    Same SKU sums quantities capped at 10; stock clamping happens against
-    live availability in the cart flow (SPEC-10/11). The anonymous cart is
-    left for the caller to mark MERGED.
-    """
-    merged: dict[str, dict] = {}
-    for line in list(customer_lines) + list(anonymous_lines):
-        sku = str(line.get("sku"))
-        qty = int(line.get("cantidad", 0))
-        current = merged.get(sku, {"sku": sku, "cantidad": 0})
-        current["cantidad"] = min(MAX_QTY_PER_LINE, int(current["cantidad"]) + max(qty, 0))
-        merged[sku] = current
-    return list(merged.values())
 
 
 def mask_document(document: dict) -> dict:
@@ -75,6 +59,7 @@ class ManageSessionUseCase:
         phone_verifications: PhoneVerificationPort | None = None,
         checkouts: CheckoutDocumentPort | None = None,
         conversations: ConversationRepositoryPort | None = None,
+        cart_merge: CartMergePort | None = None,
         uow: UnitOfWorkPort | None = None,
         clock=time.monotonic,
     ):
@@ -83,6 +68,7 @@ class ManageSessionUseCase:
         self._phone_verifications = phone_verifications
         self._checkouts = checkouts
         self._conversations = conversations
+        self._cart_merge = cart_merge
         self._uow = uow
         self._clock = clock
         self._password_policy: dict | None = None
@@ -189,8 +175,10 @@ class ManageSessionUseCase:
 
         A token without the `CLIENTE` role (or an invalid token) discards the
         session in Seguridad and aborts, so no cookie/token reaches the client.
-        When `anonymous_sid` is present, anonymous conversations are linked to
-        the customer and any stored `accionPendiente` is consumed once.
+        When `anonymous_sid` is present, the anonymous cart is merged into the
+        customer cart **before** anonymous conversations are linked (linking
+        clears `anonymous_sid`, the cart lookup key) and any stored
+        `accionPendiente` is consumed once. Both writes share one unit of work.
         """
         token = answer.get("accessToken")
         try:
@@ -201,24 +189,30 @@ class ManageSessionUseCase:
             await self.logout(answer.get("refreshToken"))
             raise
         result = dict(answer)
-        pending_action = await self._link_anonymous_conversations(
-            anonymous_sid=anonymous_sid,
-            claims=claims,
-            answer=result,
-        )
-        if pending_action is not None:
-            result["accionPendiente"] = pending_action
+        customer_id = self._customer_id(claims, result)
+        try:
+            merge = await self._merge_anonymous_cart(anonymous_sid, customer_id)
+            if merge is not None:
+                result["carritoFusionado"] = merge.merged
+                result["avisoCarrito"] = merge.message
+                result["ajustesCarrito"] = [dict(row) for row in merge.adjustments]
+            pending_action = await self._link_anonymous_conversations(
+                anonymous_sid=anonymous_sid,
+                customer_id=customer_id,
+            )
+            if pending_action is not None:
+                result["accionPendiente"] = pending_action
+            if self._uow is not None and anonymous_sid and customer_id is not None:
+                await self._uow.commit()
+        except Exception:
+            if self._uow is not None:
+                await self._uow.rollback()
+            raise
         return result
 
-    async def _link_anonymous_conversations(
-        self,
-        *,
-        anonymous_sid: str | None,
-        claims: object,
-        answer: dict,
-    ) -> str | None:
-        if not anonymous_sid or self._conversations is None:
-            return None
+    @staticmethod
+    def _customer_id(claims: object, answer: dict) -> uuid.UUID | None:
+        """`sub` of the validated token, with Seguridad's `usuario.id` as fallback."""
         raw_sub = claims.get("sub") if isinstance(claims, dict) else None
         if not raw_sub:
             usuario = answer.get("usuario")
@@ -226,20 +220,36 @@ class ManageSessionUseCase:
         if not raw_sub:
             return None
         try:
-            customer_id = uuid.UUID(str(raw_sub))
+            return uuid.UUID(str(raw_sub))
         except ValueError:
             return None
-        try:
-            _, pending_action = await self._conversations.link_anonymous_to_customer(
-                anonymous_sid, customer_id
-            )
-            if self._uow is not None:
-                await self._uow.commit()
-            return pending_action
-        except Exception:
-            if self._uow is not None:
-                await self._uow.rollback()
-            raise
+
+    async def _merge_anonymous_cart(
+        self, anonymous_sid: str | None, customer_id: uuid.UUID | None
+    ) -> CartMergeResult | None:
+        """Merges the anonymous cart before `anonymous_sid` is cleared (SPEC-03 Req. 4).
+
+        `mod-cart` owns the limits, duplicate-SKU sums and stock clamping; this
+        use case only resolves the `CART_MERGE` capability and maps its result
+        into the session answer. No commit here: `_validated_session` owns the
+        transaction, so a failure leaves the anonymous cart intact for retry.
+        """
+        if not anonymous_sid or customer_id is None or self._cart_merge is None:
+            return None
+        return await self._cart_merge.merge_for_login(anonymous_sid, customer_id)
+
+    async def _link_anonymous_conversations(
+        self,
+        *,
+        anonymous_sid: str | None,
+        customer_id: uuid.UUID | None,
+    ) -> str | None:
+        if not anonymous_sid or customer_id is None or self._conversations is None:
+            return None
+        _, pending_action = await self._conversations.link_anonymous_to_customer(
+            anonymous_sid, customer_id
+        )
+        return pending_action
 
     async def refresh(self, refresh_token: str) -> dict:
         try:
