@@ -179,6 +179,10 @@ class Settings:
     require_verified_contact: bool = False
     # SPEC-12: optional address save in Seguridad. A failure never blocks checkout.
     checkout_save_address_enabled: bool = True
+    # SPEC-14 Req. 5: the simulator card `4000 0000 0000 3220` waits 5 s when on.
+    # Default on outside production (demos and tests) and always off in production:
+    # a real deployment must never hold a payment for an artificial delay.
+    payment_simulator_latency_enabled: bool = False
     # HMAC key for the OTP hashes. Never a real secret in development.
     phone_otp_secret: str = DEV_PHONE_OTP_SECRET
     phone_otp_ttl_seconds: int = 300
@@ -408,6 +412,7 @@ def _build_settings(app_role: str = "api") -> Settings:
     require_phone_verification = _optional_flag("REQUIRE_PHONE_VERIFICATION")
     require_verified_contact = _optional_flag("REQUIRE_VERIFIED_CONTACT")
     save_address_enabled = _optional_flag("CHECKOUT_SAVE_ADDRESS_ENABLED")
+    simulator_latency_enabled = _optional_flag("PAYMENT_SIMULATOR_LATENCY_ENABLED")
     return Settings(
         cookie_secure=os.getenv("COOKIE_SECURE", "true").strip().lower() != "false",
         allowed_origins=_origins("ALLOWED_ORIGINS", "http://localhost:3000"),
@@ -485,6 +490,13 @@ def _build_settings(app_role: str = "api") -> Settings:
         ),
         checkout_save_address_enabled=(
             save_address_enabled if save_address_enabled is not None else True
+        ),
+        # Non-production defaults on so the latency card is usable in demos/tests;
+        # production ignores the override and stays off (issue #249).
+        payment_simulator_latency_enabled=(
+            False
+            if production
+            else (simulator_latency_enabled if simulator_latency_enabled is not None else True)
         ),
         require_verified_contact=(
             require_verified_contact if require_verified_contact is not None else production

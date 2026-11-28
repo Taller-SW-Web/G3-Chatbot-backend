@@ -67,6 +67,16 @@ Un fallo del validador deja un `WARNING` con `module`, `status`, `code` y
 `correlation_id`, y la respuesta `503 MODULO_NO_DISPONIBLE` conserva el
 `X-Correlation-Id` de la petición.
 
+## Simulación del pago (SPEC-14 Req. 5)
+
+El simulador es determinista por tarjeta. La tarjeta `4000 0000 0000 3220`
+responde `APPROVED` tras esperar 5 s solo cuando
+`PAYMENT_SIMULATOR_LATENCY_ENABLED` está activo (default `true` fuera de
+producción y `false` en producción, donde el override se ignora): así la demo y
+los tests reproducen la espera sin penalizar un despliegue real. `CardValidationError`
+vive en `ports/payment_gateway_port.py` para que `application/` traduzca el
+`VALIDACION` sin importar adaptadores (issue #249).
+
 ## Totales y promociones (SPEC-14 Req. 2)
 
 Antes de crear el checkout, `create_checkout` exige que `cart.totals_snapshot`

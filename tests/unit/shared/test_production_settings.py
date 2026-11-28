@@ -319,3 +319,18 @@ def test_notification_send_inline_can_be_enabled_as_a_fallback(env, monkeypatch)
     get_settings.cache_clear()
 
     assert get_settings().notification_send_inline is True
+
+
+def test_development_defaults_enable_the_payment_latency_card(env):
+    env(APP_ENV="development")
+    assert get_settings().payment_simulator_latency_enabled is True
+
+
+def test_payment_latency_can_be_disabled_outside_production(env):
+    env(APP_ENV="development", PAYMENT_SIMULATOR_LATENCY_ENABLED="false")
+    assert get_settings().payment_simulator_latency_enabled is False
+
+
+def test_production_forces_the_payment_latency_card_off(env):
+    env(PAYMENT_SIMULATOR_LATENCY_ENABLED="true")
+    assert get_settings().payment_simulator_latency_enabled is False
