@@ -25,7 +25,8 @@ class CartMergePort(Protocol):
     ) -> CartMergeResult:
         """Merge open anonymous cart(s) linked to hashed `anonymous_sid` into `customer_id`'s cart.
 
-        Does not commit; the caller's unit of work owns the transaction (or the
-        implementation commits when invoked standalone).
+        IMPORTANT ordering invariant: callers (e.g. `mod-auth` post-login) MUST invoke
+        `merge_for_login` **before** `link_anonymous_to_customer`, because linking clears
+        `conversation.anonymous_sid`. Does not commit; the caller's unit of work commits.
         """
         ...

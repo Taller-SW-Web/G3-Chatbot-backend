@@ -4,8 +4,13 @@ Applies:
 - Per-line cap (`MAX_QTY_PER_LINE = 10`) and distinct-SKU cap (`MAX_LINES = 20`).
 - Live inventory verification via `verify_quantities` (`SUFICIENTE` / `INSUFICIENTE` / `INDETERMINADO`).
   When `INSUFICIENTE`, probes with a bounded binary search (<=4 calls) to clamp to available stock.
+- `SIN_STOCK` policy: new anonymous lines with 0 stock are omitted; existing customer lines are
+  preserved at their current quantity (never silently deleted) and reported with `motivo: "SIN_STOCK"`
+  so `GET /carrito` surfaces them as `Agotado`.
 - Marks merged anonymous cart(s) as `MERGED` so fusion runs at most once.
 - Invalidates `totals_snapshot` with SQL NULL so the next read recalculates live prices/promotions.
+- Ordering invariant: must run BEFORE `link_anonymous_to_customer` (which clears `anonymous_sid`).
+  Does not commit; the caller's unit of work owns the transaction.
 """
 from __future__ import annotations
 
@@ -13,6 +18,7 @@ import logging
 import uuid
 from typing import Any, Protocol
 
+from src.modules.mod_cart.ports.cart_repository_port import CartItemRepository, CartRepository
 from src.shared.application.ports.cart_merge_port import CartMergeResult
 
 logger = logging.getLogger(__name__)
@@ -20,33 +26,6 @@ logger = logging.getLogger(__name__)
 MAX_QTY_PER_LINE = 10
 MAX_LINES = 20
 CART_MERGED_MESSAGE = "Unimos los productos que agregaste con los de tu cuenta"
-
-
-class _CartsPort(Protocol):
-    async def obtener_abiertos_por_anonymous_sid(self, anonymous_sid: str) -> list[Any]: ...
-    async def obtener_abierto_por_cliente(self, customer_id: uuid.UUID) -> Any | None: ...
-    async def crear_para_cliente(self, customer_id: uuid.UUID) -> Any: ...
-    async def cambiar_estado(self, cart_id: uuid.UUID, status: str) -> Any | None: ...
-    async def set_totals(self, cart_id: uuid.UUID, snapshot: dict[str, Any] | None) -> None: ...
-
-
-class _CartItemsPort(Protocol):
-    async def listar_por_cart(self, cart_id: uuid.UUID) -> list[Any]: ...
-    async def agregar(
-        self,
-        *,
-        cart_id: uuid.UUID,
-        product_id: str,
-        sku: str,
-        name: str,
-        variant_description: str | None,
-        image_url: str | None,
-        quantity: int,
-        unit_price_ref: float,
-    ) -> Any: ...
-    async def set_quantity(
-        self, item_id: uuid.UUID, *, quantity: int, unit_price_ref: float
-    ) -> None: ...
 
 
 class _InventoryPort(Protocol):
@@ -62,8 +41,8 @@ class _InventoryPort(Protocol):
 class MergeAnonymousCartService:
     def __init__(
         self,
-        carts: _CartsPort,
-        items: _CartItemsPort,
+        carts: CartRepository,
+        items: CartItemRepository,
         inventory: _InventoryPort | None = None,
     ) -> None:
         self._carts = carts
@@ -108,28 +87,29 @@ class MergeAnonymousCartService:
                 if existing is not None:
                     raw_sum = int(existing.quantity) + int(anon_item.quantity)
                     desired = min(MAX_QTY_PER_LINE, raw_sum)
-                    if raw_sum > MAX_QTY_PER_LINE:
-                        adjustments.append(
-                            {
-                                "sku": sku,
-                                "solicitado": raw_sum,
-                                "ajustado": desired,
-                                "motivo": "TOPE_POR_LINEA",
-                            }
-                        )
                     allowed_qty, stock_reason = await self._clamp_to_stock(sku, desired)
                     if stock_reason is not None:
+                        # Existing customer line: never silently delete on SIN_STOCK; preserve existing qty.
                         final_qty = allowed_qty if allowed_qty > 0 else int(existing.quantity)
                         adjustments.append(
                             {
                                 "sku": sku,
-                                "solicitado": desired,
+                                "solicitado": raw_sum,
                                 "ajustado": final_qty,
                                 "motivo": stock_reason,
                             }
                         )
                     else:
                         final_qty = desired
+                        if raw_sum > MAX_QTY_PER_LINE:
+                            adjustments.append(
+                                {
+                                    "sku": sku,
+                                    "solicitado": raw_sum,
+                                    "ajustado": final_qty,
+                                    "motivo": "TOPE_POR_LINEA",
+                                }
+                            )
                     if final_qty != int(existing.quantity):
                         await self._items.set_quantity(
                             existing.id,
@@ -149,24 +129,25 @@ class MergeAnonymousCartService:
                             }
                         )
                         continue
-                    desired = min(MAX_QTY_PER_LINE, int(anon_item.quantity))
-                    if int(anon_item.quantity) > MAX_QTY_PER_LINE:
-                        adjustments.append(
-                            {
-                                "sku": sku,
-                                "solicitado": int(anon_item.quantity),
-                                "ajustado": desired,
-                                "motivo": "TOPE_POR_LINEA",
-                            }
-                        )
+                    raw_qty = int(anon_item.quantity)
+                    desired = min(MAX_QTY_PER_LINE, raw_qty)
                     allowed_qty, stock_reason = await self._clamp_to_stock(sku, desired)
                     if stock_reason is not None:
                         adjustments.append(
                             {
                                 "sku": sku,
-                                "solicitado": desired,
+                                "solicitado": raw_qty,
                                 "ajustado": allowed_qty,
                                 "motivo": stock_reason,
+                            }
+                        )
+                    elif raw_qty > MAX_QTY_PER_LINE:
+                        adjustments.append(
+                            {
+                                "sku": sku,
+                                "solicitado": raw_qty,
+                                "ajustado": desired,
+                                "motivo": "TOPE_POR_LINEA",
                             }
                         )
                     if allowed_qty <= 0:

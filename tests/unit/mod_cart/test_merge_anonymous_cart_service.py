@@ -214,3 +214,31 @@ async def test_enforces_per_line_cap_and_max_lines_cap() -> None:
     motivos = {adj["sku"]: adj["motivo"] for adj in res.adjustments}
     assert motivos["SKU-0"] == "TOPE_POR_LINEA"
     assert motivos["SKU-OVERFLOW"] == "LIMITE_LINEAS"
+
+
+@pytest.mark.asyncio
+async def test_existing_line_with_zero_stock_preserves_customer_qty_and_reports_sin_stock() -> None:
+    anon_id = uuid.uuid4()
+    cust_cart_id = uuid.uuid4()
+    carts = _FakeCarts(
+        anon_carts=[SimpleNamespace(id=anon_id, status="ACTIVE")],
+        customer_cart=SimpleNamespace(id=cust_cart_id, status="ACTIVE"),
+    )
+    items = _FakeItems(
+        {
+            anon_id: [_item(anon_id, "SKU-OOS", 3)],
+            cust_cart_id: [_item(cust_cart_id, "SKU-OOS", 2)],
+        }
+    )
+    svc = MergeAnonymousCartService(carts, items, _FakeInventory({"SKU-OOS": 0}))
+
+    res = await svc.merge_for_login("hashed-sid", uuid.uuid4())
+    assert res.merged is True
+    assert items.by_cart[cust_cart_id][0].quantity == 2
+    assert len(res.adjustments) == 1
+    assert res.adjustments[0] == {
+        "sku": "SKU-OOS",
+        "solicitado": 5,
+        "ajustado": 2,
+        "motivo": "SIN_STOCK",
+    }
