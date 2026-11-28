@@ -19,6 +19,22 @@
       "phone": "+51987654321",
       "estado": "ACTIVO",
       "nombreCompleto": "Cliente Demo"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "email": "perf+2@ejemplo.pe",
+      "password": "Demo1234",
+      "phone": "+51987654322",
+      "estado": "ACTIVO",
+      "nombreCompleto": "Cliente Perf 2"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "email": "perf+3@ejemplo.pe",
+      "password": "Demo1234",
+      "phone": "+51987654323",
+      "estado": "ACTIVO",
+      "nombreCompleto": "Cliente Perf 3"
     }
   ]
 }

@@ -72,6 +72,22 @@ async def test_resend_for_an_unknown_email_stays_neutral():
 
 
 @pytest.mark.asyncio
+async def test_seeded_customers_log_in_with_distinct_tokens_and_claims():
+    security = FakeSecurityAdapter()
+    validator = FakeAccessTokenValidator(security)
+    first = await security.login("cliente@demo.pe", "Demo1234")
+    second = await security.login("perf+2@ejemplo.pe", "Demo1234")
+    assert first["accessToken"] != second["accessToken"]
+    assert first["refreshToken"] != second["refreshToken"]
+    assert first["usuario"]["id"] != second["usuario"]["id"]
+    first_claims = await validator.validate_customer(first["accessToken"])
+    second_claims = await validator.validate_customer(second["accessToken"])
+    assert first_claims["sub"] != second_claims["sub"]
+    assert first_claims["email"] == "cliente@demo.pe"
+    assert second_claims["email"] == "perf+2@ejemplo.pe"
+
+
+@pytest.mark.asyncio
 async def test_access_token_validator_accepts_minted_tokens_only():
     security = FakeSecurityAdapter()
     validator = FakeAccessTokenValidator(security)
