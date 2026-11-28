@@ -24,6 +24,7 @@ SAFE_ENV = {
     "COOKIE_SECURE": "true",
     "PHONE_OTP_SECRET": "otp-secret-value",
     "ATTACHMENT_SIGNING_SECRET": "attachment-secret-value",
+    "GATEWAY_SHARED_SECRET": "gateway-secret-value",
     "MODO_QA": "false",
 }
 
@@ -181,6 +182,7 @@ def test_no_warning_in_production_or_when_nothing_is_unsafe(caplog):
                 attachment_storage="supabase",
                 supabase_url="https://storage.example.com",
                 supabase_service_key="service-key-value",
+                gateway_shared_secret="gateway-secret-value",
             ),
             log,
         )

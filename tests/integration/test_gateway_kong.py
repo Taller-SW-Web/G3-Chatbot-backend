@@ -180,13 +180,13 @@ async def test_rate_limit_headers_and_429_enforced_by_kong(gateway_url: str) -> 
         assert upload_resp.headers.get("x-gateway") == "kong"
         assert upload_resp.headers.get("ratelimit-limit") == "15"
 
-        # Dedicated test IP for /sesion/registro burst (5/min).
-        burst_headers = {"X-Forwarded-For": "198.51.100.99"}
-        for _ in range(5):
+        # Rotating spoofed X-Forwarded-For headers must NOT evade the 5/min bucket (#256),
+        # because KONG_TRUSTED_IPS restricts trusted proxies to private/Railway CIDRs.
+        for idx in range(5):
             attempt = await client.post(
                 "/api/v1/sesion/registro",
                 json={},
-                headers=burst_headers,
+                headers={"X-Forwarded-For": f"198.51.100.{90 + idx}"},
             )
             assert attempt.status_code != 429
             assert attempt.headers.get("ratelimit-limit") == "5"
@@ -194,7 +194,7 @@ async def test_rate_limit_headers_and_429_enforced_by_kong(gateway_url: str) -> 
         blocked = await client.post(
             "/api/v1/sesion/registro",
             json={},
-            headers=burst_headers,
+            headers={"X-Forwarded-For": "203.0.113.250"},
         )
         assert blocked.status_code == 429
         assert blocked.headers.get("x-gateway") == "kong"
@@ -221,3 +221,33 @@ async def test_rate_limit_headers_and_429_enforced_by_kong(gateway_url: str) -> 
         assert s_blocked.headers.get("x-gateway") == "kong"
         assert s_blocked.headers.get("retry-after") is not None
         assert "API rate limit exceeded" in s_blocked.text
+
+
+async def test_direct_backend_access_without_gateway_secret_is_blocked(gateway_url: str) -> None:
+    """#256: FastAPI keeps /health exempt for container healthchecks, blocks direct /api calls."""
+    direct_url = os.getenv("BACKEND_DIRECT_URL")
+    if not direct_url:
+        pytest.skip("Falta BACKEND_DIRECT_URL: prueba de bloqueo directo no ejecutada")
+
+    async with httpx.AsyncClient(base_url=direct_url.rstrip("/"), timeout=15.0) as direct:
+        health_direct = await direct.get("/health")
+        no_header = await direct.get("/api/v1/catalogo/productos")
+        wrong_header = await direct.get(
+            "/api/v1/catalogo/productos",
+            headers={"X-Gateway-Secret": "wrong-secret"},
+        )
+
+    assert health_direct.status_code == 200
+    assert no_header.status_code == 403
+    assert no_header.json()["code"] == "GATEWAY_REQUIRED"
+    assert wrong_header.status_code == 403
+    assert wrong_header.json()["code"] == "GATEWAY_REQUIRED"
+
+    async with httpx.AsyncClient(base_url=gateway_url, timeout=15.0) as via_kong:
+        # Even if a client sends a spoofed X-Gateway-Secret, Kong strips and replaces it.
+        ok = await via_kong.get(
+            "/api/v1/catalogo/productos",
+            headers={"X-Gateway-Secret": "spoofed"},
+        )
+    assert ok.status_code == 200
+    assert ok.headers.get("x-gateway") == "kong"
