@@ -12,6 +12,7 @@ import respx
 
 from src.modules.mod_shipping.adapters.despacho_client import DespachoClient
 from src.shared.domain.module_errors import ModuleRequestError
+from src.shared.domain.request_context import correlation_id_var
 from src.shared.infrastructure.http.base_client import ModuleUnavailableError
 
 BASE_URL = "http://mock-despacho:4013"
@@ -29,6 +30,7 @@ class _Tokens:
     def __init__(self):
         self.calls = 0
         self.kwargs: list[dict[str, object]] = []
+        self.correlation_ids: list[str | None] = []
 
     async def get_token(
         self,
@@ -39,6 +41,7 @@ class _Tokens:
     ) -> str:
         self.calls += 1
         self.kwargs.append({"scope": scope, "audience": audience})
+        self.correlation_ids.append(correlation_id)
         return "svc-token"
 
 
@@ -76,6 +79,28 @@ async def test_quote_sends_service_token_lines_and_dashed_correlation():
     assert tokens.kwargs == [
         {"scope": "cotizaciones:calcular", "audience": "api-despacho"}
     ]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_quote_inherits_the_request_correlation_id_from_the_context():
+    route = respx.post(f"{BASE_URL}/cotizaciones").mock(
+        return_value=httpx.Response(200, json=QUOTE)
+    )
+    tokens = _Tokens()
+    incoming = str(uuid.uuid4())
+    token = correlation_id_var.set(incoming)
+    try:
+        await make_client(tokens).quote_shipping(
+            destino={"distrito": "Miraflores"},
+            lineas=[{"sku": "NIK-REV7-42-NEG", "cantidad": 1}],
+        )
+    finally:
+        correlation_id_var.reset(token)
+
+    # El mismo id viaja a G2 y al pedido del service token (#248).
+    assert route.calls[0].request.headers["x-correlation-id"] == incoming
+    assert tokens.correlation_ids == [incoming]
 
 
 @respx.mock
