@@ -9,14 +9,11 @@ import uuid
 from datetime import datetime, timezone
 
 from src.modules.mod_checkout.domain.payment_attempt import CardBrand, PaymentRejectReason, PaymentResult
-from src.modules.mod_checkout.ports.payment_gateway_port import PaymentGatewayPort, PaymentProcessResult
-
-
-class CardValidationError(Exception):
-    def __init__(self, message: str, field: str = "tarjeta"):
-        super().__init__(message)
-        self.message = message
-        self.field = field
+from src.modules.mod_checkout.ports.payment_gateway_port import (
+    CardValidationError,
+    PaymentGatewayPort,
+    PaymentProcessResult,
+)
 
 
 def clean_digits(value: str) -> str:
