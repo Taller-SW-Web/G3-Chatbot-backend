@@ -1073,6 +1073,17 @@
             "title": "Accesstoken",
             "type": "string"
           },
+          "accionPendiente": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accionpendiente"
+          },
           "expiresIn": {
             "default": 900,
             "title": "Expiresin",
