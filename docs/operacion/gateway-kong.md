@@ -46,8 +46,9 @@ Navegador → Vercel (Next.js /api/* via API_PROXY_TARGET)
 | Variable | Valor | Notas |
 |---|---|---|
 | `BACKEND_UPSTREAM_URL` | `http://<servicio-backend>.railway.internal:8000` | Obligatoria (fail-closed si falta). Ajustar el puerto si el backend usa otro |
-| `KONG_TRUSTED_IPS` | `0.0.0.0/0,::/0` | Opcional (valor por defecto en `entrypoint.sh`). Riesgo aceptado en ADR-0031: quien llame directo a Kong puede falsificar `X-Forwarded-For`; mitigación futura: restringir origen a Vercel o exigir una cabecera secreta compartida |
-| `KONG_REAL_IP_HEADER` | `X-Forwarded-For` | Opcional; conserva la IP real detrás de Vercel |
+| `GATEWAY_SHARED_SECRET` | `<secreto aleatorio >= 32 bytes>` | **Obligatoria en producción (#256).** Kong elimina cualquier `X-Gateway-Secret` entrante del cliente e inyecta este valor hacia FastAPI; configurar el mismo secreto en el servicio FastAPI para rechazar tráfico directo con `403 GATEWAY_REQUIRED` (`/health` queda exento para el healthcheck del contenedor/Railway) |
+| `KONG_TRUSTED_IPS` | `10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16,fd00::/8` | Valor por defecto en `entrypoint.sh` (rangos privados / red interna de Railway; **nunca** `0.0.0.0/0` ni `::/0`). Evita que un cliente falsifique `X-Forwarded-For` para evadir el rate limit |
+| `KONG_REAL_IP_HEADER` | `X-Forwarded-For` | Opcional; conserva la IP real detrás del proxy de Railway/Vercel |
 
 > Railway inyecta `$PORT` automáticamente y provee TLS en el dominio público del
 > servicio (`https://<gateway>.up.railway.app`).
@@ -65,9 +66,14 @@ Debe responder `HTTP/2 200` con `x-gateway: kong` y `x-request-id`.
    actualizar `API_PROXY_TARGET=https://<gateway>.up.railway.app` y redesplegar.
 7. Verificar desde el dominio de Vercel que `/api/v1/catalogo/productos` responde
    `200` con `x-gateway: kong` y que un turno de chat transmite SSE en vivo.
-8. Opcional (endurecimiento): deshabilitar el dominio público directo del
-   servicio FastAPI en Railway para que solo sea alcanzable por red privada
-   desde Kong.
+8. **Obligatorio en producción (#256 — protección del backend):**
+   - Deshabilitar el dominio público directo (`*.up.railway.app`) del servicio
+     FastAPI en Railway para que solo sea alcanzable por red privada desde Kong,
+     **y/o** configurar el mismo `GATEWAY_SHARED_SECRET` en ambos servicios (Kong
+     y Backend FastAPI) para que cualquier petición directa sin `X-Gateway-Secret`
+     reciba `403 GATEWAY_REQUIRED`.
+   - Verificar que un `X-Forwarded-For` falsificado no evade el rate limit de Kong
+     (cubierto en `tests/integration/test_gateway_kong.py`).
 
 ## 3. Rollback
 
