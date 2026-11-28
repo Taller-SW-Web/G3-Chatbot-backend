@@ -4,6 +4,7 @@ Operaciones minimas derivadas de modelo-datos.md (seccion `conversation`). No ha
 transaccion la controla el caso de uso.
 """
 import uuid
+from datetime import datetime, timedelta
 from typing import Any, cast
 
 from sqlalchemy import CursorResult, func, select, union, update
@@ -241,6 +242,39 @@ class ConversationPostgresAdapter:
             .values(last_message_at=func.now(), updated_at=func.now())
         )
         await self.session.execute(stmt)
+
+    async def apply_retention(
+        self,
+        *,
+        now: datetime,
+        anonymous_ttl_days: int = 7,
+        customer_archive_days: int = 90,
+    ) -> tuple[int, int]:
+        """Close stale anonymous conversations (>7d) and archive old customer ones (>90d)."""
+        anon_cutoff = now - timedelta(days=anonymous_ttl_days)
+        close_stmt = (
+            update(Conversation)
+            .where(
+                Conversation.customer_id.is_(None),
+                Conversation.status == "ACTIVE",
+                Conversation.last_message_at < anon_cutoff,
+            )
+            .values(status="CLOSED", updated_at=now)
+        )
+        close_res = cast(CursorResult[Any], await self.session.execute(close_stmt))
+
+        customer_cutoff = now - timedelta(days=customer_archive_days)
+        archive_stmt = (
+            update(Conversation)
+            .where(
+                Conversation.customer_id.is_not(None),
+                Conversation.status == "ACTIVE",
+                Conversation.last_message_at < customer_cutoff,
+            )
+            .values(status="ARCHIVED", updated_at=now)
+        )
+        archive_res = cast(CursorResult[Any], await self.session.execute(archive_stmt))
+        return int(close_res.rowcount or 0), int(archive_res.rowcount or 0)
 
     async def link_anonymous_to_customer(
         self, anonymous_sid: str, customer_id: uuid.UUID

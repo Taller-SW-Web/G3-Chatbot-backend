@@ -24,8 +24,11 @@ invoca por sus casos de uso públicos.
 
 Ningún módulo importa `mod-chat` (es la cima del DAG). El composition root usa
 `ACTION_SCOPE` para montar el scope de acciones directas en producción. Chat
-registra además `conversation_context`, el puerto que cart/catalog usan para la
-memoria de conversación y la auditoría TOOL sin importar la persistencia de chat.
+registra además `conversation_context` (el puerto que cart/catalog usan para la
+memoria de conversación y la auditoría TOOL sin importar la persistencia de
+chat) y `conversation_retention` (job periódico `CONVERSATION_RETENTION_INTERVAL_SECONDS`
+que cierra conversaciones anónimas >7 días y archiva conversaciones de cliente
+>90 días, ejecutado desde `outbox_worker_lifespan`).
 
 ## Rutas
 
