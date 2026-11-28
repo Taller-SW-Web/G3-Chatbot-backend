@@ -1,9 +1,12 @@
 """application/problem+json errors with a `code` field (README, section 5)."""
+import uuid
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from src.shared.domain.module_errors import ModuleUnavailableError
+from src.shared.domain.request_context import correlation_id_var
 from src.shared.infrastructure.http.correlation import CORRELATION_HEADER
 
 
@@ -37,11 +40,23 @@ def _body(status: int, code: str, title: str, detail: str | None, **extra) -> di
     return body
 
 
+def _correlation_id(request: Request) -> str:
+    """Request id for support, even when a bare app has no middleware installed."""
+    state = request.scope.get("state")
+    value = state.get("correlation_id") if isinstance(state, dict) else None
+    return str(value or correlation_id_var.get() or uuid.uuid4())
+
+
 def register_problem_handlers(app: FastAPI) -> None:
     @app.exception_handler(ProblemError)
-    async def _problem(_: Request, exc: ProblemError) -> ProblemResponse:
+    async def _problem(request: Request, exc: ProblemError) -> ProblemResponse:
+        extra = dict(exc.extra)
+        if exc.status >= 500:
+            # The body never explains internals; the id ties the customer report
+            # to the server log (the exception itself stays in the log).
+            extra.setdefault("correlationId", _correlation_id(request))
         problem = ProblemResponse(
-            _body(exc.status, exc.code, exc.title, exc.detail, **exc.extra),
+            _body(exc.status, exc.code, exc.title, exc.detail, **extra),
             status_code=exc.status,
         )
         for name, value in exc.headers:
@@ -63,7 +78,7 @@ def register_problem_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(ModuleUnavailableError)
-    async def _module_down(_: Request, exc: ModuleUnavailableError) -> ProblemResponse:
+    async def _module_down(request: Request, exc: ModuleUnavailableError) -> ProblemResponse:
         """A module timed out / returned 5xx: the channel is degraded, not the request (ADR-0017)."""
         return ProblemResponse(
             _body(
@@ -72,6 +87,7 @@ def register_problem_handlers(app: FastAPI) -> None:
                 "Module unavailable",
                 "El servicio no está disponible en este momento. Intenta de nuevo en unos segundos.",
                 modulo=exc.module,
+                correlationId=_correlation_id(request),
             ),
             status_code=503,
         )

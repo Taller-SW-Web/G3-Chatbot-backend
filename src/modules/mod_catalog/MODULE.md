@@ -34,11 +34,21 @@ es privado.
 | GET | `/api/v1/catalogo/productos/{product_id}` | `ManageCatalogUseCase.detail` |
 | GET | `/api/v1/catalogo/disponibilidad` | `ManageCatalogUseCase.availability` |
 
+`GET /catalogo/productos` acepta `pagina` con `1 <= pagina <= 1000`; fuera de
+rango responde `400 VALIDACION` antes de consultar Productos (#255).
+
 ## Dependencias externas
 
 - **G6 Productos** vía `ports/product_repository_port.py` (`ProductCatalogPort`,
   `InventoryPort`), `adapters/products_client.py` e `inventory_client.py`.
 - Fixtures de demo en `adapters/seeds/` para `PRODUCTS_MODE=fake`.
+
+## Errores de módulo y 503
+
+Un fallo inesperado (por ejemplo `IntegrityError`) responde
+`503 SERVICIO_NO_DISPONIBLE` con un `detail` genérico y `correlationId`; la
+excepción y su traza quedan solo en el log interno. Un módulo caído conserva
+`modulo` y `Retry-After`. Nunca se publica `type(exc).__name__` (#255).
 
 ## Orden de resultados (SPEC-06)
 

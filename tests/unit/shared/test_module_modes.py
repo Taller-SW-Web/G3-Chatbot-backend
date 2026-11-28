@@ -76,19 +76,28 @@ def test_fake_security_in_production_needs_the_explicit_opt_in():
         modules_mode="fake",
         app_env="production",
         allow_fake_security=True,
+        allow_fake_modules=True,
         **PRODUCTION_STORAGE,
     )
     assert settings.module_mode("security") == "fake"
 
 
-def test_production_with_real_security_and_other_fakes_starts():
+def test_production_with_fake_products_sales_or_dispatch_needs_allow_fake_modules():
+    with pytest.raises(ValueError, match="ALLOW_FAKE_MODULES"):
+        Settings(
+            modules_mode="fake",
+            security_mode="http",
+            app_env="production",
+            **PRODUCTION_STORAGE,
+        )
     settings = Settings(
         modules_mode="fake",
         security_mode="http",
         app_env="production",
+        allow_fake_modules=True,
         **PRODUCTION_STORAGE,
     )
-    assert settings.module_mode("security") == "http"
+    assert settings.module_mode("sales") == "fake"
 
 
 def test_fake_security_is_allowed_outside_production():
@@ -107,6 +116,7 @@ def test_env_reads_app_env_and_opt_in(monkeypatch, clean_settings):
         "src.shared.infrastructure.config.settings._require_production_safe", lambda settings: None
     )
     monkeypatch.setenv("ALLOW_FAKE_SECURITY", "true")
+    monkeypatch.setenv("ALLOW_FAKE_MODULES", "true")
     monkeypatch.setenv("ATTACHMENT_STORAGE", "supabase")
     monkeypatch.setenv("SUPABASE_URL", "https://storage.example.com")
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", "service-key-value")
