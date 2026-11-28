@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from typing import Protocol
 
 from src.shared.application.unit_of_work_port import UnitOfWorkPort
 
@@ -65,7 +65,3 @@ class ConversationRetentionService:
                 archived,
             )
         return closed, archived
-
-
-def summarize_retention_counts(closed: int, archived: int) -> dict[str, Any]:
-    return {"closedAnonymous": closed, "archivedCustomer": archived}

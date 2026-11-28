@@ -4,6 +4,7 @@ Phase 1 (awaiting `send_message`) validates ownership and persists the customer 
 later LLM failure. Phase 2 (iterating the result) runs the LLM -> tool -> LLM loop and persists the reply.
 """
 import asyncio
+import inspect
 import json
 import logging
 import re
@@ -146,15 +147,25 @@ class InterpretAndRespondUseCase:
         self._assistant_name = assistant_name
         self._timeout = llm_timeout_seconds
         self._sanitize: Callable[..., str] = sanitize_text or (lambda text, **_kw: text)
+        self._sanitize_accepts_otp = self._supports_otp_kwarg(self._sanitize)
         self._output_validator = output_validator or OutputValidator()
         self._degraded_mode = degraded_mode or DegradedMode()
         self._attachments = attachments
 
-    def _sanitize_input(self, text: str, *, otp_solicitado: bool) -> str:
+    @staticmethod
+    def _supports_otp_kwarg(fn: Callable[..., str]) -> bool:
         try:
+            params = inspect.signature(fn).parameters
+        except (TypeError, ValueError):
+            return False
+        return "otp_solicitado" in params or any(
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+        )
+
+    def _sanitize_input(self, text: str, *, otp_solicitado: bool) -> str:
+        if self._sanitize_accepts_otp:
             return self._sanitize(text, otp_solicitado=otp_solicitado)
-        except TypeError:
-            return self._sanitize(text)
+        return self._sanitize(text)
 
     async def _is_otp_pending(self, conversation_id: uuid.UUID) -> bool:
         """Detect whether the conversation is awaiting a phone/MFA OTP (SPEC-05, ADR-0006)."""
@@ -165,7 +176,12 @@ class InterpretAndRespondUseCase:
             raw_ctx = await self._conversations.get_context(conversation_id)
             if isinstance(raw_ctx, dict):
                 context = raw_ctx
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "otp_pending_context_read_failed conversation_id=%s error=%s",
+                conversation_id,
+                type(exc).__name__,
+            )
             context = {}
 
         if (
@@ -179,12 +195,23 @@ class InterpretAndRespondUseCase:
 
         try:
             recent = await self._messages.list_dialogue(conversation_id, limit=4)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "otp_pending_dialogue_read_failed conversation_id=%s error=%s",
+                conversation_id,
+                type(exc).__name__,
+            )
             return False
 
         for msg in reversed(recent):
             if msg.role == MessageRole.ASSISTANT:
-                for block in msg.blocks or ():
+                raw_blocks = msg.blocks
+                blocks = (
+                    raw_blocks.get("blocks", ())
+                    if isinstance(raw_blocks, dict)
+                    else (raw_blocks or ())
+                )
+                for block in blocks:
                     if not isinstance(block, dict):
                         continue
                     if str(block.get("tipo") or "").upper() != "FORMULARIO":

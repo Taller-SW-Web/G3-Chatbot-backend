@@ -56,12 +56,13 @@ class _FakeMessages:
         self.items: list[Message] = list(initial or [])
 
     async def add(self, conversation_id, role, text, **kwargs):
+        raw_blocks = kwargs.get("blocks")
         msg = Message(
             id=uuid.uuid4(),
             conversation_id=conversation_id,
             role=role,
             text=text,
-            blocks=tuple(kwargs.get("blocks") or ()),
+            blocks={"blocks": list(raw_blocks)} if isinstance(raw_blocks, (list, tuple)) else raw_blocks,
             created_at=datetime.now(timezone.utc),
         )
         self.items.append(msg)
@@ -127,7 +128,7 @@ async def test_redacts_otp_when_previous_assistant_message_opened_otp_form() -> 
         conversation_id=conv_id,
         role=MessageRole.ASSISTANT,
         text="Confirma tu celular con el código.",
-        blocks=({"tipo": "FORMULARIO", "formulario": "OTP_CELULAR"},),
+        blocks={"blocks": [{"tipo": "FORMULARIO", "formulario": "OTP_CELULAR"}]},
         created_at=datetime.now(timezone.utc),
     )
     uc, _, messages, llm = _build_use_case(initial_messages=[prior_assistant])
