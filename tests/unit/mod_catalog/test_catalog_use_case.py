@@ -22,6 +22,7 @@ from tests.fakes.fake_commerce import (
 
 CONVERSATION_ID = uuid.uuid4()
 CUSTOMER_ID = uuid.uuid4()
+STOPWORDS = {"de", "para", "con", "el", "la", "en", "y"}
 
 
 def make_catalog(statuses=None, products=None, catalog=None, inventory=None):
@@ -61,13 +62,96 @@ async def test_search_returns_carousel_and_saves_memory():
 
 
 @pytest.mark.asyncio
-async def test_search_unknown_brand_asks_without_calling_modules():
+async def test_search_unknown_brand_asks_with_real_brand_chips():
     catalog = owned_catalog(make_catalog())
     result = await catalog.search(
         SearchArguments(marca="Inexistente"), customer_context()
     )
-    assert "Inexistente" in result["texto"]
-    assert result["bloques"] == []
+    assert "No trabajamos la marca Inexistente" in result["texto"]
+    block = result["bloques"][0]
+    assert block["tipo"] == "ACCIONES_RAPIDAS"
+    actions = block["datos"]["acciones"]
+    assert [action["etiqueta"] for action in actions] == ["Nike", "Adidas", "Andes"]
+    assert block["acciones"] == actions
+    assert all(action["payload"]["marca"] == action["etiqueta"] for action in actions)
+
+
+class OptionCatalog(FakeCatalogPort):
+    """Catalog whose category/brand lists are independent of product data."""
+
+    def __init__(self, categories, brands):
+        super().__init__(products=[], details={}, prices={})
+        self._categories = categories
+        self._brands = brands
+
+    async def list_categories(self, **kwargs):
+        return self._categories
+
+    async def list_brands(self, **kwargs):
+        return self._brands
+
+
+def option_catalog(category_count=0, brand_count=0):
+    categories = [
+        {"name": f"Categoría {index}", "categoria_id": f"cat-{index}"}
+        for index in range(category_count)
+    ]
+    brands = [
+        {"name": f"Marca {index}", "marca_id": f"brand-{index}"}
+        for index in range(brand_count)
+    ]
+    return owned_catalog(make_catalog(catalog=OptionCatalog(categories, brands)))
+
+
+def option_chips(result):
+    return result["bloques"][0]["datos"]["acciones"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_brand_returns_real_chips_capped_at_six():
+    catalog = option_catalog(brand_count=8)
+
+    result = await catalog.search(SearchArguments(marca="Inexistente"), customer_context())
+
+    chips = option_chips(result)
+    assert len(chips) == 6
+    assert [chip["etiqueta"] for chip in chips] == [f"Marca {index}" for index in range(6)]
+    assert {chip["payload"]["marca"] for chip in chips} == {
+        f"Marca {index}" for index in range(6)
+    }
+    assert not {"Nike", "Adidas", "Andes"} & {chip["etiqueta"] for chip in chips}
+
+
+@pytest.mark.asyncio
+async def test_unknown_category_returns_real_chips_capped_at_six():
+    catalog = option_catalog(category_count=8)
+
+    result = await catalog.search(
+        SearchArguments(categoria="Inexistente"), customer_context()
+    )
+
+    chips = option_chips(result)
+    assert len(chips) == 6
+    assert [chip["etiqueta"] for chip in chips] == [
+        f"Categoría {index}" for index in range(6)
+    ]
+    assert all(chip["id"] == "BUSCAR_POR_CATEGORIA" for chip in chips)
+
+
+@pytest.mark.asyncio
+async def test_unknown_category_and_brand_share_the_six_chip_budget():
+    catalog = option_catalog(category_count=4, brand_count=4)
+
+    result = await catalog.search(
+        SearchArguments(categoria="Inexistente", marca="Inexistente"), customer_context()
+    )
+
+    chips = option_chips(result)
+    assert len(chips) == 6
+    assert [chip["etiqueta"] for chip in chips] == [
+        "Categoría 0", "Categoría 1", "Categoría 2", "Categoría 3",
+        "Marca 0", "Marca 1",
+    ]
 
 
 @pytest.mark.asyncio
@@ -176,6 +260,54 @@ class CountingInventory(FakeInventoryPort):
         return await super().get_availability(skus, **kwargs)
 
 
+class RecordingCatalog(FakeCatalogPort):
+    """Fake Productos that records the arguments received from the BFF."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.search_calls = []
+
+    async def search_products(self, **kwargs):
+        self.search_calls.append(kwargs)
+        return await super().search_products(**kwargs)
+
+
+class LiteralCatalog(FakeCatalogPort):
+    """Fake G6 that only matches the literal words it receives.
+
+    Unlike `FakeCatalogPort`, it does not drop filler words or translate
+    `correr` to `running`, so it exposes queries that only pass because of
+    test-only synonym handling.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.search_calls = []
+
+    async def search_products(self, **kwargs):
+        self.search_calls.append(kwargs)
+        q = kwargs.get("q")
+        category_id = kwargs.get("category_id")
+        brand_id = kwargs.get("brand_id")
+        page = kwargs.get("page", 1)
+        size = kwargs.get("size", 10)
+        words = [word for word in (q or "").casefold().split() if word]
+        items = [
+            item for item in self._products
+            if all(word in self._searchable_text(item) for word in words)
+            and (category_id is None or (item.get("categoria_id") or item.get("category_id")) == category_id)
+            and (brand_id is None or (item.get("marca_id") or item.get("brand_id")) == brand_id)
+            and self._within_price(item, kwargs.get("min_price"), kwargs.get("max_price"))
+        ]
+        start = (page - 1) * size
+        return {
+            "items": [{"product_id": item["product_id"]} for item in items[start:start + size]],
+            "pagina": page,
+            "tamanio": size,
+            "total": len(items),
+        }
+
+
 @pytest.mark.asyncio
 async def test_search_batches_prices_and_availability_in_bulk():
     catalog_port = CountingCatalog()
@@ -276,6 +408,73 @@ async def test_plain_zapatillas_still_returns_every_shoe():
     catalog = owned_catalog(make_seeded_catalog())
     result = await catalog.search(SearchArguments(q="zapatillas"), customer_context())
     assert result["total"] == 34
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "expected_q", "expected_category"),
+    [
+        ("zapatillas de running", "running", "cat-zapatillas"),
+        ("zapatillas para correr", "running", "cat-zapatillas"),
+        ("zapatillas", None, "cat-zapatillas"),
+        ("running", "running", None),
+        ("correr", "running", None),
+        ("CORRER", "running", None),
+        ("trotar", "running", None),
+        ("ZAPATILLAS DE RUNNING", "running", "cat-zapatillas"),
+        ("Zapatillas Para Correr", "running", "cat-zapatillas"),
+        ("polo de algodón", "algodon", "cat-polos"),
+    ],
+)
+async def test_search_sends_normalized_q_without_stopwords(query, expected_q, expected_category):
+    catalog_port = RecordingCatalog()
+    catalog = owned_catalog(make_catalog(catalog=catalog_port))
+
+    result = await catalog.search(SearchArguments(q=query), customer_context())
+
+    assert result["bloques"][0]["tipo"] == "CARRUSEL_PRODUCTOS"
+    assert result["bloques"][0]["datos"]["productos"]
+    sent = catalog_port.search_calls[0]
+    assert sent["q"] == expected_q
+    assert sent["category_id"] == expected_category
+    assert not (set((sent["q"] or "").split()) & STOPWORDS)
+
+
+@pytest.mark.asyncio
+async def test_literal_productos_needs_running_instead_of_correr():
+    literal = LiteralCatalog()
+    # This is the real G6 behavior the old test was hiding: "correr" is not in
+    # the product descriptions, so the normalizer must translate it.
+    assert (await literal.search_products(q="correr", category_id="cat-zapatillas"))["total"] == 0
+    assert (await literal.search_products(q="running", category_id="cat-zapatillas"))["total"] > 0
+    literal.search_calls.clear()
+
+    catalog = owned_catalog(make_catalog(catalog=literal))
+    result = await catalog.search(SearchArguments(q="zapatillas para correr"), customer_context())
+
+    assert result["bloques"][0]["tipo"] == "CARRUSEL_PRODUCTOS"
+    assert result["bloques"][0]["datos"]["productos"]
+    sent = literal.search_calls[0]
+    assert sent["q"] == "running"
+    assert sent["category_id"] == "cat-zapatillas"
+
+
+@pytest.mark.asyncio
+async def test_offer_discovery_sends_normalized_q_without_stopwords():
+    catalog_port = RecordingCatalog()
+    catalog = owned_catalog(make_catalog(catalog=catalog_port))
+
+    await catalog.search(
+        SearchArguments(q="zapatillas de running", soloOfertas=True),
+        customer_context(),
+        discover_offers=True,
+    )
+
+    assert catalog_port.search_calls
+    for sent in catalog_port.search_calls:
+        assert sent["q"] == "running"
+        assert sent["category_id"] == "cat-zapatillas"
+        assert not (set((sent["q"] or "").split()) & STOPWORDS)
 
 
 @pytest.mark.asyncio

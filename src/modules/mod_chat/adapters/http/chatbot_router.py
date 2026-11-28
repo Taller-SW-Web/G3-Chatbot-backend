@@ -34,6 +34,7 @@ from src.shared.infrastructure.http.dependencies.rate_limiter import (
     InMemoryRateLimiter,
     client_ip,
 )
+from src.shared.infrastructure.http.openapi import problem_responses
 from src.shared.infrastructure.http.problem import ProblemError, not_found
 
 # Provisional: the specs leave the search query length undefined.
@@ -112,7 +113,11 @@ def create_chatbot_router(
         summaries = await service.search_conversations(caller, query, pagina)
         return [ConversationSearchResultOut.from_domain(c) for c in summaries]
 
-    @router.get("/{conversation_id}/mensajes", response_model=list[MessageOut])
+    @router.get(
+        "/{conversation_id}/mensajes",
+        response_model=list[MessageOut],
+        responses=problem_responses(404),
+    )
     async def get_history(
         conversation_id: uuid.UUID,
         caller: CallerIdentity | None = Depends(get_caller_identity),
@@ -126,7 +131,10 @@ def create_chatbot_router(
 
     if turn_scope is not None:
 
-        @router.post("/{conversation_id}/mensajes")
+        @router.post(
+            "/{conversation_id}/mensajes",
+            responses=problem_responses(404, 409, 422, 429, 501, 503),
+        )
         async def send_message(
             conversation_id: uuid.UUID,
             body: SendMessageIn,

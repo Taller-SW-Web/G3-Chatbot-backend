@@ -14,6 +14,7 @@ from src.modules.mod_postventa.application.postventa_dto import (
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
+from src.shared.infrastructure.http.openapi import idempotency_key_required, problem_responses
 
 
 class ClaimsServicePort(Protocol):
@@ -43,9 +44,18 @@ class ClaimsServicePort(Protocol):
 
 
 def create_claims_router(service_provider: Callable[..., ClaimsServicePort]) -> APIRouter:
-    router = APIRouter(prefix="/reclamos", tags=[MODULE_ID])
+    router = APIRouter(
+        prefix="/reclamos",
+        tags=[MODULE_ID],
+        responses=problem_responses(404, 409, 422, 429, 503),
+    )
 
-    @router.post("", status_code=status.HTTP_201_CREATED, response_model=ClaimDetailResponse)
+    @router.post(
+        "",
+        status_code=status.HTTP_201_CREATED,
+        response_model=ClaimDetailResponse,
+        openapi_extra=idempotency_key_required(),
+    )
     async def create_claim(
         payload: CreateClaimRequest,
         request: Request,

@@ -15,6 +15,7 @@ from src.modules.mod_postventa.application.postventa_dto import (
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
+from src.shared.infrastructure.http.openapi import idempotency_key_required, problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 MAX_EVIDENCE_BYTES = 5 * 1024 * 1024
@@ -61,7 +62,7 @@ class ReturnsServicePort(Protocol):
 
 
 def create_returns_router(service_provider: Callable[..., ReturnsServicePort]) -> APIRouter:
-    router = APIRouter(tags=[MODULE_ID])
+    router = APIRouter(tags=[MODULE_ID], responses=problem_responses(404, 409, 422, 429, 503))
 
     @router.post("/evidencias", status_code=status.HTTP_201_CREATED, response_model=EvidenceResponse)
     async def upload_evidence(
@@ -100,7 +101,12 @@ def create_returns_router(service_provider: Callable[..., ReturnsServicePort]) -
         except Exception as exc:
             raise translate_postventa_error(exc) from exc
 
-    @router.post("/devoluciones", status_code=status.HTTP_201_CREATED, response_model=ReturnDetailResponse)
+    @router.post(
+        "/devoluciones",
+        status_code=status.HTTP_201_CREATED,
+        response_model=ReturnDetailResponse,
+        openapi_extra=idempotency_key_required(),
+    )
     async def create_return(
         payload: CreateReturnRequest,
         request: Request,

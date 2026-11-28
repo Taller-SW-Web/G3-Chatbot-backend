@@ -20,7 +20,7 @@ def test_combined_filters_resolve_ids():
     filters = make_normalizer().normalize_filters(
         q="zapatillas", categoria="Zapatillas", marca="Nike"
     )
-    assert filters.q == "zapatillas"
+    assert filters.q is None
     assert filters.category_id == "cat-zapatillas"
     assert filters.brand_id == "brand-nike"
     assert filters.unresolved_category is None

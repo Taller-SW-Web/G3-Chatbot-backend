@@ -14,6 +14,7 @@ from src.modules.mod_catalog.adapters.inventory_client import (
 )
 from src.modules.mod_catalog.adapters.products_client import ProductsClient
 from src.modules.mod_catalog.application.manage_catalog_use_case import (
+    PROMOTION_CACHE_TTL_SECONDS,
     ManageCatalogUseCase,
     OptionCache,
 )
@@ -32,6 +33,9 @@ REQUIRED_CAPABILITIES = (CONVERSATION_CONTEXT,)
 # Categories/brands list cache shared across requests (SPEC-06): created once
 # by the wiring and injected, so use cases never share a module global.
 _CATALOG_OPTION_CACHE = OptionCache()
+# Promotions list cache shared across requests (SPEC-08, 60 s TTL): a new
+# OptionCache per request would never hit across turns.
+_CATALOG_PROMOTION_CACHE = OptionCache(PROMOTION_CACHE_TTL_SECONDS)
 
 
 def provide_product_catalog(settings: Settings | None = None):
@@ -80,6 +84,7 @@ def provide_catalog_service(
         registry.resolve(CONVERSATION_CONTEXT, session),
         SqlAlchemyUnitOfWork(session),
         option_cache=_CATALOG_OPTION_CACHE,
+        promotion_cache=_CATALOG_PROMOTION_CACHE,
     )
 
 
