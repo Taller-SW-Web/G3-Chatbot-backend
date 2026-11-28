@@ -6,7 +6,6 @@ addresses used to prefill the checkout, and Despacho the real coverage, cost
 and lead time. The HTTP adapter only validates shapes and maps errors; nothing
 here imports FastAPI, httpx or SQLAlchemy.
 """
-import uuid
 from typing import Any
 
 from src.modules.mod_shipping.application.shipping_quote import build_destination, build_quote_lines
@@ -40,10 +39,11 @@ class ManageShippingUseCase:
         `moneda`, `plazoEstimadoDiasHabiles`, `fechaEstimadaEntrega` and
         `nombreZona`. The router turns it into the channel response.
         """
+        # No correlation id here: the adapter inherits the request's one from
+        # `correlation_id_var`, so G2's logs join this same request (#248).
         return await self._dispatch.quote_shipping(
             destino=build_destination(payload),
             lineas=await self._cart_lines(customer_id),
-            correlation_id=str(uuid.uuid4()),
         )
 
     async def _cart_lines(self, customer_id: Any) -> list[dict[str, Any]]:

@@ -33,7 +33,7 @@ from src.shared.infrastructure.http.problem import register_problem_handlers
 CUSTOMER_ID = uuid.UUID("00000000-0000-0000-0000-000000000077")
 CHECKOUT_ID = uuid.UUID("00000000-0000-0000-0000-000000000088")
 CONVERSATION_ID = uuid.UUID("00000000-0000-0000-0000-000000000099")
-CSRF = {"X-Requested-With": "XMLHttpRequest"}
+CSRF = {"X-Requested-With": "XMLHttpRequest", "Origin": "http://localhost:3000"}
 
 
 class _FakeValidator:
@@ -98,6 +98,7 @@ def _build_protected_app(limiter: InMemoryRateLimiter | None = None) -> TestClie
         create_session_router(
             lambda: service,
             cookie_secure=False,
+            allowed_origins=["http://localhost:3000"],
             rate_limiter=limiter,
         ),
         prefix="/api/v1",

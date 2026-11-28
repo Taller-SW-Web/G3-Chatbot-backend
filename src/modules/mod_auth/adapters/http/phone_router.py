@@ -18,6 +18,7 @@ from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
+from src.shared.infrastructure.http.openapi import problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 
@@ -76,7 +77,11 @@ def _translate(exc: Exception) -> ProblemError:
 def create_phone_router(
     phone_provider: Callable[..., ManagePhoneVerificationUseCase],
 ) -> APIRouter:
-    router = APIRouter(prefix="/contacto/celular", tags=[MODULE_ID])
+    router = APIRouter(
+        prefix="/contacto/celular",
+        tags=[MODULE_ID],
+        responses=problem_responses(409, 410, 429, 503),
+    )
 
     @router.post("/solicitar-otp", response_model=SolicitarOtpOut, status_code=status.HTTP_202_ACCEPTED)
     async def request_otp(

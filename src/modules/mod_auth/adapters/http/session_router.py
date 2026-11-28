@@ -26,6 +26,10 @@ from src.shared.application.ports.token_validator_port import AccountNotAllowedE
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
+from src.shared.infrastructure.http.dependencies.caller_identity import (
+    CHAT_SID_COOKIE,
+    hash_chat_sid,
+)
 from src.shared.infrastructure.http.dependencies.rate_limiter import (
     LOGIN_PER_IP,
     REGISTER_DEBOUNCE_PER_EMAIL,
@@ -34,6 +38,7 @@ from src.shared.infrastructure.http.dependencies.rate_limiter import (
     InMemoryRateLimiter,
     client_ip,
 )
+from src.shared.infrastructure.http.openapi import problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 logger = logging.getLogger(__name__)
@@ -88,11 +93,27 @@ def _register_field_errors(errors: list[dict[str, str]], password: str) -> list[
 
 def _csrf_check(request: Request, allowed_origins: Sequence[str]) -> None:
     if not request.headers.get("x-requested-with"):
-        raise ProblemError(403, "PETICION_INVALIDA", "Invalid request",
-                           "Missing X-Requested-With header.")
+        raise ProblemError(
+            403,
+            "PETICION_INVALIDA",
+            "Invalid request",
+            "Missing X-Requested-With header.",
+        )
+    allowed = {_normalize_origin(item) for item in allowed_origins if _normalize_origin(item)}
     origin = request.headers.get("origin")
-    if origin and _normalize_origin(origin) not in set(allowed_origins):
-        raise ProblemError(403, "PETICION_INVALIDA", "Invalid request", "Origin mismatch.")
+    if origin is not None:
+        if _normalize_origin(origin) not in allowed:
+            raise ProblemError(403, "PETICION_INVALIDA", "Invalid request", "Origin mismatch.")
+        return
+    sec_fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+    if sec_fetch_site == "same-origin":
+        return
+    raise ProblemError(
+        403,
+        "PETICION_INVALIDA",
+        "Invalid request",
+        "Missing Origin header.",
+    )
 
 
 def _clear_session_cookies(response: Response) -> None:
@@ -133,6 +154,7 @@ class OpenedSession(BaseModel):
     accessToken: str
     expiresIn: int = 900
     usuario: dict = Field(default_factory=dict)
+    accionPendiente: str | None = None
 
 
 class MfaChallenge(BaseModel):
@@ -232,9 +254,14 @@ def create_session_router(
             accessToken=str(answer.get("accessToken")),
             expiresIn=int(answer.get("expiresIn", 900)),
             usuario=dict(answer.get("usuario", {})),
+            accionPendiente=answer.get("accionPendiente"),
         )
 
-    @router.post("/login", response_model=OpenedSession | MfaChallenge)
+    @router.post(
+        "/login",
+        response_model=OpenedSession | MfaChallenge,
+        responses=problem_responses(401, 403, 429, 503),
+    )
     async def login(
         body: LoginIn,
         request: Request,
@@ -249,8 +276,15 @@ def create_session_router(
                 "Demasiados intentos de inicio de sesión. Espera un momento e inténtalo de nuevo.",
                 retry_after,
             )
+        raw_sid = request.cookies.get(CHAT_SID_COOKIE)
+        anonymous_sid = hash_chat_sid(raw_sid) if raw_sid else None
         try:
-            answer = await sessions.login(body.email, body.password, canal=body.canal)
+            if anonymous_sid is not None:
+                answer = await sessions.login(
+                    body.email, body.password, canal=body.canal, anonymous_sid=anonymous_sid
+                )
+            else:
+                answer = await sessions.login(body.email, body.password, canal=body.canal)
         except InvalidCredentialsError:
             raise ProblemError(401, "CREDENCIALES_INVALIDAS", "Invalid credentials",
                                "Correo o contraseña incorrectos") from None
@@ -274,7 +308,9 @@ def create_session_router(
             return MfaChallenge(canal=str(answer.get("canal", "EMAIL")))
         return _open_session_response(response, answer)
 
-    @router.post("/mfa/solicitar", response_model=OkResponse)
+    @router.post(
+        "/mfa/solicitar", response_model=OkResponse, responses=problem_responses(403, 410, 429, 503)
+    )
     async def request_mfa(
         body: RequestMfaIn,
         request: Request,
@@ -293,7 +329,9 @@ def create_session_router(
             raise ProblemError(exc.status, exc.code, "Module request failed") from None
         return OkResponse()
 
-    @router.post("/mfa/verificar", response_model=OpenedSession)
+    @router.post(
+        "/mfa/verificar", response_model=OpenedSession, responses=problem_responses(401, 403, 410, 503)
+    )
     async def verify_mfa(
         body: VerifyMfaIn,
         request: Request,
@@ -304,8 +342,15 @@ def create_session_router(
         challenge = request.cookies.get(CHALLENGE_COOKIE)
         if not challenge:
             raise ProblemError(410, "CODIGO_VENCIDO", "Code expired", "Pide un código nuevo")
+        raw_sid = request.cookies.get(CHAT_SID_COOKIE)
+        anonymous_sid = hash_chat_sid(raw_sid) if raw_sid else None
         try:
-            answer = await sessions.verify_mfa_code(challenge, body.code)
+            if anonymous_sid is not None:
+                answer = await sessions.verify_mfa_code(
+                    challenge, body.code, anonymous_sid=anonymous_sid
+                )
+            else:
+                answer = await sessions.verify_mfa_code(challenge, body.code)
         except InvalidCredentialsError as exc:
             extra = ({"intentosRestantes": exc.intentos_restantes}
                      if exc.intentos_restantes is not None else None)
@@ -337,7 +382,9 @@ def create_session_router(
         response.delete_cookie(CHALLENGE_COOKIE, path=SESSION_COOKIE_PATH)
         return _open_session_response(response, answer)
 
-    @router.post("/refresh", response_model=OpenedSession)
+    @router.post(
+        "/refresh", response_model=OpenedSession, responses=problem_responses(401, 403, 503)
+    )
     async def refresh(
         request: Request,
         response: Response,
@@ -356,7 +403,7 @@ def create_session_router(
                                "Tu sesión terminó, vuelve a iniciar sesión") from None
         return _open_session_response(response, answer)
 
-    @router.post("/logout", response_model=OkResponse)
+    @router.post("/logout", response_model=OkResponse, responses=problem_responses(403))
     async def logout(
         request: Request,
         response: Response,
@@ -384,7 +431,12 @@ def create_session_router(
         except ModuleRequestError as exc:
             raise ProblemError(exc.status, exc.code, "Module request failed") from None
 
-    @router.post("/registro", response_model=RegistroOut, status_code=201)
+    @router.post(
+        "/registro",
+        response_model=RegistroOut,
+        status_code=201,
+        responses=problem_responses(403, 409, 422, 429, 503),
+    )
     async def register(
         body: RegistroIn,
         request: Request,
@@ -453,7 +505,7 @@ def create_session_router(
         except ModuleUnavailableError:
             raise _service_unavailable() from None
 
-    @router.get("/politica-contrasena")
+    @router.get("/politica-contrasena", responses=problem_responses(503))
     async def password_policy(sessions: ManageSessionUseCase = Depends(session_provider)):
         """Password rules the chat renders before asking for one (SPEC-01 Req. 2)."""
         try:
@@ -463,7 +515,7 @@ def create_session_router(
         except ModuleUnavailableError:
             raise _service_unavailable() from None
 
-    @router.post("/verificar-correo", status_code=204)
+    @router.post("/verificar-correo", status_code=204, responses=problem_responses(403, 410, 503))
     async def verify_email(
         body: VerificarCorreoIn,
         request: Request,
@@ -479,7 +531,12 @@ def create_session_router(
             raise _service_unavailable() from None
         return Response(status_code=204)
 
-    @router.post("/verificar-correo/reenviar", response_model=OkResponse, status_code=202)
+    @router.post(
+        "/verificar-correo/reenviar",
+        response_model=OkResponse,
+        status_code=202,
+        responses=problem_responses(403, 429, 503),
+    )
     async def resend_verification(
         body: ReenviarVerificacionIn,
         request: Request,

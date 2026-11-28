@@ -23,6 +23,7 @@ from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailableError
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
+from src.shared.infrastructure.http.openapi import idempotency_key_required, problem_responses
 from src.shared.infrastructure.http.problem import ProblemError, not_found
 
 
@@ -148,7 +149,9 @@ def _translate_order_error(exc: Exception) -> ProblemError:
 def create_orders_router(
     orders_provider: Callable[..., OrdersServicePort],
 ) -> APIRouter:
-    router = APIRouter(prefix="/pedidos", tags=[MODULE_ID])
+    router = APIRouter(
+        prefix="/pedidos", tags=[MODULE_ID], responses=problem_responses(404, 429, 503)
+    )
 
     @router.get("", response_model=OrderListResponse)
     async def list_orders(
@@ -232,6 +235,7 @@ def create_orders_router(
         "/{pedido_id}/reenviar-confirmacion",
         status_code=status.HTTP_202_ACCEPTED,
         response_model=ResendConfirmationResponse,
+        openapi_extra=idempotency_key_required(),
     )
     async def resend_confirmation(
         pedido_id: str,
