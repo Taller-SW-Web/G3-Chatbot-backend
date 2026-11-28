@@ -62,13 +62,96 @@ async def test_search_returns_carousel_and_saves_memory():
 
 
 @pytest.mark.asyncio
-async def test_search_unknown_brand_asks_without_calling_modules():
+async def test_search_unknown_brand_asks_with_real_brand_chips():
     catalog = owned_catalog(make_catalog())
     result = await catalog.search(
         SearchArguments(marca="Inexistente"), customer_context()
     )
-    assert "Inexistente" in result["texto"]
-    assert result["bloques"] == []
+    assert "No trabajamos la marca Inexistente" in result["texto"]
+    block = result["bloques"][0]
+    assert block["tipo"] == "ACCIONES_RAPIDAS"
+    actions = block["datos"]["acciones"]
+    assert [action["etiqueta"] for action in actions] == ["Nike", "Adidas", "Andes"]
+    assert block["acciones"] == actions
+    assert all(action["payload"]["marca"] == action["etiqueta"] for action in actions)
+
+
+class OptionCatalog(FakeCatalogPort):
+    """Catalog whose category/brand lists are independent of product data."""
+
+    def __init__(self, categories, brands):
+        super().__init__(products=[], details={}, prices={})
+        self._categories = categories
+        self._brands = brands
+
+    async def list_categories(self, **kwargs):
+        return self._categories
+
+    async def list_brands(self, **kwargs):
+        return self._brands
+
+
+def option_catalog(category_count=0, brand_count=0):
+    categories = [
+        {"name": f"Categoría {index}", "categoria_id": f"cat-{index}"}
+        for index in range(category_count)
+    ]
+    brands = [
+        {"name": f"Marca {index}", "marca_id": f"brand-{index}"}
+        for index in range(brand_count)
+    ]
+    return owned_catalog(make_catalog(catalog=OptionCatalog(categories, brands)))
+
+
+def option_chips(result):
+    return result["bloques"][0]["datos"]["acciones"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_brand_returns_real_chips_capped_at_six():
+    catalog = option_catalog(brand_count=8)
+
+    result = await catalog.search(SearchArguments(marca="Inexistente"), customer_context())
+
+    chips = option_chips(result)
+    assert len(chips) == 6
+    assert [chip["etiqueta"] for chip in chips] == [f"Marca {index}" for index in range(6)]
+    assert {chip["payload"]["marca"] for chip in chips} == {
+        f"Marca {index}" for index in range(6)
+    }
+    assert not {"Nike", "Adidas", "Andes"} & {chip["etiqueta"] for chip in chips}
+
+
+@pytest.mark.asyncio
+async def test_unknown_category_returns_real_chips_capped_at_six():
+    catalog = option_catalog(category_count=8)
+
+    result = await catalog.search(
+        SearchArguments(categoria="Inexistente"), customer_context()
+    )
+
+    chips = option_chips(result)
+    assert len(chips) == 6
+    assert [chip["etiqueta"] for chip in chips] == [
+        f"Categoría {index}" for index in range(6)
+    ]
+    assert all(chip["id"] == "BUSCAR_POR_CATEGORIA" for chip in chips)
+
+
+@pytest.mark.asyncio
+async def test_unknown_category_and_brand_share_the_six_chip_budget():
+    catalog = option_catalog(category_count=4, brand_count=4)
+
+    result = await catalog.search(
+        SearchArguments(categoria="Inexistente", marca="Inexistente"), customer_context()
+    )
+
+    chips = option_chips(result)
+    assert len(chips) == 6
+    assert [chip["etiqueta"] for chip in chips] == [
+        "Categoría 0", "Categoría 1", "Categoría 2", "Categoría 3",
+        "Marca 0", "Marca 1",
+    ]
 
 
 @pytest.mark.asyncio
