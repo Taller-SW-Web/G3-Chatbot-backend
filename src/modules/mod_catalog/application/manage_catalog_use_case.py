@@ -6,6 +6,7 @@ returns plain data; handlers wrap it into `ToolResult` blocks. Never
 imports FastAPI, httpx or SQLAlchemy.
 """
 import asyncio
+import logging
 import time
 import uuid
 from decimal import Decimal
@@ -32,9 +33,12 @@ from src.shared.application.tools.tool_context import (
     conversation_id_from_context,
 )
 from src.shared.domain.module_errors import (
+    GENERIC_UNAVAILABLE_TEXT,
     ModuleRequestError,
     ModuleUnavailableError,
 )
+
+logger = logging.getLogger(__name__)
 
 LIST_TTL_SECONDS = 600.0
 PROMOTION_CACHE_TTL_SECONDS = 60.0
@@ -835,4 +839,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
         if isinstance(exc, ModuleUnavailableError):
             return CatalogError("SERVICIO_NO_DISPONIBLE", exc.module,
                                 retry_after=getattr(exc, "retry_after", None))
-        return CatalogError("SERVICIO_NO_DISPONIBLE", type(exc).__name__)
+        # Unexpected failure: the customer gets a constant text and a correlation id;
+        # the class, message and traceback stay in the internal log (#255).
+        logger.error("Unexpected catalog failure: %s", type(exc).__name__, exc_info=exc)
+        return CatalogError("SERVICIO_NO_DISPONIBLE", GENERIC_UNAVAILABLE_TEXT)

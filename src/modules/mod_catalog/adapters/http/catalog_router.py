@@ -3,6 +3,7 @@
 Thin: no business rules. Anonymous reads need no session; explicit ids
 work without a chat context (carousel ordinals stay unavailable then).
 """
+import logging
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -18,8 +19,12 @@ from src.modules.mod_catalog.application.tools import (
     ProductArguments,
     SearchArguments,
 )
+from src.shared.domain.module_errors import GENERIC_UNAVAILABLE_TEXT
 from src.shared.infrastructure.http.openapi import problem_responses
+from src.shared.infrastructure.http.pagination import MAX_PAGE
 from src.shared.infrastructure.http.problem import ProblemError
+
+logger = logging.getLogger(__name__)
 
 
 class AvailabilityOut(BaseModel):
@@ -85,7 +90,7 @@ def create_catalog_router(catalog_provider) -> APIRouter:
         orden: Literal[
             "relevancia", "precio_asc", "precio_desc", "nombre_asc", "nombre_desc"
         ] | None = Query(default=None),
-        pagina: int = Query(default=1, ge=1),
+        pagina: int = Query(default=1, ge=1, le=MAX_PAGE),
         tamanio: int = Query(default=10, ge=1, le=10),
         service: ManageCatalogUseCase = Depends(catalog_provider),
     ) -> dict[str, Any]:
@@ -185,4 +190,5 @@ def _as_catalog_error(exc: Exception) -> CatalogError:
     if isinstance(exc, ModuleUnavailableError):
         return Error("SERVICIO_NO_DISPONIBLE", exc.module,
                      retry_after=getattr(exc, "retry_after", None))
-    return Error("SERVICIO_NO_DISPONIBLE", type(exc).__name__)
+    logger.error("Unexpected catalog adapter failure: %s", type(exc).__name__, exc_info=exc)
+    return Error("SERVICIO_NO_DISPONIBLE", GENERIC_UNAVAILABLE_TEXT)

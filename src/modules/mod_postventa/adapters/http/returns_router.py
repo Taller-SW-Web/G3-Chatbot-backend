@@ -16,6 +16,7 @@ from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
 from src.shared.infrastructure.http.openapi import idempotency_key_required, problem_responses
+from src.shared.infrastructure.http.pagination import MAX_PAGE
 from src.shared.infrastructure.http.problem import ProblemError
 
 MAX_EVIDENCE_BYTES = 5 * 1024 * 1024
@@ -138,7 +139,7 @@ def create_returns_router(service_provider: Callable[..., ReturnsServicePort]) -
         request: Request,
         estado: str | None = Query(default=None),
         tipo: str | None = Query(default=None),
-        page: int = Query(default=1, ge=1),
+        page: int = Query(default=1, ge=1, le=MAX_PAGE),
         pageSize: int = Query(default=10, ge=1, le=50),
         caller: CallerIdentity = Depends(require_customer),
         service: ReturnsServicePort = Depends(service_provider),

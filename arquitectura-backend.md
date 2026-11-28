@@ -131,6 +131,9 @@ auth → usado por todos vía shared/auth
 - **Persistencia compartida**: outbox, `order_ref`, `local_phone_verification`,
   conversación/mensaje/adjunto y `SqlAlchemyUnitOfWork`.
 - **Fakes de módulos externos**: Seguridad y Ventas en memoria (`MODULES_MODE`).
+  Con `APP_ENV=production` el arranque rechaza cualquier fake de
+  Productos/Ventas/Despacho salvo `ALLOW_FAKE_MODULES=true` explícito, y
+  `/health` declara `status=degraded` + `fakeModules` mientras estén activos.
 
 `shared` **no importa** `src.modules.*`. El checker lo verifica.
 
