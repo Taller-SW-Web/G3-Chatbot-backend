@@ -19,6 +19,7 @@ from src.shared.application.dto.commerce_contracts_dto import ApplyCouponRequest
 from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.caller_identity import get_caller_identity
+from src.shared.infrastructure.http.openapi import problem_responses
 from src.shared.infrastructure.http.problem import ProblemError
 
 ERROR_STATUS = {
@@ -93,7 +94,11 @@ class ClearCartIn(BaseModel):
 
 
 def create_cart_router(cart_provider) -> APIRouter:
-    router = APIRouter(prefix="/carrito", tags=[MODULE_ID])
+    router = APIRouter(
+        prefix="/carrito",
+        tags=[MODULE_ID],
+        responses=problem_responses(404, 409, 422, 429, 503),
+    )
 
     @router.get("")
     async def view_cart(

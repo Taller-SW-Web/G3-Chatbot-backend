@@ -51,3 +51,12 @@ class ConversationRepositoryPort(Protocol):
     async def touch(self, conversation_id: uuid.UUID) -> None:
         """Move `last_message_at` to now (sidebar ordering)."""
         ...
+
+    async def link_anonymous_to_customer(
+        self, anonymous_sid: str, customer_id: uuid.UUID
+    ) -> tuple[int, str | None]:
+        """Link anonymous conversations of `anonymous_sid` to `customer_id`.
+
+        Extracts and clears `context['accionPendiente']` so post-login resumes it once.
+        """
+        ...
