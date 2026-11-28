@@ -478,23 +478,33 @@ class ManageCartUseCase:
             return self._empty_cart_view()
         skus = [row.sku for row in rows]
         price_rows: dict = {}
-        prices, availability = await asyncio.gather(
+        prices, (availability, availability_degraded) = await asyncio.gather(
             self._prices_map(skus, price_rows),
             self._availability_map(skus),
         )
         priced: list[PricedLine] = []
         unavailable_reasons: dict[str, str] = {}
+        indeterminate_skus: set[str] = set()
         for row in rows:
             price = prices.get(row.sku)
             stock_check = availability.get(row.sku)
-            if stock_check is not None and stock_check.code == "SKU_AGOTADO":
+            # Precedence (gestion-carrito/spec.md:108-110): missing price / inactive SKU
+            # is always "Ya no disponible", never "Agotado".
+            if price is None:
+                is_available = False
+                unavailable_reasons[row.sku] = "NO_DISPONIBLE"
+            elif stock_check is not None and stock_check.code == "SKU_AGOTADO":
                 is_available = False
                 unavailable_reasons[row.sku] = "AGOTADO"
-            elif price is None or (stock_check is not None and not stock_check.ok):
+            elif stock_check is not None and not stock_check.ok:
                 is_available = False
                 unavailable_reasons[row.sku] = "NO_DISPONIBLE"
             else:
                 is_available = True
+                if availability_degraded or (
+                    stock_check is not None and stock_check.code == "INDETERMINADO"
+                ):
+                    indeterminate_skus.add(row.sku)
             priced.append(PricedLine(
                 sku=row.sku,
                 name=row.name,
@@ -523,11 +533,22 @@ class ManageCartUseCase:
             and evaluation is not None
             and evaluation.get("coupon_applied") is False
         ):
+            rejection_reason = str(evaluation.get("reason") or "").upper()
             await self._carts.set_coupon(cart.id, None)
-            removed_coupon_notice = (
-                f"El cupón {codigo_efectivo} ya no cumple las condiciones y fue retirado."
-            )
+            if "MINIMO" in rejection_reason or "MINIMUM" in rejection_reason:
+                removed_coupon_notice = (
+                    f"Quitamos el cupón {codigo_efectivo} porque tu compra ya no alcanza el mínimo"
+                )
+            else:
+                removed_coupon_notice = (
+                    f"Quitamos el cupón {codigo_efectivo} porque ya no es válido"
+                )
             codigo_efectivo = None
+            # Re-evaluate without coupon so automatic promotions are not suppressed.
+            if sellable_rows:
+                evaluation, promotions_ok = await self._evaluate(
+                    cart, sellable_rows, coupon_code=None
+                )
 
         # No campaign lookup is needed when no campaign was applied. Preserve
         # every authoritative evaluated discount; only its display name is optional.
@@ -608,6 +629,11 @@ class ManageCartUseCase:
             else:
                 notices.append(f"{line['nombre']} ya no está disponible. Puedes quitarlo.")
                 line["nota"] = "Ya no disponible"
+        if indeterminate_skus:
+            for line in lines_out:
+                if line["disponible"] and line["sku"] in indeterminate_skus:
+                    line["nota"] = "No pudimos confirmar el stock"
+            notices.append("No pudimos confirmar el stock")
         if not promotions_ok:
             notices.append("El checkout queda bloqueado hasta calcular promociones.")
         return {
@@ -832,7 +858,7 @@ class ManageCartUseCase:
             captured.append(row)
         return regular
 
-    async def _availability_map(self, skus: list[str]) -> dict[str, Any]:
+    async def _availability_map(self, skus: list[str]) -> tuple[dict[str, Any], bool]:
         """Batch-revalidate SKU availability in one call (no N+1, SPEC-11, #247)."""
         try:
             rows = await self._inventory.get_availability(skus)
@@ -845,8 +871,8 @@ class ManageCartUseCase:
                 code,
                 correlation_id_var.get(),
             )
-            return {}
-        return self._stock.check_bulk(rows, requested=skus)
+            return {}, True
+        return self._stock.check_bulk(rows, requested=skus), False
 
     async def _prices_map(self, skus: list[str], captured=None) -> dict[str, Decimal]:
         try:
