@@ -11,7 +11,6 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.modules.mod_checkout.adapters.payment_simulator_adapter import CardValidationError
 from src.modules.mod_checkout.domain.checkout import CheckoutStatus, NewCheckout
 from src.modules.mod_checkout.domain.payment_attempt import (
     NewPaymentAttempt,
@@ -19,7 +18,10 @@ from src.modules.mod_checkout.domain.payment_attempt import (
     PaymentRejectReason,
     PaymentResult,
 )
-from src.modules.mod_checkout.ports.payment_gateway_port import PaymentGatewayPort
+from src.modules.mod_checkout.ports.payment_gateway_port import (
+    CardValidationError,
+    PaymentGatewayPort,
+)
 from src.modules.mod_shipping.public import (
     build_destination,
     build_quote_lines,

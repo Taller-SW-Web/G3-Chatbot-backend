@@ -3,6 +3,19 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+class CardValidationError(Exception):
+    """Invalid card data rejected before the gateway runs (SPEC-14).
+
+    Lives in `ports/` so `application/` can translate it to a `VALIDACION`
+    problem without importing a concrete adapter.
+    """
+
+    def __init__(self, message: str, field: str = "tarjeta"):
+        super().__init__(message)
+        self.message = message
+        self.field = field
+
+
 @dataclass
 class PaymentProcessResult:
     result: str
