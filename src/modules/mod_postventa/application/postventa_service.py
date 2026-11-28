@@ -31,6 +31,7 @@ from src.modules.mod_postventa.domain.references import (
     NewEvidenceReference,
     NewReturnReference,
 )
+from src.modules.mod_postventa.ports.evidence_port import EvidencePort
 from src.modules.mod_postventa.ports.postventa_port import PostventaPort
 from src.shared.application.ports.conversation_repository_port import ConversationRepositoryPort
 from src.shared.application.ports.order_repository_port import SalesOrderPort
@@ -53,7 +54,7 @@ class PostventaService:
         sales: SalesOrderPort,
         claim_refs: Any | None = None,
         return_refs: Any | None = None,
-        evidence: Any | None = None,
+        evidence: EvidencePort | None = None,
         order_refs: Any | None = None,
         conversations: ConversationRepositoryPort | None = None,
         uow: Any | None = None,
@@ -171,7 +172,10 @@ class PostventaService:
             )
         # Same unit of work as `return_ref`: evidence rows and the draft cleanup commit together.
         await self._associate_return_evidence(
-            return_id=return_id, customer_id=customer_id, normalized=normalized
+            return_id=return_id,
+            customer_id=customer_id,
+            normalized=normalized,
+            conversation_id=conversation_id,
         )
         if conversation_id is not None:
             await self._remove_draft(
@@ -542,7 +546,8 @@ class PostventaService:
                     page=page,
                     page_size=DUPLICATE_PAGE_SIZE,
                     correlation_id=correlation_id,
-                )
+                ),
+                correlation_id=correlation_id,
             )
             async for items in pages:
                 for item in items:
@@ -583,7 +588,8 @@ class PostventaService:
                     page=page,
                     page_size=DUPLICATE_PAGE_SIZE,
                     correlation_id=correlation_id,
-                )
+                ),
+                correlation_id=correlation_id,
             )
             async for items in pages:
                 for item in items:
@@ -618,11 +624,14 @@ class PostventaService:
         return None
 
     async def _pages(
-        self, fetch: Callable[[int], Awaitable[dict[str, Any]]]
+        self,
+        fetch: Callable[[int], Awaitable[dict[str, Any]]],
+        *,
+        correlation_id: str | None = None,
     ) -> AsyncIterator[list[Any]]:
         """Yield all list pages; page 51 is reachable (the old fixed page silently missed it)."""
         page = 1
-        while True:
+        while page <= MAX_DUPLICATE_PAGES:
             raw = await fetch(page)
             items = raw.get("contenido") or raw.get("items") or []
             if not isinstance(items, list):
@@ -637,6 +646,12 @@ class PostventaService:
             except (TypeError, ValueError):
                 pass
             page += 1
+        logger.warning(
+            "Se alcanzó el tope de %d páginas al buscar duplicados; se continúa sin "
+            "bloquear [correlation_id=%s]",
+            MAX_DUPLICATE_PAGES,
+            correlation_id or correlation_id_var.get(),
+        )
 
     @staticmethod
     def _warn_duplicate_failure(
@@ -658,12 +673,10 @@ class PostventaService:
         return_id: str,
         customer_id: uuid.UUID,
         normalized: dict[str, Any],
+        conversation_id: uuid.UUID | None,
     ) -> None:
         """Attach the uploaded drafts of this request to the new return, same UoW."""
         if self._evidence is None:
-            return
-        listar = getattr(self._evidence, "listar_borrador_por_urls", None)
-        if listar is None:
             return
         urls = sorted(
             {
@@ -674,8 +687,16 @@ class PostventaService:
         )
         if not urls:
             return
-        rows = await listar(urls, customer_id)
+        rows = await self._evidence.listar_borrador_por_urls(
+            urls, customer_id, conversation_id
+        )
+        seen: set[str] = set()
         for row in rows:
+            url = str(row.url)
+            if url in seen:
+                # Several abandoned drafts may share a URL; attach a single row.
+                continue
+            seen.add(url)
             await self._evidence.asociar_devolucion(row.id, row.conversation_id, return_id)
 
     @staticmethod

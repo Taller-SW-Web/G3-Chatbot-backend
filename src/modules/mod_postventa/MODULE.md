@@ -54,8 +54,9 @@ creación continúa (fail-open, SPEC-19/21) y se registra un `warning` con el
 - Los borradores de reclamo y devolución viven en `conversation.context`
   (`postventaClaimDraft`, `postventaReturnDraft`) y expiran a las 24 h. El
   servicio los persiste cuando el caso de uso recibe `conversation_id`
-  (`save_*_draft`), los recupera (`get_*_draft`) y los borra al registrar. El
-  contrato HTTP no cambia.
+  (`save_*_draft`), los recupera (`get_*_draft`) y los borra al registrar.
+  `POST /devoluciones` y `POST /reclamos` aceptan `conversacionId` opcional
+  (UUID) para ubicar el borrador; **no se reenvía a G5**.
 - `python -m src.modules.mod_postventa.jobs.purge_drafts` borra las referencias
   de evidencia de borradores sin enviar con más de 24 h y las claves
   `postventaReturnDraft` / `postventaClaimDraft` vencidas de

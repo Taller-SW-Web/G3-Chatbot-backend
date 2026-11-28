@@ -5,6 +5,7 @@ import anyio
 import pytest
 
 from src.modules.mod_postventa.adapters.fake_postventa import FakePostventaPort
+from src.modules.mod_postventa.application import postventa_service as postventa_service_module
 from src.modules.mod_postventa.application.postventa_dto import PostventaError
 from src.modules.mod_postventa.application.postventa_service import PostventaService
 from src.shared.domain.request_context import correlation_id_var
@@ -353,3 +354,32 @@ def test_duplicate_claim_in_position_51_is_detected():
     assert exc.value.code == "RECLAMO_DUPLICADO"
     assert exc.value.extra["codigoSeguimiento"] == target["codigoSeguimiento"]
     assert len(port.claims) == 51
+
+
+def test_pagination_stops_at_the_safety_cap(monkeypatch, caplog):
+    monkeypatch.setattr(postventa_service_module, "MAX_DUPLICATE_PAGES", 2)
+    service = PostventaService(postventa=FakePostventaPort(), sales=FakeSalesPort())
+    calls = []
+
+    async def fetch(page):
+        calls.append(page)
+        return {
+            "contenido": [
+                {"pedidoId": f"PED-OTHER-{page}-{index}", "motivo": "OTRO"}
+                for index in range(50)
+            ]
+        }
+
+    async def collect():
+        return [items async for items in service._pages(fetch, correlation_id="corr-cap")]
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="src.modules.mod_postventa.application.postventa_service",
+    ):
+        pages = anyio.run(collect)
+
+    assert len(pages) == 2
+    assert calls == [1, 2]
+    assert "tope de 2 páginas" in caplog.text
+    assert "corr-cap" in caplog.text

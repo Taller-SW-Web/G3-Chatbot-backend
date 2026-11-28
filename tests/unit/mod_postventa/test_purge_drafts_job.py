@@ -2,6 +2,8 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import anyio
+
 from src.modules.mod_postventa.domain.draft_retention import (
     CLAIM_DRAFT_CONTEXT_KEY,
     DRAFT_TTL,
@@ -78,8 +80,6 @@ def test_job_purges_evidence_and_expired_context_drafts():
         },
     )
     session = _JobSession([old, fresh])
-
-    import anyio
 
     evidence, context = anyio.run(
         lambda: purge_drafts(NOW, session_factory=lambda: session)

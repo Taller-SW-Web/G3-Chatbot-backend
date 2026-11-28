@@ -72,11 +72,15 @@ class EvidencePostgresAdapter:
         return list(result.scalars().all())
 
     async def listar_borrador_por_urls(
-        self, urls: Sequence[str], customer_id: uuid.UUID
+        self,
+        urls: Sequence[str],
+        customer_id: uuid.UUID,
+        conversation_id: uuid.UUID | None = None,
     ) -> list[Evidence]:
         """Drafts of this customer whose URL was sent in the confirmed return.
 
         Joins `conversation` so a URL copied from another customer never links.
+        With `conversation_id`, only that conversation's drafts are candidates.
         """
         values = [url for url in dict.fromkeys(urls) if url]
         if not values:
@@ -91,6 +95,8 @@ class EvidencePostgresAdapter:
             )
             .order_by(Evidence.created_at, Evidence.id)
         )
+        if conversation_id is not None:
+            stmt = stmt.where(Evidence.conversation_id == conversation_id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

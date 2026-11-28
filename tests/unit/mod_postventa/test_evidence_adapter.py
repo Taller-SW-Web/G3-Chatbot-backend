@@ -119,6 +119,23 @@ async def test_listar_borrador_por_urls_filtra_cliente_y_pendientes(session):
 
 
 @pytest.mark.asyncio
+async def test_listar_borrador_por_urls_filtra_conversacion_cuando_se_indica(session):
+    """SPEC-21: the form's conversacionId narrows the evidence candidates."""
+    customer_id, conversation_id = uuid.uuid4(), uuid.uuid4()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    session.execute.return_value = result
+
+    await EvidencePostgresAdapter(session).listar_borrador_por_urls(
+        ["https://ventas.example/a.jpg"], customer_id, conversation_id
+    )
+
+    compiled = session.execute.call_args.args[0].compile(dialect=postgresql.dialect())
+    assert "evidence.conversation_id" in str(compiled)
+    assert conversation_id in compiled.params.values()
+
+
+@pytest.mark.asyncio
 async def test_purgar_borradores_borra_solo_pendientes_anteriores_al_corte(session):
     """SPEC-21 · Req. 3: the 24 h purge never touches linked evidence."""
     cutoff = datetime(2026, 11, 26, 12, 0, tzinfo=timezone.utc)
