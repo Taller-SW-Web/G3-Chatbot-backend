@@ -274,6 +274,76 @@ def test_login_forwards_hashed_chat_sid_and_returns_pending_action():
     assert ("login", "a@b.pe", "EMAIL", hash_chat_sid("raw-anon-cookie")) in sessions.calls
 
 
+def test_login_exposes_the_cart_merge_notice_and_adjustments():
+    """SPEC-03 Req. 4 - the chat renders the merge notice and per-line adjustments."""
+    sessions = FakeSessions(
+        {
+            "login": {
+                "accessToken": "acc",
+                "refreshToken": "ref-1",
+                "carritoFusionado": True,
+                "avisoCarrito": "Unimos los productos que agregaste con los de tu cuenta",
+                "ajustesCarrito": [
+                    {"sku": "SKU-A", "solicitado": 12, "ajustado": 10,
+                     "motivo": "TOPE_POR_LINEA"}
+                ],
+            }
+        }
+    )
+    res = make_client(sessions).post(
+        BASE + "/login", json={"email": "a@b.pe", "password": "secret123"}, headers=CSRF
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["carritoFusionado"] is True
+    assert body["avisoCarrito"] == "Unimos los productos que agregaste con los de tu cuenta"
+    assert body["ajustesCarrito"] == [
+        {"sku": "SKU-A", "solicitado": 12, "ajustado": 10, "motivo": "TOPE_POR_LINEA"}
+    ]
+
+
+def test_login_without_merge_defaults_to_no_merged_cart():
+    """Backwards-compatible defaults when there is no anonymous cart."""
+    sessions = FakeSessions({"login": {"accessToken": "acc", "refreshToken": "ref-1"}})
+    res = make_client(sessions).post(
+        BASE + "/login", json={"email": "a@b.pe", "password": "secret123"}, headers=CSRF
+    )
+    body = res.json()
+    assert body["carritoFusionado"] is False
+    assert body["avisoCarrito"] is None
+    assert body["ajustesCarrito"] == []
+
+
+def test_verify_mfa_forwards_hashed_chat_sid_and_returns_cart_merge_notice():
+    """SPEC-03 Req. 2 + 4 - MFA hashes the cookie before the cart merge, like login."""
+    from src.shared.infrastructure.http.dependencies.caller_identity import hash_chat_sid
+
+    sessions = FakeSessions(
+        {
+            "verify_mfa": {
+                "accessToken": "acc",
+                "refreshToken": "ref-2",
+                "carritoFusionado": True,
+                "avisoCarrito": "Unimos los productos que agregaste con los de tu cuenta",
+            }
+        }
+    )
+    client = make_client(sessions)
+    client.cookies.set("chat_chg", "chg-1")
+    client.cookies.set("chat_sid", "raw-anon-cookie")
+    res = client.post(BASE + "/mfa/verificar", json={"code": "123456"}, headers=CSRF)
+    assert res.status_code == 200
+    assert res.json()["avisoCarrito"] == (
+        "Unimos los productos que agregaste con los de tu cuenta"
+    )
+    assert (
+        "verify_mfa",
+        "chg-1",
+        "123456",
+        hash_chat_sid("raw-anon-cookie"),
+    ) in sessions.calls
+
+
 def test_verify_mfa_code_opens_session_and_clears_challenge_cookie():
     """SPEC-03 Req. 2 - Scenario: Codigo correcto tras MFA."""
     sessions = FakeSessions({"verify_mfa": {"accessToken": "acc", "expiresIn": 900,
