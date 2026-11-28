@@ -224,18 +224,20 @@ async def test_rate_limit_headers_and_429_enforced_by_kong(gateway_url: str) -> 
 
 
 async def test_direct_backend_access_without_gateway_secret_is_blocked(gateway_url: str) -> None:
-    """#256: FastAPI rejects direct calls lacking X-Gateway-Secret, while Kong succeeds."""
+    """#256: FastAPI keeps /health exempt for container healthchecks, blocks direct /api calls."""
     direct_url = os.getenv("BACKEND_DIRECT_URL")
     if not direct_url:
         pytest.skip("Falta BACKEND_DIRECT_URL: prueba de bloqueo directo no ejecutada")
 
     async with httpx.AsyncClient(base_url=direct_url.rstrip("/"), timeout=15.0) as direct:
-        no_header = await direct.get("/health")
+        health_direct = await direct.get("/health")
+        no_header = await direct.get("/api/v1/catalogo/productos")
         wrong_header = await direct.get(
             "/api/v1/catalogo/productos",
             headers={"X-Gateway-Secret": "wrong-secret"},
         )
 
+    assert health_direct.status_code == 200
     assert no_header.status_code == 403
     assert no_header.json()["code"] == "GATEWAY_REQUIRED"
     assert wrong_header.status_code == 403
@@ -243,6 +245,9 @@ async def test_direct_backend_access_without_gateway_secret_is_blocked(gateway_u
 
     async with httpx.AsyncClient(base_url=gateway_url, timeout=15.0) as via_kong:
         # Even if a client sends a spoofed X-Gateway-Secret, Kong strips and replaces it.
-        ok = await via_kong.get("/health", headers={"X-Gateway-Secret": "spoofed"})
+        ok = await via_kong.get(
+            "/api/v1/catalogo/productos",
+            headers={"X-Gateway-Secret": "spoofed"},
+        )
     assert ok.status_code == 200
     assert ok.headers.get("x-gateway") == "kong"

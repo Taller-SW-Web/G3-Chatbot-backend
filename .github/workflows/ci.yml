@@ -517,7 +517,7 @@ jobs:
           nohup uvicorn src.infrastructure.main:app --host 127.0.0.1 --port 8000 --env-file .env \
             > uvicorn.log 2>&1 &
           for _ in $(seq 1 30); do
-            curl -fsS -H "X-Gateway-Secret: ${GATEWAY_SHARED_SECRET}" http://127.0.0.1:8000/health && exit 0
+            curl -fsS http://127.0.0.1:8000/health && exit 0
             sleep 2
           done
           cat uvicorn.log

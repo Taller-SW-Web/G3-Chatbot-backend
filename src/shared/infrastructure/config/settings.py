@@ -332,6 +332,12 @@ def warn_unsafe_defaults(settings: Settings, log) -> None:
                 "false; checkout accepts unverified contacts.",
                 settings.app_env,
             )
+        if not settings.gateway_shared_secret:
+            log.warning(
+                "APP_ENV=%s: GATEWAY_SHARED_SECRET is unset; direct requests to the backend "
+                "domain are not blocked by GatewaySecretMiddleware (#256).",
+                settings.app_env,
+            )
         return
     problems = settings.unsafe_defaults()
     if problems:
