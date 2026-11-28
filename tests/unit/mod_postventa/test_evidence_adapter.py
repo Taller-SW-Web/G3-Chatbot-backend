@@ -1,7 +1,7 @@
 """referencias locales de SPEC-21, sin upload a Ventas."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,7 +9,12 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.mod_postventa.adapters.evidence_postgres_adapter import EvidencePostgresAdapter
-from src.shared.infrastructure.db.models import Evidence
+from src.modules.mod_postventa.domain.draft_retention import (
+    CLAIM_DRAFT_CONTEXT_KEY,
+    DRAFT_TTL,
+    RETURN_DRAFT_CONTEXT_KEY,
+)
+from src.shared.infrastructure.db.models import Conversation, Evidence
 
 
 @pytest.fixture
@@ -133,3 +138,47 @@ async def test_purgar_borradores_borra_solo_pendientes_anteriores_al_corte(sessi
     assert cutoff in compiled.params.values()
     session.commit.assert_not_awaited()
     session.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_purgar_borradores_contexto_solo_borra_claves_vencidas(session):
+    """SPEC-19/21: expired drafts leave conversation.context, fresh ones stay."""
+    now = datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc)
+    old = Conversation(
+        id=uuid.uuid4(),
+        anonymous_sid="old",
+        context={
+            RETURN_DRAFT_CONTEXT_KEY: {
+                "payload": {"pedidoId": "P-1"},
+                "savedAt": (now - DRAFT_TTL - timedelta(minutes=1)).isoformat(),
+            },
+            "crossSellPending": True,
+        },
+    )
+    fresh = Conversation(
+        id=uuid.uuid4(),
+        anonymous_sid="fresh",
+        context={
+            CLAIM_DRAFT_CONTEXT_KEY: {
+                "payload": {"pedidoId": "P-2"},
+                "savedAt": (now - timedelta(hours=1)).isoformat(),
+            },
+        },
+    )
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [old, fresh]
+    session.execute.return_value = result
+
+    removed = await EvidencePostgresAdapter(session).purgar_borradores_contexto(now)
+
+    assert removed == 1
+    assert RETURN_DRAFT_CONTEXT_KEY not in old.context
+    assert old.context["crossSellPending"] is True
+    assert CLAIM_DRAFT_CONTEXT_KEY in fresh.context
+    stmt = session.execute.call_args.args[0]
+    compiled = stmt.compile(dialect=postgresql.dialect())
+    sql = str(compiled)
+    assert "conversation.context ?" in sql
+    assert "FOR UPDATE SKIP LOCKED" in sql
+    session.flush.assert_awaited_once_with()
+    session.commit.assert_not_awaited()

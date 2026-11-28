@@ -9,7 +9,7 @@ Owns the channel rules that G5 delegates to the caller:
 import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from src.modules.mod_postventa.application.postventa_dto import (
@@ -18,6 +18,13 @@ from src.modules.mod_postventa.application.postventa_dto import (
     to_g5_evidence_type,
     to_g5_return_reason,
     to_g5_return_type,
+)
+from src.modules.mod_postventa.domain.draft_retention import (
+    CLAIM_DRAFT_CONTEXT_KEY,
+    DRAFT_TTL,
+    RETURN_DRAFT_CONTEXT_KEY,
+    draft_saved_at,
+    is_draft_expired,
 )
 from src.modules.mod_postventa.domain.references import (
     NewClaimReference,
@@ -35,10 +42,8 @@ logger = logging.getLogger(__name__)
 
 # SPEC-21 Req. 5 / SPEC-19 Req. 3: list until exhausted; 50 was the old fixed first page.
 DUPLICATE_PAGE_SIZE = 50
-# SPEC-19/21: a rejected draft stays readable for 24 h, then it is ignored and purged.
-DRAFT_TTL = timedelta(hours=24)
-RETURN_DRAFT_CONTEXT_KEY = "postventaReturnDraft"
-CLAIM_DRAFT_CONTEXT_KEY = "postventaClaimDraft"
+# A broken upstream that ignores `page` and omits `total` must not hang the request.
+MAX_DUPLICATE_PAGES = 100
 
 
 class PostventaService:
@@ -482,10 +487,14 @@ class PostventaService:
         if not isinstance(entry, dict):
             return None
         payload = entry.get("payload")
-        saved_at = self._parse_saved_at(entry.get("savedAt"))
-        if not isinstance(payload, dict) or saved_at is None:
+        if not isinstance(payload, dict) or draft_saved_at(entry) is None:
             return None
-        if self._clock() - saved_at > DRAFT_TTL:
+        if is_draft_expired(entry, self._clock(), DRAFT_TTL):
+            # PII must disappear, not just stop being readable (SPEC-19/21 privacy).
+            await self._remove_draft(
+                key, conversation_id=conversation_id, customer_id=customer_id
+            )
+            await self._commit()
             return None
         return dict(payload)
 
@@ -513,18 +522,6 @@ class PostventaService:
             raise PostventaError(
                 "RECURSO_NO_ENCONTRADO", "No encontré esa conversación en tu cuenta."
             )
-
-    @staticmethod
-    def _parse_saved_at(value: Any) -> datetime | None:
-        if not isinstance(value, str):
-            return None
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed
 
     # -- duplicate detection -------------------------------------------------------
 

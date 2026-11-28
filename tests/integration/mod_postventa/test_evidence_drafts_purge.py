@@ -6,16 +6,23 @@ import pytest
 from sqlalchemy import insert, select
 
 from src.modules.mod_postventa.adapters.evidence_postgres_adapter import EvidencePostgresAdapter
-from src.shared.infrastructure.db.models import Evidence
+from src.modules.mod_postventa.domain.draft_retention import (
+    CLAIM_DRAFT_CONTEXT_KEY,
+    DRAFT_TTL,
+    RETURN_DRAFT_CONTEXT_KEY,
+)
+from src.shared.infrastructure.db.models import Conversation, Evidence
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
-async def _conversation(session, metadata) -> uuid.UUID:
+async def _conversation(session, metadata, context=None) -> uuid.UUID:
     conversation_id = uuid.uuid4()
     await session.execute(
         insert(metadata.tables["conversation"]).values(
-            id=conversation_id, anonymous_sid=f"purge_{conversation_id.hex}"
+            id=conversation_id,
+            anonymous_sid=f"purge_{conversation_id.hex}",
+            context=context or {},
         )
     )
     return conversation_id
@@ -70,3 +77,39 @@ async def test_purge_only_removes_unlinked_drafts_older_than_24_hours(
     assert boundary.id in remaining
     assert fresh.id in remaining
     assert linked.id in remaining
+
+
+async def test_purge_context_only_removes_expired_postventa_drafts(
+    postgres_session, persistence_metadata
+):
+    session = postgres_session
+    now = datetime.now(timezone.utc)
+    old_id = await _conversation(
+        session,
+        persistence_metadata,
+        {
+            RETURN_DRAFT_CONTEXT_KEY: {
+                "payload": {"pedidoId": "P-1"},
+                "savedAt": (now - DRAFT_TTL - timedelta(minutes=1)).isoformat(),
+            },
+        },
+    )
+    fresh_id = await _conversation(
+        session,
+        persistence_metadata,
+        {
+            CLAIM_DRAFT_CONTEXT_KEY: {
+                "payload": {"pedidoId": "P-2"},
+                "savedAt": (now - timedelta(hours=1)).isoformat(),
+            },
+        },
+    )
+
+    removed = await EvidencePostgresAdapter(session).purgar_borradores_contexto(now)
+
+    old = await session.get(Conversation, old_id)
+    fresh = await session.get(Conversation, fresh_id)
+    assert removed == 1
+    assert RETURN_DRAFT_CONTEXT_KEY not in old.context
+    assert CLAIM_DRAFT_CONTEXT_KEY in fresh.context
+

@@ -57,8 +57,11 @@ creación continúa (fail-open, SPEC-19/21) y se registra un `warning` con el
   (`save_*_draft`), los recupera (`get_*_draft`) y los borra al registrar. El
   contrato HTTP no cambia.
 - `python -m src.modules.mod_postventa.jobs.purge_drafts` borra las referencias
-  de evidencia de borradores sin enviar con más de 24 h. El archivo en Ventas no
-  se toca. El job es propio del módulo y se agenda fuera del worker compartido.
+  de evidencia de borradores sin enviar con más de 24 h y las claves
+  `postventaReturnDraft` / `postventaClaimDraft` vencidas de
+  `conversation.context`. El archivo en Ventas no se toca. El job es propio del
+  módulo, **debe agendarse externamente** (cron/K8s) porque no se toca el worker
+  compartido; seguimiento en #265.
 
 ## CSAT (SPEC-24)
 

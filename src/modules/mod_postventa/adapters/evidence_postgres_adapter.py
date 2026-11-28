@@ -13,6 +13,11 @@ from sqlalchemy import delete, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.mod_postventa.domain.draft_retention import (
+    CLAIM_DRAFT_CONTEXT_KEY,
+    RETURN_DRAFT_CONTEXT_KEY,
+    remove_expired_drafts,
+)
 from src.modules.mod_postventa.domain.references import NewEvidenceReference
 from src.shared.infrastructure.db.models.conversation import Conversation
 from src.shared.infrastructure.db.models.evidence import Evidence
@@ -101,6 +106,36 @@ class EvidencePostgresAdapter:
         )
         result = cast(CursorResult[Any], await self.session.execute(stmt))
         return int(result.rowcount or 0)
+
+    async def purgar_borradores_contexto(self, ahora: datetime, limite: int = 1000) -> int:
+        """Delete expired `postventa*Draft` keys from `conversation.context`.
+
+        Locks the selected rows (SKIP LOCKED is safe across replicas) and removes
+        only the keys owned by this module; returns how many keys were removed.
+        """
+        stmt = (
+            select(Conversation)
+            .where(
+                or_(
+                    Conversation.context.has_key(RETURN_DRAFT_CONTEXT_KEY),
+                    Conversation.context.has_key(CLAIM_DRAFT_CONTEXT_KEY),
+                )
+            )
+            .order_by(Conversation.updated_at)
+            .limit(limite)
+            .with_for_update(skip_locked=True)
+        )
+        rows = list((await self.session.execute(stmt)).scalars().all())
+        removed = 0
+        for row in rows:
+            context = dict(row.context) if isinstance(row.context, dict) else {}
+            count = remove_expired_drafts(context, ahora)
+            if count:
+                row.context = context
+                removed += count
+        if removed:
+            await self.session.flush()
+        return removed
 
     async def asociar_devolucion(
         self, evidence_id: uuid.UUID, conversation_id: uuid.UUID, return_id: str

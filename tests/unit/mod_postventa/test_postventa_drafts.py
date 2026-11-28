@@ -110,6 +110,7 @@ def test_return_draft_survives_reload_and_expires_after_24_hours():
             conversation_id=conversation_id, customer_id=CUSTOMER
         )
     ) is None
+    assert RETURN_DRAFT_CONTEXT_KEY not in conversations.contexts[conversation_id]
 
 
 def test_claim_draft_survives_reload_and_expires_after_24_hours():
@@ -145,6 +146,7 @@ def test_claim_draft_survives_reload_and_expires_after_24_hours():
             conversation_id=conversation_id, customer_id=CUSTOMER
         )
     ) is None
+    assert CLAIM_DRAFT_CONTEXT_KEY not in conversations.contexts[conversation_id]
 
 
 def test_draft_of_another_customer_is_not_readable():
