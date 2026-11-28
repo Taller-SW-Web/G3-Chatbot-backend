@@ -124,6 +124,10 @@ class Settings:
     # configuration and must not depend on attachment storage (backend #222).
     app_role: str = "api"
     allow_fake_security: bool = False
+    # Production also refuses the fake Productos/Ventas/Despacho unless this
+    # explicit opt-in is set (e.g. a demo deploy). Their in-memory data would
+    # otherwise answer as if it were the real service (#255).
+    allow_fake_modules: bool = False
     allow_public_products: bool = False
     # Per-module timeouts in seconds (DoD: exact timeouts per integration).
     security_timeout_seconds: float = 5.0
@@ -236,6 +240,17 @@ class Settings:
                 "APP_ENV is production. Set SECURITY_MODE=http, or ALLOW_FAKE_SECURITY=true "
                 "to run a demo on purpose."
             )
+        fake_modules = [
+            module for module in MODULES if module != "security" and self.module_mode(module) == "fake"
+        ]
+        if self.app_env in PRODUCTION_ENVIRONMENTS and fake_modules and not self.allow_fake_modules:
+            names = ", ".join(fake_modules)
+            modes = ", ".join(f"{module.upper()}_MODE=http" for module in fake_modules)
+            raise ValueError(
+                f"Refusing to start with fake modules ({names}) when APP_ENV is production: "
+                "they answer with in-memory data instead of the real services. "
+                f"Set {modes}, or ALLOW_FAKE_MODULES=true to run a demo on purpose."
+            )
         if (
             self.app_role != "consumer"
             and self.app_env in PRODUCTION_ENVIRONMENTS
@@ -328,6 +343,15 @@ def warn_unsafe_defaults(settings: Settings, log) -> None:
                 "set ATTACHMENT_STORAGE=supabase (ADR-0028).",
                 settings.app_env,
             )
+        fake_modules = settings.fake_modules()
+        if fake_modules:
+            log.warning(
+                "APP_ENV=%s: fake modules active (%s) accepted by an explicit opt-in. "
+                "They answer with in-memory data instead of the real services and /health "
+                "reports the channel as degraded (#255).",
+                settings.app_env,
+                ", ".join(fake_modules),
+            )
         if not (settings.require_phone_verification or settings.require_verified_contact):
             log.warning(
                 "APP_ENV=%s: REQUIRE_PHONE_VERIFICATION and REQUIRE_VERIFIED_CONTACT are both "
@@ -392,6 +416,7 @@ def _build_settings(app_role: str = "api") -> Settings:
         app_env=app_env,
         app_role=app_role,
         allow_fake_security=_flag("ALLOW_FAKE_SECURITY"),
+        allow_fake_modules=_flag("ALLOW_FAKE_MODULES"),
         allow_public_products=_flag("ALLOW_PUBLIC_PRODUCTS"),
         security_mode=_module_mode_override("security"),
         products_mode=_module_mode_override("products"),

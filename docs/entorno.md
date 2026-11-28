@@ -126,7 +126,12 @@ necesita para probar el chat con el modelo real.
 Si el backend desplegado queda con `MODULES_MODE=fake` o `SALES_MODE=fake`, el
 chatbot responde listas vacías y `404` para pedidos reales (lo observamos en
 `g3-chatbot-backend.up.railway.app`), aunque el chat y el frontend funcionen con
-los adaptadores en memoria. Para el despliegue:
+los adaptadores en memoria. Por eso, con `APP_ENV=production` el arranque es
+**fail-closed**: cualquier fake de Productos, Ventas o Despacho aborta salvo
+`ALLOW_FAKE_MODULES=true` explícito (el fake de Seguridad conserva su propio
+`ALLOW_FAKE_SECURITY`). Si se acepta el override, `/health` responde
+`status=degraded` con `fakeModules` para que el despliegue no se confunda con
+una integración real. Para el despliegue:
 
 ```
 MODULES_MODE=http
