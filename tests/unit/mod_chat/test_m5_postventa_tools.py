@@ -481,6 +481,31 @@ async def test_confirm_actions_pass_the_conversation_id_to_postventa():
 
 
 @pytest.mark.asyncio
+async def test_confirm_actions_without_conversation_do_not_register():
+    no_conversation = ExecutionContext(
+        conversacion_id=None, cliente_id=str(CUSTOMER), access_token=TOKEN
+    )
+    sales = FakeSalesPort()
+    order_id = await _sales_order(sales)
+    fake = FakePostventaPort()
+    dispatcher = ActionDispatcher(_confirm_registry(_service(fake, sales)))
+
+    claim = await dispatcher.despachar(
+        {"tipo": "CONFIRMAR_RECLAMO", "payload": _claim_payload(order_id)},
+        no_conversation, confirmacion_ui=True,
+    )
+    assert claim.code == "REQUIERE_SESION"
+    assert fake.claims == {}
+
+    returned = await dispatcher.despachar(
+        {"tipo": "CONFIRMAR_DEVOLUCION", "payload": _return_payload(order_id)},
+        no_conversation, confirmacion_ui=True,
+    )
+    assert returned.code == "REQUIERE_SESION"
+    assert fake.returns == {}
+
+
+@pytest.mark.asyncio
 async def test_confirm_actions_are_not_in_the_llm_catalog():
     sales = FakeSalesPort()
     fake = FakePostventaPort()
