@@ -24,6 +24,9 @@ from src.shared.infrastructure.di.capabilities import CHECKOUT_DOCUMENT
 from src.shared.infrastructure.di.registry import registry
 from src.shared.infrastructure.http.dependencies.rate_limiter import provide_rate_limiter
 from src.shared.infrastructure.http.router_options import RouterOptions
+from src.shared.infrastructure.persistence.conversation_postgres_adapter import (
+    ConversationPostgresAdapter,
+)
 from src.shared.infrastructure.persistence.local_phone_verification_postgres_adapter import (
     LocalPhoneVerificationPostgresAdapter,
 )
@@ -60,6 +63,8 @@ def provide_manage_session(session: AsyncSession = Depends(get_session)) -> Mana
         validator=provide_access_token_validator(settings),
         phone_verifications=LocalPhoneVerificationPostgresAdapter(session),
         checkouts=checkouts,
+        conversations=ConversationPostgresAdapter(session),
+        uow=SqlAlchemyUnitOfWork(session),
     )
 
 
