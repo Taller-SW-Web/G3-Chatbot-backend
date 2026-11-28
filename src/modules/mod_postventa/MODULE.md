@@ -19,6 +19,10 @@ propiedad del pedido en Ventas. **No** anula pedidos ni reembolsa.
 | Backend | `public.py` | `PostventaService`, `provide_postventa_service`, `PostventaPort`, `PostventaError`, los DTO de detalle y las etiquetas de estado (`map_claim_status_label`, `map_return_status_label`, `OPEN_CLAIM_STATES`) que `mod-chat` usa en los bloques |
 | Frontend | `public.ts` | Tipos de devolución, reclamo y CSAT |
 
+Registra además la capacidad `postventa_draft_purge` (job periódico de borradores
+vencidos, ejecutado por `outbox_worker_lifespan`) para no acoplar `src/shared/`
+al módulo.
+
 ## Rutas
 
 | Método | Ruta | Caso de uso |
@@ -60,9 +64,15 @@ creación continúa (fail-open, SPEC-19/21) y se registra un `warning` con el
 - `python -m src.modules.mod_postventa.jobs.purge_drafts` borra las referencias
   de evidencia de borradores sin enviar con más de 24 h y las claves
   `postventaReturnDraft` / `postventaClaimDraft` vencidas de
-  `conversation.context`. El archivo en Ventas no se toca. El job es propio del
-  módulo, **debe agendarse externamente** (cron/K8s) porque no se toca el worker
-  compartido; seguimiento en #265.
+  `conversation.context`. El archivo en Ventas no se toca.
+- En producción la purga corre sola: el módulo registra la capacidad
+  `postventa_draft_purge` y `outbox_worker_lifespan` la ejecuta cada
+  `POSTVENTA_DRAFT_PURGE_INTERVAL_SECONDS` (por defecto 3600 s, mínimo 60) con
+  `OUTBOX_WORKER_ENABLED=true`. No hay cron externo. La corrida es idempotente y
+  deja un log `postventa_draft_purge_completed evidence=<n> context=<n>
+  correlation_id=<uuid>`; los fallos se registran sin tumbar el worker.
+- El comando `python -m ...purge_drafts` queda para operación o verificación
+  manual con la misma implementación (`DraftPurgeService`).
 
 ## CSAT (SPEC-24)
 

@@ -12,9 +12,11 @@ from src.modules.mod_postventa.adapters.http.csat_router import create_csat_rout
 from src.modules.mod_postventa.adapters.http.returns_router import create_returns_router
 from src.modules.mod_postventa.adapters.postventa_client import PostventaClient
 from src.modules.mod_postventa.adapters.return_ref_postgres_adapter import ReturnRefPostgresAdapter
+from src.modules.mod_postventa.application.draft_purge_service import DraftPurgeService
 from src.modules.mod_postventa.application.postventa_service import PostventaService
 from src.shared.infrastructure.config.settings import Settings, get_settings
 from src.shared.infrastructure.db.connection import get_session
+from src.shared.infrastructure.di.capabilities import POSTVENTA_DRAFT_PURGE
 from src.shared.infrastructure.http.router_options import RouterOptions
 from src.shared.infrastructure.persistence.conversation_postgres_adapter import ConversationPostgresAdapter
 from src.shared.infrastructure.persistence.order_ref_postgres_adapter import OrderRefPostgresAdapter
@@ -50,6 +52,14 @@ def provide_postventa_service(session: AsyncSession = Depends(get_session)):
     )
 
 
+def provide_draft_purge(session: AsyncSession) -> DraftPurgeService:
+    """24 h purge of local drafts, driven by `outbox_worker_lifespan` (#265)."""
+    return DraftPurgeService(
+        evidence=EvidencePostgresAdapter(session),
+        uow=SqlAlchemyUnitOfWork(session),
+    )
+
+
 def build_router(options: RouterOptions) -> APIRouter:
     """One module, three routers: `/evidencias|/devoluciones`, `/reclamos`, `/pedidos/{id}/csat`."""
     router = APIRouter()
@@ -63,13 +73,16 @@ router = build_router(RouterOptions())
 
 
 def configure(container) -> None:
-    """No cross-module capability: postventa consumes orders by `public.py`."""
+    """Postventa exposes the periodic draft purge; cross-module reads go through orders."""
+    container.register(POSTVENTA_DRAFT_PURGE, provide_draft_purge)
 
 
 __all__ = [
     "MODULE_ID",
+    "POSTVENTA_DRAFT_PURGE",
     "build_router",
     "configure",
+    "provide_draft_purge",
     "provide_postventa_port",
     "provide_postventa_service",
     "router",
