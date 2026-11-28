@@ -8,11 +8,14 @@ credentials or bound parameters.
 import asyncio
 import contextlib
 import logging
+import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Protocol
 
 from fastapi import FastAPI
+
+from src.shared.domain.request_context import correlation_id_var
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +143,35 @@ async def run_conversation_retention(
         await asyncio.sleep(interval_seconds)
 
 
+async def run_postventa_draft_purge(
+    session_factory: SessionFactory,
+    purge_factory: Callable[[Any], Any],
+    interval_seconds: float,
+) -> None:
+    """Periodic purge of local post-sale drafts (SPEC-19/21, #265).
+
+    Gives every run its own correlation id so the service log can be matched,
+    and never lets a failed iteration stop the worker.
+    """
+    while True:
+        correlation_id = str(uuid.uuid4())
+        token = correlation_id_var.set(correlation_id)
+        try:
+            async with session_factory() as session:
+                await purge_factory(session).run()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "Postventa draft purge iteration failed: %s correlation_id=%s",
+                describe_error(exc),
+                correlation_id,
+            )
+        finally:
+            correlation_id_var.reset(token)
+        await asyncio.sleep(interval_seconds)
+
+
 @asynccontextmanager
 async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan: starts the loop when OUTBOX_WORKER_ENABLED and cancels it on shutdown."""
@@ -150,6 +182,7 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
         CHECKOUT_EXPIRY,
         CONVERSATION_RETENTION,
         OUTBOX_PUBLISHER,
+        POSTVENTA_DRAFT_PURGE,
     )
     from src.shared.infrastructure.di.container import provide_outbox_processor
     from src.shared.infrastructure.di.registry import registry
@@ -160,6 +193,7 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
     cleanup_task: asyncio.Task | None = None
     expiry_task: asyncio.Task | None = None
     retention_task: asyncio.Task | None = None
+    draft_purge_task: asyncio.Task | None = None
     try:
         if settings.outbox_worker_enabled and settings.outbox_dispatch_mode == "broker":
             # One long-lived connection for the whole process (ADR-0030); the URL is never logged.
@@ -223,6 +257,20 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "Conversation retention started (every %.0fs)",
                 settings.conversation_retention_interval_seconds,
             )
+        if settings.outbox_worker_enabled and registry.is_registered(POSTVENTA_DRAFT_PURGE):
+            connection.get_engine()
+            draft_purge_task = asyncio.create_task(
+                run_postventa_draft_purge(
+                    lambda: connection.open_session(),
+                    registry.provider(POSTVENTA_DRAFT_PURGE),
+                    settings.postventa_draft_purge_interval_seconds,
+                ),
+                name="postventa-draft-purge",
+            )
+            logger.info(
+                "Postventa draft purge started (every %.0fs)",
+                settings.postventa_draft_purge_interval_seconds,
+            )
         yield
     finally:
         for name, pending in (
@@ -230,6 +278,7 @@ async def outbox_worker_lifespan(app: FastAPI) -> AsyncIterator[None]:
             ("attachment-cleanup", cleanup_task),
             ("checkout-expiry", expiry_task),
             ("conversation-retention", retention_task),
+            ("postventa-draft-purge", draft_purge_task),
         ):
             if pending is not None:
                 pending.cancel()

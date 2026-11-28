@@ -266,6 +266,35 @@
         "title": "BuyerContactDTO",
         "type": "object"
       },
+      "CartMergeAdjustment": {
+        "description": "Per-line adjustment reported by the anonymous cart merge (SPEC-03 Req. 4).",
+        "properties": {
+          "ajustado": {
+            "title": "Ajustado",
+            "type": "integer"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "solicitado": {
+            "title": "Solicitado",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sku",
+          "solicitado",
+          "ajustado",
+          "motivo"
+        ],
+        "title": "CartMergeAdjustment",
+        "type": "object"
+      },
       "CatalogSearchOut": {
         "properties": {
           "items": {
@@ -1094,6 +1123,29 @@
               }
             ],
             "title": "Accionpendiente"
+          },
+          "ajustesCarrito": {
+            "items": {
+              "$ref": "#/components/schemas/CartMergeAdjustment"
+            },
+            "title": "Ajustescarrito",
+            "type": "array"
+          },
+          "avisoCarrito": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avisocarrito"
+          },
+          "carritoFusionado": {
+            "default": false,
+            "title": "Carritofusionado",
+            "type": "boolean"
           },
           "expiresIn": {
             "default": 900,
