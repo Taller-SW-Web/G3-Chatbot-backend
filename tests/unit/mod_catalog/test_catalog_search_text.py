@@ -30,7 +30,9 @@ async def test_all_results_shown_does_not_mention_a_subset():
 async def test_local_filter_that_empties_the_page_returns_no_carousel():
     uc, ctx = paged(total=5)
     result = await uc.search(SearchArguments(soloOfertas=True), ctx)
-    assert result["bloques"] == [] and result["total"] == 0
+    assert result["bloques"] and all(b["tipo"] != "CARRUSEL_PRODUCTOS" for b in result["bloques"])
+    assert result["bloques"][0]["tipo"] == "ACCIONES_RAPIDAS"
+    assert result["total"] == 0
     assert result["total_scope"] == "page"
     assert "No encontré productos" in result["texto"]
     assert "pantalla" not in result["texto"]

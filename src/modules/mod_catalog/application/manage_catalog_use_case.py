@@ -21,8 +21,12 @@ from src.modules.mod_catalog.application.product_lookup import (
 )
 from src.modules.mod_catalog.application.tools import SearchArguments
 from src.modules.mod_catalog.domain.offer_policy import price_projection
-from src.modules.mod_catalog.domain.product_normalizer import MAX_CHIPS, ProductNormalizer
-from src.modules.mod_catalog.domain.product_ordering import sort_summaries
+from src.modules.mod_catalog.domain.product_normalizer import (
+    MAX_CHIPS,
+    NormalizedFilters,
+    ProductNormalizer,
+)
+from src.modules.mod_catalog.domain.product_ordering import normalize_order, sort_summaries
 from src.modules.mod_catalog.domain.product_projection import normalize_detail, sellable_skus
 from src.modules.mod_catalog.domain.similar_products import SimilarProducts
 from src.modules.mod_catalog.domain.stock_validator import StockValidator
@@ -52,6 +56,36 @@ DETAIL_TIMEOUT_SECONDS = 4.0
 COMMERCIAL_BUDGET_SECONDS = 8.0
 OFFER_DISCOVERY_PAGES = 5
 OFFER_DISCOVERY_SECONDS = 8.0
+# SPEC-06 Req. 4: a page turn re-runs the normalized filters of the previous search.
+FILTER_ARGUMENT_FIELDS = (
+    "q", "categoria", "marca", "categoriaId", "marcaId", "precioMin",
+    "precioMax", "orden", "soloOfertas", "talla", "color", "uso",
+)
+MAX_RELAXATIONS = 3
+ORDER_PAYLOAD = {
+    "RELEVANCIA": "relevancia",
+    "PRECIO_ASC": "precio_asc",
+    "PRECIO_DESC": "precio_desc",
+    "NOMBRE_ASC": "nombre_asc",
+    "NOMBRE_DESC": "nombre_desc",
+    "NOVEDAD": "relevancia",
+}
+
+
+def json_money(value: Decimal | None) -> float | None:
+    """PEN amount for an action payload; never a Decimal that JSON stores as text."""
+    return None if value is None else float(value)
+
+
+def order_payload(value: str | None) -> str | None:
+    """Normalized `orden` for `BUSCAR_PAGINA`; `NOVEDAD` keeps the upstream order."""
+    if value is None:
+        return None
+    return ORDER_PAYLOAD.get(normalize_order(value), "relevancia")
+
+
+def memory_decimal(value) -> Decimal | None:
+    return None if value in (None, "") else Decimal(str(value))
 
 
 class OptionCache:
@@ -145,10 +179,14 @@ class ManageCatalogUseCase(DiscoveryMixin):
         for options in (categories, brands):
             if isinstance(options, Exception):
                 raise self.map_module_error(options)
-        normalizer = self._normalizer or ProductNormalizer(
-            categories=categories, brands=brands
-        )
-        filters = normalizer.normalize_filters(args.q, args.categoria, args.marca)
+        resumed = self._resume_page(args, memory)
+        if resumed is None:
+            normalizer = self._normalizer or ProductNormalizer(
+                categories=categories, brands=brands
+            )
+            filters = normalizer.normalize_filters(args.q, args.categoria, args.marca)
+        else:
+            args, filters = resumed
         if filters.unresolved_category or filters.unresolved_brand:
             return {
                 "code": "OK",
@@ -156,6 +194,8 @@ class ManageCatalogUseCase(DiscoveryMixin):
                 "bloques": self._clarifying_blocks(filters, categories, brands),
             }
         partial = False
+        sent_q = filters.q
+        siguiente = None
         if discover_offers:
             summaries, total, exhausted, pages_scanned, partial = await self._discover_offer_products(args, filters, deadline_at=deadline_at)
             scope = "catalog" if exhausted else "scanned_pages"
@@ -166,10 +206,12 @@ class ManageCatalogUseCase(DiscoveryMixin):
             if total > len(summaries):
                 text += f" Te muestro {len(summaries)} de esos productos."
         else:
+            sent_q = " ".join(part for part in (filters.q, args.uso) if part) or None
             page = await self._search_page(args, filters, use=args.uso)
             if args.uso and not page.get("items"):
                 # `uso` is a soft hint: never let it alone empty the results.
                 page = await self._search_page(args, filters)
+                sent_q = filters.q
             items = page.get("items", [])
             if not items:
                 return {
@@ -180,7 +222,7 @@ class ManageCatalogUseCase(DiscoveryMixin):
                         "No encontré productos con esos filtros. "
                         "Prueba quitando un filtro o buscando por categoría."
                     ),
-                    "bloques": [],
+                    "bloques": self._relaxation_block(args, filters, categories, brands),
                 }
             local_filter = args.talla is not None or args.color is not None
             summaries = await self._summarize(
@@ -204,13 +246,14 @@ class ManageCatalogUseCase(DiscoveryMixin):
                         "No encontré productos con esos filtros en esta página. "
                         "Prueba quitando un filtro o buscando por categoría."
                     ),
-                    "bloques": [],
+                    "bloques": self._relaxation_block(args, filters, categories, brands),
                 }
             where = " en esta página" if scope == "page" else ""
             text = (f"Encontré {total} productos{where}; en pantalla se muestran {len(summaries)} "
                     "con precio y disponibilidad."
                     if total > len(summaries) else
                     f"Encontré {total} productos{where} y se muestran en pantalla con precio y disponibilidad.")
+            siguiente = self._next_page(args, filters, sent_q, page.get("total"))
         if partial:
             text = text.replace("con precio y disponibilidad", "con los datos obtenidos")
             if discover_offers:
@@ -224,10 +267,17 @@ class ManageCatalogUseCase(DiscoveryMixin):
             row["ref"] = index
         memory[MEMORY_CAROUSEL_KEY] = [s["product_id"] for s in summaries]
         memory[MEMORY_FILTERS_KEY] = {
-            # Keep the user's text for chips/refinement; G6 received filters.q.
+            # Keep the user's text for chips/refinement; G6 received the normalized text.
             "q": args.q,
-            "category_id": filters.category_id,
-            "brand_id": filters.brand_id,
+            "q_normalized": sent_q,
+            "category_id": args.categoriaId or filters.category_id,
+            "brand_id": args.marcaId or filters.brand_id,
+            "precio_min": str(args.precioMin) if args.precioMin is not None else None,
+            "precio_max": str(args.precioMax) if args.precioMax is not None else None,
+            "orden": args.orden,
+            "solo_ofertas": args.soloOfertas,
+            "talla": args.talla,
+            "color": args.color,
         }
         await self._save_memory(conversation_id, memory)
         return {
@@ -236,7 +286,12 @@ class ManageCatalogUseCase(DiscoveryMixin):
             "bloques": [{
                 "id": uuid.uuid4().hex,
                 "tipo": "CARRUSEL_PRODUCTOS",
-                "datos": {"productos": summaries, "partial": partial},
+                "datos": {
+                    "productos": summaries,
+                    "partial": partial,
+                    "total": total,
+                    "siguiente": siguiente,
+                },
             }],
             "total": total,
             "partial": partial,
@@ -257,6 +312,119 @@ class ManageCatalogUseCase(DiscoveryMixin):
             min_price=args.precioMin,
             max_price=args.precioMax,
         )
+
+    @staticmethod
+    def _resume_page(args, memory):
+        """Arguments and filters of the previous search for a bare page turn (SPEC-06 Req. 4).
+
+        `BUSCAR_PAGINA` may arrive with only `pagina`: the normalized filters live in
+        `filtrosVigentes`, so the page keeps what the first search actually queried.
+        """
+        if args.pagina <= 1:
+            return None
+        if any(getattr(args, field) is not None for field in FILTER_ARGUMENT_FIELDS):
+            return None
+        saved = memory.get(MEMORY_FILTERS_KEY)
+        if not isinstance(saved, dict) or not saved:
+            return None
+        filters = NormalizedFilters(
+            q=saved.get("q_normalized"),
+            category_id=saved.get("category_id"),
+            brand_id=saved.get("brand_id"),
+        )
+        resumed = args.model_copy(update={
+            "precioMin": memory_decimal(saved.get("precio_min")),
+            "precioMax": memory_decimal(saved.get("precio_max")),
+            "orden": saved.get("orden"),
+            "soloOfertas": saved.get("solo_ofertas"),
+            "talla": saved.get("talla"),
+            "color": saved.get("color"),
+        })
+        return resumed, filters
+
+    @staticmethod
+    def _next_page(args, filters, sent_q, upstream_total) -> dict[str, Any] | None:
+        """`BUSCAR_PAGINA` payload for the next page, or None when there is none.
+
+        `talla`/`color` are local hints and are not part of the published payload;
+        offering a page without them would silently change the search.
+        """
+        if args.talla is not None or args.color is not None:
+            return None
+        if not isinstance(upstream_total, int) or upstream_total <= args.pagina * args.tamanio:
+            return None
+        return {
+            "pagina": args.pagina + 1,
+            "q": sent_q,
+            "categoriaId": args.categoriaId or filters.category_id,
+            "marcaId": args.marcaId or filters.brand_id,
+            "precioMin": json_money(args.precioMin),
+            "precioMax": json_money(args.precioMax),
+            "orden": order_payload(args.orden),
+            "soloOfertas": args.soloOfertas,
+        }
+
+    @classmethod
+    def _relaxation_block(cls, args, filters, categories, brands) -> list[dict]:
+        actions = cls._relaxation_actions(args, filters, categories, brands)
+        return [block("ACCIONES_RAPIDAS", {"acciones": actions})] if actions else []
+
+    @classmethod
+    def _relaxation_actions(cls, args, filters, categories, brands) -> list[dict]:
+        """Up to three `BUSCAR_PRODUCTOS` chips, most restrictive filter first.
+
+        Each chip removes exactly one active filter and keeps the normalized ones;
+        no option is invented (brand/category names come from the real catalogs).
+        """
+        base = {
+            key: value for key, value in {
+                "q": filters.q,
+                "categoriaId": args.categoriaId or filters.category_id,
+                "marcaId": args.marcaId or filters.brand_id,
+                "precioMin": json_money(args.precioMin),
+                "precioMax": json_money(args.precioMax),
+                "orden": order_payload(args.orden),
+                "soloOfertas": True if args.soloOfertas else None,
+                "talla": args.talla,
+                "color": args.color,
+            }.items() if value not in (None, "")
+        }
+        drops: list[tuple[str, str]] = []
+        if "precioMax" in base:
+            drops.append(("precioMax", "Buscar sin precio máximo"))
+        if "marcaId" in base:
+            name = cls._option_name(brands, ("brand_id", "marca_id"), base["marcaId"])
+            drops.append(("marcaId", f"Buscar sin la marca {name}" if name else "Buscar sin marca"))
+        if "categoriaId" in base:
+            name = cls._option_name(categories, ("category_id", "categoria_id"), base["categoriaId"])
+            drops.append(("categoriaId", f"Buscar sin la categoría {name}" if name else "Buscar sin categoría"))
+        if "precioMin" in base:
+            drops.append(("precioMin", "Buscar sin precio mínimo"))
+        if "talla" in base:
+            drops.append(("talla", f"Buscar sin la talla {base['talla']}"))
+        if "color" in base:
+            drops.append(("color", f"Buscar sin el color {base['color']}"))
+        if "soloOfertas" in base:
+            drops.append(("soloOfertas", "Buscar sin limitar a ofertas"))
+        if "q" in base:
+            drops.append(("q", "Buscar sin texto libre"))
+        return [
+            {
+                "id": "BUSCAR_PRODUCTOS",
+                "etiqueta": label,
+                "payload": {key: value for key, value in base.items() if key != dropped},
+            }
+            for dropped, label in drops[:MAX_RELAXATIONS]
+        ]
+
+    @staticmethod
+    def _option_name(options, keys: tuple[str, ...], value) -> str | None:
+        for option in options:
+            if any(option.get(key) == value for key in keys):
+                name = option.get("name")
+                if isinstance(name, str) and name.strip():
+                    return name.strip()
+        return None
 
     async def _discover_offer_products(self, args, filters, *, deadline_at=None):
         """Scan bounded pages only for chat discovery; REST retains upstream pagination.
