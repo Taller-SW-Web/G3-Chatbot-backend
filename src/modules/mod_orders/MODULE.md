@@ -33,6 +33,10 @@ resuelve por la capacidad `dispatch_port`.
 | GET | `/api/v1/pedidos/{pedido_id}/seguimiento` | `OrdersService.get_order_tracking` |
 | POST | `/api/v1/pedidos/{pedido_id}/reenviar-confirmacion` | `OrdersService.resend_confirmation` |
 
+`GET /pedidos` acepta `page` con `1 <= page <= 1000` y `pageSize` hasta 50; una
+página fuera de rango responde `400 VALIDACION` sin consultar la base ni G5
+(#255).
+
 ## Dependencias externas
 
 - **G5 Ventas** `GET /pedidos/me`, `GET /pedidos/{id}` con el token del titular.

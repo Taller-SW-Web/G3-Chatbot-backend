@@ -24,6 +24,7 @@ from src.shared.domain.module_errors import ModuleRequestError, ModuleUnavailabl
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
 from src.shared.infrastructure.http.openapi import idempotency_key_required, problem_responses
+from src.shared.infrastructure.http.pagination import MAX_PAGE
 from src.shared.infrastructure.http.problem import ProblemError, not_found
 
 
@@ -159,7 +160,7 @@ def create_orders_router(
         estado: str | None = Query(default=None),
         desde: date | None = Query(default=None),
         hasta: date | None = Query(default=None),
-        page: int = Query(default=1, ge=1),
+        page: int = Query(default=1, ge=1, le=MAX_PAGE),
         pageSize: int = Query(default=10, ge=1, le=50),
         caller: CallerIdentity = Depends(require_customer),
         service: OrdersServicePort = Depends(orders_provider),

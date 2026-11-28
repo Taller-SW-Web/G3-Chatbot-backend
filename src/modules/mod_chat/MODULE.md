@@ -44,6 +44,10 @@ que cierra conversaciones anónimas >7 días y archiva conversaciones de cliente
 | GET | `/api/v1/chat/adjuntos/{adjuntoId}` | `AttachmentService.signed_urls` |
 | GET | `/api/v1/chat/adjuntos/archivo` | lectura del objeto con URL firmada |
 
+Los listados (`GET /chat/conversaciones` y `/buscar`) aceptan `pagina` con
+`1 <= pagina <= 1000`; fuera de rango responden `400 VALIDACION` sin consultar
+la base de datos (#255).
+
 ## Adjuntos (SPEC-23)
 
 - Hasta 3 imágenes por mensaje y 10 `PENDING` por conversación; `image/jpeg`,
