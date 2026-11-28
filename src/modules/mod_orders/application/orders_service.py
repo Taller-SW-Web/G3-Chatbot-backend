@@ -43,6 +43,36 @@ def _cancelled_label(history: list[dict[str, Any]]) -> str:
     return "Anulado"
 
 
+def _order_customer_id(order: dict[str, Any]) -> str | None:
+    """Owner of a Ventas order (`contacto.clienteId`, or a root `clienteId`)."""
+    contact = order.get("contacto")
+    candidate = contact.get("clienteId") if isinstance(contact, dict) else None
+    if candidate in (None, ""):
+        candidate = order.get("clienteId")
+    return str(candidate) if candidate not in (None, "") else None
+
+
+def _ensure_owner(
+    order: dict[str, Any], customer_id, ref: Any | None = None
+) -> None:
+    """SPEC-17 RNF: a foreign order looks exactly like an unknown one (404).
+
+    Ventas already filters with the holder token; the BFF repeats the check with
+    every ownership signal it has (`contacto.clienteId` and the local
+    `order_ref.customer_id`) so a permissive/upstream bug never leaks the order.
+    """
+    owners = {
+        owner
+        for owner in (
+            _order_customer_id(order),
+            str(getattr(ref, "customer_id", None) or "") or None,
+        )
+        if owner
+    }
+    if owners and any(owner != str(customer_id) for owner in owners):
+        raise NotificationError("RECURSO_NO_ENCONTRADO", "No encontré ese pedido en tu cuenta.")
+
+
 class OrdersService:
     """`OrdersServicePort` for the orders router: confirmation resend (SPEC-16) and
     customer orders listing / detail (SPEC-17) delegated to Ventas."""
@@ -96,6 +126,13 @@ class OrdersService:
     ):
         if self._sales:
             raw = await self._sales.get_customer_order(order_id, holder_token)
+            ref = (
+                await self._order_refs.obtener_por_order_id(order_id)
+                if self._order_refs is not None
+                else None
+            )
+            # SPEC-17 RNF: the BFF compares ownership before projecting the detail.
+            _ensure_owner(raw, customer_id, ref)
             # G5 `PedidoDetalle` keeps money inside `pago` and history in
             # `historialEstados`; the channel contract exposes them at the root.
             payment_raw = raw.get("pago")
@@ -126,11 +163,9 @@ class OrdersService:
                 for item in detail["historial"]:
                     if str(item.get("estado") or "").upper() == "ANULADO":
                         item["etiqueta"] = label
-            if self._order_refs is not None:
-                ref = await self._order_refs.obtener_por_order_id(order_id)
-                if ref is not None:
-                    # SPEC-24: the frontend hides the CSAT block without asking Ventas again.
-                    detail["csatEnviado"] = bool(ref.csat_sent)
+            if self._order_refs is not None and ref is not None:
+                # SPEC-24: the frontend hides the CSAT block without asking Ventas again.
+                detail["csatEnviado"] = bool(ref.csat_sent)
             return detail
         raise NotificationError("SERVICIO_NO_DISPONIBLE", "La consulta de pedidos aún no está disponible.")
 
@@ -154,6 +189,13 @@ class OrdersService:
                 "La consulta de pedidos aún no está disponible.",
             )
         order = await self._sales.get_customer_order(order_id, holder_token)
+        ref = (
+            await self._order_refs.obtener_por_order_id(order_id)
+            if self._order_refs is not None
+            else None
+        )
+        # Same anti-enumeration check as the detail: a foreign order is a 404.
+        _ensure_owner(order, customer_id, ref)
         estado = str(order.get("estado") or "").strip().upper()
         envio_raw = order.get("envio")
         envio: dict[str, Any] = envio_raw if isinstance(envio_raw, dict) else {}

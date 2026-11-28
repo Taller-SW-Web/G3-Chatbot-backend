@@ -7,6 +7,7 @@ Trazabilidad:
 - SPEC-16 Req. 2 · Scenario: Reproceso del evento / Proveedor SMTP caído
 - SPEC-16 Req. 3 · Scenario: Confirmación en el chat sin correo / El cliente pide reenviar el correo
 """
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -282,6 +283,52 @@ async def test_confirmacion_en_el_chat_sin_correo():
     assert result["correoEnmascarado"] == "m***a@ejemplo.com"
     assert notifications.rows[(ORDER_ID, 0)]["status"] == "PENDING"
     assert sender.sent == []
+
+
+@pytest.mark.asyncio
+async def test_default_service_leaves_the_send_to_the_outbox_worker():
+    notifications, outbox = MemNotifications(), MemOutbox()
+    sender = FakeEmailSender()
+    service = NotificationService(
+        notifications,
+        outbox,
+        MemSources(),
+        sender,
+        JinjaEmailRenderer(),
+        MemUow(),
+        frontend_base_url="https://g3-chatbot-frontend.vercel.app/",
+        clock=lambda: NOW,
+    )
+
+    await service.enqueue_confirmation(ORDER_ID)
+
+    assert sender.sent == []
+    assert notifications.rows[(ORDER_ID, 0)]["status"] == "PENDING"
+    assert outbox.tasks[outbox.task(0).id]["status"] == "PENDING"
+
+
+@pytest.mark.asyncio
+async def test_default_enqueue_does_not_wait_for_a_slow_smtp_sender():
+    class SlowSender:
+        async def send(self, message):
+            await asyncio.sleep(10)
+
+    notifications, outbox = MemNotifications(), MemOutbox()
+    service = NotificationService(
+        notifications,
+        outbox,
+        MemSources(),
+        SlowSender(),  # type: ignore[arg-type]
+        JinjaEmailRenderer(),
+        MemUow(),
+        frontend_base_url="https://g3-chatbot-frontend.vercel.app/",
+        clock=lambda: NOW,
+    )
+
+    # Acceptance: POST /pago < 1 s even with a sender that takes 10 s.
+    await asyncio.wait_for(service.enqueue_confirmation(ORDER_ID), timeout=1)
+
+    assert notifications.rows[(ORDER_ID, 0)]["status"] == "PENDING"
 
 
 @pytest.mark.asyncio

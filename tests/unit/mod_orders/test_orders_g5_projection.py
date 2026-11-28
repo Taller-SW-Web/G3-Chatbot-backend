@@ -1,6 +1,8 @@
 """G5 order detail shape -> channel response projection (SPEC-17)."""
 import anyio
+import pytest
 
+from src.modules.mod_orders.application.notification_service import NotificationError
 from src.modules.mod_orders.application.orders_service import OrdersService
 
 
@@ -212,14 +214,17 @@ class CancelledSales(G5ShapeSales):
         return order
 
 
+G5_CUSTOMER_ID = "11111111-1111-1111-1111-111111111111"
+
+
 def _detail(sales):
     service = OrdersService(notifications=None, sales_client=sales)  # type: ignore[arg-type]
-    return anyio.run(lambda: service.get_order_detail("c", "PED-1", holder_token="t"))
+    return anyio.run(lambda: service.get_order_detail(G5_CUSTOMER_ID, "PED-1", holder_token="t"))
 
 
 def _tracking(sales):
     service = OrdersService(notifications=None, sales_client=sales)  # type: ignore[arg-type]
-    return anyio.run(lambda: service.get_order_tracking("c", "PED-1", holder_token="t"))
+    return anyio.run(lambda: service.get_order_tracking(G5_CUSTOMER_ID, "PED-1", holder_token="t"))
 
 
 REFUND = "Se procesará el reembolso al medio de pago original."
@@ -309,3 +314,93 @@ def test_tracking_whitelist_keeps_the_cancellation_fields():
 
     assert clean["motivoAnulacion"] == "STOCK_NO_DISPONIBLE"
     assert clean["reembolso"] == REFUND
+
+
+# -- Ownership (SPEC-17 RNF, backend#250) ---------------------------------------
+
+
+class ForeignOwnerSales(G5ShapeSales):
+    """Ventas answers a detail whose `contacto.clienteId` is another customer."""
+
+    async def get_customer_order(self, order_id, holder_token, *, correlation_id=None):
+        order = await super().get_customer_order(order_id, holder_token)
+        order["contacto"]["clienteId"] = "99999999-9999-9999-9999-999999999999"
+        return order
+
+
+class NoContactSales(G5ShapeSales):
+    """Detail without `contacto`; ownership can only come from the local order_ref."""
+
+    async def get_customer_order(self, order_id, holder_token, *, correlation_id=None):
+        order = await super().get_customer_order(order_id, holder_token)
+        order.pop("contacto", None)
+        return order
+
+
+class FixedRefs:
+    def __init__(self, customer_id, csat_sent=False):
+        self._row = type("Ref", (), {"customer_id": customer_id, "csat_sent": csat_sent})()
+
+    async def obtener_por_order_id(self, order_id):
+        return self._row
+
+
+def test_detail_of_a_foreign_order_is_404_like_an_unknown_one():
+    service = OrdersService(notifications=None, sales_client=ForeignOwnerSales())  # type: ignore[arg-type]
+
+    with pytest.raises(NotificationError) as exc:
+        anyio.run(
+            lambda: service.get_order_detail(
+                G5_CUSTOMER_ID, "PED-2026-00001", holder_token="token"
+            )
+        )
+
+    assert exc.value.code == "RECURSO_NO_ENCONTRADO"
+    assert "No encontré ese pedido" in exc.value.detail
+
+
+def test_detail_uses_order_ref_ownership_when_sales_omits_contact():
+    service = OrdersService(
+        notifications=None,
+        sales_client=NoContactSales(),  # type: ignore[arg-type]
+        order_refs=FixedRefs("99999999-9999-9999-9999-999999999999"),
+    )
+
+    with pytest.raises(NotificationError) as exc:
+        anyio.run(
+            lambda: service.get_order_detail(
+                G5_CUSTOMER_ID, "PED-2026-00001", holder_token="token"
+            )
+        )
+
+    assert exc.value.code == "RECURSO_NO_ENCONTRADO"
+
+
+def test_tracking_of_a_foreign_order_is_404_like_an_unknown_one():
+    service = OrdersService(notifications=None, sales_client=ForeignOwnerSales())  # type: ignore[arg-type]
+
+    with pytest.raises(NotificationError) as exc:
+        anyio.run(
+            lambda: service.get_order_tracking(
+                G5_CUSTOMER_ID, "PED-2026-00001", holder_token="token"
+            )
+        )
+
+    assert exc.value.code == "RECURSO_NO_ENCONTRADO"
+
+
+def test_detail_of_the_owner_keeps_working_with_matching_contact_and_order_ref():
+    service = OrdersService(
+        notifications=None,
+        sales_client=G5ShapeSales(),  # type: ignore[arg-type]
+        order_refs=FixedRefs(G5_CUSTOMER_ID, csat_sent=True),
+    )
+
+    result = anyio.run(
+        lambda: service.get_order_detail(
+            G5_CUSTOMER_ID, "PED-2026-00001", holder_token="token"
+        )
+    )
+
+    assert result["estado"] == "ENTREGADO"
+    assert result["csatEnviado"] is True
