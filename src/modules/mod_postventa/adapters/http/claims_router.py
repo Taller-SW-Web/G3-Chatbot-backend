@@ -15,6 +15,7 @@ from src.shared.domain.caller_identity import CallerIdentity
 from src.shared.infrastructure.http.dependencies.auth_guard import require_customer
 from src.shared.infrastructure.http.dependencies.jwt_validator import get_bearer_token
 from src.shared.infrastructure.http.openapi import idempotency_key_required, problem_responses
+from src.shared.infrastructure.http.pagination import MAX_PAGE
 
 
 class ClaimsServicePort(Protocol):
@@ -88,7 +89,7 @@ def create_claims_router(service_provider: Callable[..., ClaimsServicePort]) -> 
     async def list_claims(
         request: Request,
         estado: str | None = Query(default=None),
-        page: int = Query(default=1, ge=1),
+        page: int = Query(default=1, ge=1, le=MAX_PAGE),
         pageSize: int = Query(default=10, ge=1, le=50),
         caller: CallerIdentity = Depends(require_customer),
         service: ClaimsServicePort = Depends(service_provider),

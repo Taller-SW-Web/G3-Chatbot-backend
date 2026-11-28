@@ -35,6 +35,7 @@ from src.shared.infrastructure.http.dependencies.rate_limiter import (
     client_ip,
 )
 from src.shared.infrastructure.http.openapi import problem_responses
+from src.shared.infrastructure.http.pagination import MAX_PAGE
 from src.shared.infrastructure.http.problem import ProblemError, not_found
 
 # Provisional: the specs leave the search query length undefined.
@@ -93,7 +94,7 @@ def create_chatbot_router(
 
     @router.get("", response_model=list[ConversationSummaryOut])
     async def list_conversations(
-        pagina: int = Query(1, ge=1),
+        pagina: int = Query(1, ge=1, le=MAX_PAGE),
         caller: CallerIdentity | None = Depends(get_caller_identity),
         service: ChatbotServicePort = Depends(service_provider),
     ):
@@ -103,7 +104,7 @@ def create_chatbot_router(
     @router.get("/buscar", response_model=list[ConversationSearchResultOut])
     async def search_conversations(
         q: str = Query(..., max_length=SEARCH_QUERY_MAX_CHARS),
-        pagina: int = Query(1, ge=1),
+        pagina: int = Query(1, ge=1, le=MAX_PAGE),
         caller: CallerIdentity | None = Depends(get_caller_identity),
         service: ChatbotServicePort = Depends(service_provider),
     ):

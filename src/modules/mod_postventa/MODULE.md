@@ -32,6 +32,10 @@ propiedad del pedido en Ventas. **No** anula pedidos ni reembolsa.
 | GET | `/api/v1/reclamos/{codigo}` | `PostventaService.get_claim` |
 | POST | `/api/v1/pedidos/{pedido_id}/csat` | `PostventaService.create_csat` |
 
+Los listados `GET /devoluciones` y `GET /reclamos` aceptan `page` con
+`1 <= page <= 1000` y `pageSize` hasta 50; una página fuera de rango responde
+`400 VALIDACION` sin consultar la base ni G5 M2 (#255).
+
 ## Duplicados (SPEC-19/21)
 
 Antes de crear un reclamo o una devolución se consulta el listado real del
