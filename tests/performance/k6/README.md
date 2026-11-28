@@ -8,7 +8,7 @@ Cada SLO es un *threshold*: si uno no se cumple, k6 termina con código distinto
 |---|---|---|---|
 | `catalogo.js` | `mod-catalog` | 20 solicitudes/s | búsqueda, detalle, promociones, disponibilidad |
 | `chat.js` | `mod-chat` | 10 clientes anónimos, un mensaje cada 3 a 5 s | crear conversación, turno SSE, acción directa, historial |
-| `checkout.js` | `mod-cart` + `mod-checkout` | 1 cliente que compra en bucle | agregar, ver carrito, crear checkout, pagar |
+| `checkout.js` | `mod-cart` + `mod-checkout` | `CHECKOUT_VUS` clientes (2 por defecto), cada uno con su carrito, comprando en bucle | agregar, ver carrito, crear checkout, pagar |
 
 ## Reglas
 
@@ -41,8 +41,9 @@ docker run --rm -v "$PWD:/scripts" -w /scripts \
 ```
 
 Variables: `BASE_URL`, `DURATION` (por defecto `2m`), `RESULTS_DIR`, `CATALOG_RATE`, `CHAT_VUS`,
-`CHAT_MIN_RATE` y `CHECKOUT_MIN_RATE`. Cada corrida deja `<flujo>-report.md` (tabla SLO frente a lo
-medido) y `<flujo>-summary.json` en `results/`, que está en `.gitignore`.
+`CHAT_MIN_RATE`, `CHECKOUT_VUS` (1–3, por defecto `2`) y `CHECKOUT_MIN_RATE`. Cada corrida deja
+`<flujo>-report.md` (tabla SLO frente a lo medido) y `<flujo>-summary.json` en `results/`, que está
+en `.gitignore`.
 
 ## En GitHub Actions
 
@@ -52,9 +53,10 @@ y el backend en el runner, corre los tres escenarios, publica la tabla en el res
 
 ## Limitaciones conocidas
 
-- **Checkout en serie.** El fake de Seguridad tiene un solo cliente activo (`cliente@demo.pe`) y el
-  carrito es uno por cliente. Medir compras en paralelo exige sembrar más clientes en el fake, un
-  cambio en `src/shared/` que va en su propio PR `cross-modulo`.
+- **Clientes de checkout.** El fake de Seguridad siembra tres clientes ACTIVO (`cliente@demo.pe`,
+  `perf+2@ejemplo.pe`, `perf+3@ejemplo.pe`), así que `CHECKOUT_VUS` admite 1–3: el carrito es uno
+  por cliente y el login permite 10 intentos/min por IP. El `setup` comprueba el aislamiento (dos
+  clientes agregan SKUs distintos y cada `GET /carrito` solo ve su línea).
 - **Detalle de producto.** Solo se piden los productos semilla con precio validado; el resto responde
   `503` a propósito (imita los productos de G6 sin precio de canal).
 - **RabbitMQ.** Desde H5-P5 el workflow levanta RabbitMQ en Docker, pone el outbox en
