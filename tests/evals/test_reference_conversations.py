@@ -8,7 +8,8 @@ the tool results leaked into the reply; the main assertions are on tool names,
 arguments and returned blocks.
 
 Without `LLM_API_KEY` the seven live cases skip with an explicit message; the
-degraded-mode case and the harness smoke test still run offline.
+degraded-mode case, the degraded-turn guardrail and the harness smoke test still
+run offline.
 """
 from __future__ import annotations
 
@@ -67,7 +68,7 @@ def _real_world() -> ShoppingWorld:
     timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "60"))
     provider = OpenAILLMProvider(
         api_key=_require_llm_key(),
-        model=os.getenv("LLM_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini",
+        model=os.getenv("LLM_MODEL", "gpt-6-luna").strip() or "gpt-6-luna",
         temperature=float(os.getenv("LLM_TEMPERATURE", "0")),
         max_tokens=int(os.getenv("LLM_MAX_TOKENS", "1024")),
         timeout_seconds=timeout,
@@ -350,7 +351,7 @@ async def test_degraded_mode_searches_without_the_llm(eval_case: EvalCase):
     """motor-conversacion · Modo degradado: sin LLM, el menú seguro busca por palabra clave y no inventa importes."""
     world = ShoppingWorld(FakeLLMProvider([LLMUnavailableError("simulated outage")]), timeout_seconds=5.0)
 
-    events = await run_reference_turn(eval_case, world, "busco zapatillas")
+    events = await run_reference_turn(eval_case, world, "busco zapatillas", allow_degraded=True)
 
     eval_case.check(
         "emitió el evento degradado",
@@ -376,6 +377,19 @@ async def test_degraded_mode_searches_without_the_llm(eval_case: EvalCase):
         detail=block_types(events),
     )
     assert_no_invented_amounts(eval_case, world, final_text(events))
+
+
+@pytest.mark.asyncio
+async def test_harness_fails_a_live_case_when_the_turn_degrades():
+    """Harness · Guardarraíl: un caso real que cae al menú degradado no puede reportarse aprobado."""
+    world = ShoppingWorld(FakeLLMProvider([LLMUnavailableError("simulated outage")]), timeout_seconds=5.0)
+    case = EvalCase(name="guardrail", scenario="un caso real nunca pasa en modo degradado")
+
+    with pytest.raises(AssertionError, match="modo degradado"):
+        await run_reference_turn(case, world, "¿Me ayudas con mi tarea de historia universal?")
+
+    assert case.degraded_reason == "unavailable"
+    assert any(not check["passed"] for check in case.assertions)
 
 
 @pytest.mark.asyncio
