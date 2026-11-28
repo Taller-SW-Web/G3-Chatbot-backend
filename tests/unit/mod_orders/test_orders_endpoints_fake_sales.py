@@ -109,6 +109,44 @@ def test_order_missing_from_restarted_fake_is_404() -> None:
     assert response.json()["code"] == "RECURSO_NO_ENCONTRADO"
 
 
+class _DetailOwnerSales(FakeSalesPort):
+    """A permissive upstream: the holder token passes, but the detail says another owner."""
+
+    def __init__(self, owner_id: str) -> None:
+        super().__init__()
+        self.owner_id = owner_id
+
+    async def get_customer_order(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        order = await super().get_customer_order(*args, **kwargs)
+        return {**order, "contacto": {"clienteId": self.owner_id}}
+
+
+def test_order_detail_of_another_customer_is_404_without_order_data() -> None:
+    import asyncio
+
+    sales = _DetailOwnerSales("99999999-9999-9999-9999-999999999999")
+    order_id = asyncio.run(_create(sales))
+
+    response = _client(sales).get(f"/api/v1/pedidos/{order_id}", headers=HEADERS)
+
+    assert response.status_code == 404
+    body = response.json()
+    assert body["code"] == "RECURSO_NO_ENCONTRADO"
+    assert "items" not in body and "historial" not in body
+
+
+def test_order_detail_of_the_owner_is_200() -> None:
+    import asyncio
+
+    sales = _DetailOwnerSales(str(CUSTOMER_ID))
+    order_id = asyncio.run(_create(sales))
+
+    response = _client(sales).get(f"/api/v1/pedidos/{order_id}", headers=HEADERS)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["pedidoId"] == order_id
+
+
 def test_malformed_sales_payload_is_a_controlled_503_not_a_500() -> None:
     class BrokenSales(FakeSalesPort):
         async def list_customer_orders(self, *args: Any, **kwargs: Any) -> dict[str, Any]:

@@ -218,8 +218,10 @@ def test_bearer_gana_sobre_la_cookie_chat_sid(service):
 
 
 def test_health_responde_ok_sin_base_de_datos():
-    """Health endpoint: no database access."""
-    assert TestClient(create_app()).get("/health").json() == {"status": "ok"}
+    """Health endpoint: no database access; also declares the e-mail mode."""
+    body = TestClient(create_app()).get("/health").json()
+    assert body["status"] == "ok"
+    assert body["emailMode"] in ("smtp", "fake")
 
 
 def test_health_router_aislado():

@@ -8057,7 +8057,7 @@
     },
     "/health": {
       "get": {
-        "description": "Liveness: deliberately does not touch the database.\n\nFake modules are a degraded channel even when an explicit opt-in allowed\nthem: the response says so instead of pretending the real services answered.",
+        "description": "Liveness: deliberately does not touch the database.\n\nDeclares the e-mail delivery mode (`smtp` or `fake`) and any fake module:\nan inferred fake sender fails the production boot (backend#250) and fake\nmodules are a degraded channel even with an explicit opt-in (backend#255),\nso operators can confirm here what the process is really using.",
         "operationId": "health_health_get",
         "responses": {
           "200": {

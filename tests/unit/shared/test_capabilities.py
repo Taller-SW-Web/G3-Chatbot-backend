@@ -40,10 +40,10 @@ def test_optional_capability_missing_is_reported_by_health(monkeypatch):
 
     discovery.configure_modules(registry)
 
-    assert asyncio.run(health()) == {
-        "status": "degraded",
-        "missingCapabilities": ["optional_absent"],
-    }
+    body = asyncio.run(health())
+    assert body["status"] == "degraded"
+    assert body["missingCapabilities"] == ["optional_absent"]
+    assert body["emailMode"] in ("smtp", "fake")
     registry.clear()
 
 
