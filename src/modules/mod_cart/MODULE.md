@@ -17,6 +17,7 @@ ni crea pedidos (eso es `mod-checkout`).
 | Tipo | Archivo | Qué expone |
 |---|---|---|
 | Backend | `public.py` | `provide_cart_service`, `provide_cart_repositories` (`CartRepositories`), `ManageCartUseCase`, `CartError` |
+| Backend (capacidad) | `module.py` | Capacidad `CART_MERGE` (`provide_cart_merge` → `MergeAnonymousCartService`), consumida opcionalmente por `mod-auth` en el login sin violar el DAG |
 | Frontend | `public.ts` | Tipos de carrito e ítem |
 
 `provide_cart_repositories` lo consumen `mod-checkout` y `mod-shipping`, ambos
